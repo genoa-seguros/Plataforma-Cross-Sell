@@ -16,13 +16,14 @@
 </div>
 
 <h2>Oportunidades</h2>
-<div class="card scroll"><table><tr><th>Score</th><th>Oferecer</th><th>Para</th><th>Por quê</th><th>Quem apresenta</th><th>Status</th></tr>
+<div class="card scroll"><table><tr><th>Score</th><th>Oferecer</th><th>Para</th><th>Por quê</th><th>Quem apresenta</th><th>Quem atende</th><th>Status</th></tr>
 {% for o in oportunidades %}<tr><td><b>{{ o.score }}</b></td><td><span class="tag {{ o.vertical_alvo }}">{{ LABEL[o.vertical_alvo] }}</span></td>
 <td>{{ o.pessoa.nome if o.pessoa else "empresa" }}</td><td class="small"><ul>{% for m in o.motivos %}<li>{{ m }}</li>{% endfor %}</ul></td>
 <td class="small">{{ o.ponte_email or "—" }}</td>
+<td class="small">{{ o.responsavel_email or "a definir" }}</td>
 <td><form class="inline" method="post" action="/oportunidades/{{ o.id }}/status"><input type="hidden" name="voltar" value="/empresas/{{ e.id }}">
 <select name="status" onchange="this.form.submit()">{% for s in status_opcoes %}<option {% if s == o.status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></form></td></tr>
-{% else %}<tr><td colspan="6" class="mute">Nenhuma.</td></tr>{% endfor %}</table></div>
+{% else %}<tr><td colspan="7" class="mute">Nenhuma.</td></tr>{% endfor %}</table></div>
 
 <h2>Pessoas</h2>
 <div class="card scroll"><table><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>Relação</th><th>Fala com</th><th>Fonte</th></tr>

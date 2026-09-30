@@ -4,15 +4,21 @@ Ferramenta que unifica os clientes das quatro verticais da Innoa, mede o nível 
 relacionamento com cada empresa e pessoa a partir dos e-mails, e aponta **onde
 existe espaço para cross sell, com quem falar e quem da Innoa deve fazer a ponte**.
 
-| Vertical | Fonte | Como entra |
-|---|---|---|
-| Linhas Financeiras | Pipedrive | API (sincronização incremental) |
-| Ramos Elementares | Pipedrive | API |
-| Saúde — novos negócios | Pipedrive | API |
-| Saúde — renovações | Zeca | Importação periódica de CSV/XLSX |
-| Linhas Pessoais | Quiver | Importação periódica de CSV/XLSX |
-| Relacionamento | Microsoft 365 (Outlook) | Microsoft Graph, só metadados |
-| Quem é a empresa / quem são as pessoas | Receita Federal (BrasilAPI) + LinkedIn | API gratuita + exportação do Sales Navigator |
+| Vertical | Equipe | Fonte | Como entra |
+|---|---|---|---|
+| Linhas Financeiras | Victor Boldrini (líder), Pedro Acciari, Pamela Silva | Pipedrive — pipelines 1 (D&O/Cyber) e 40 (Garantia) | API (sincronização incremental) |
+| Ramos Elementares | Bruno Rodrigues (líder) | Pipedrive — pipeline 29 | API |
+| Saúde (Pipo) — novos negócios | Pedro Acciari, Pamela Silva | Pipedrive — pipelines 23, 34 e 38 | API |
+| Saúde — renovações | | Zeca | Importação periódica de CSV/XLSX |
+| Linhas Pessoais | a definir | Quiver | Importação periódica de CSV/XLSX |
+| Relacionamento | | Microsoft 365 (Outlook) | Microsoft Graph, só metadados |
+| Quem é a empresa / quem são as pessoas | | Receita Federal (BrasilAPI) + LinkedIn | API gratuita + exportação do Sales Navigator |
+
+Equipes e pipelines ficam em `config/verticais.yaml`. Cada oportunidade mostra
+**quem apresenta** (o usuário interno com mais relação com o cliente) e **quem atende**
+(o líder da vertical-alvo; sem líder, a equipe). Quando quem tem a relação já atua na
+vertical-alvo, por exemplo Pedro com um cliente de LF que ainda não tem Saúde, a
+oportunidade indica que ele pode conduzir direto.
 
 ## Como funciona
 
@@ -117,9 +123,8 @@ pytest
 
 ## Pendências para colocar em produção
 
-- [ ] Confirmar o mapeamento **pipeline → vertical** em `config/verticais.yaml`
-      (os valores atuais são um palpite).
-- [ ] Listar os usuários de cada vertical (e-mails a serem lidos).
+- [ ] Confirmar os pipelines 38 (Flash Saúde), 31 (M&A) e 39 (Canais/parcerias).
+- [ ] Definir líder de Saúde e equipe de Linhas Pessoais.
 - [ ] Obter uma exportação real do **Zeca** e do **Quiver** para ajustar os
       cabeçalhos em `config/verticais.yaml`, e verificar se algum deles oferece API.
 - [ ] Criar o app registration no Microsoft 365.

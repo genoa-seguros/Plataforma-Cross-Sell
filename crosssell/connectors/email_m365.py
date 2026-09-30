@@ -126,7 +126,7 @@ def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, men
 def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None) -> dict:
     client = client or GraphClient(settings)
     desde = datetime.utcnow() - timedelta(days=dias)
-    usuarios = [u["email"] for u in settings.verticais_config().get("usuarios", [])]
+    usuarios = [u["email"] for u in settings.usuarios()]
     total: dict[str, int] = {}
     for u in usuarios:
         res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)))

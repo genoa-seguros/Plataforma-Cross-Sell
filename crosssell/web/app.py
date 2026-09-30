@@ -48,7 +48,7 @@ def _serializar(o: Oportunidade) -> dict:
         "id": o.id, "empresa": o.empresa.razao_social if o.empresa else None, "empresa_id": o.empresa_id,
         "pessoa": o.pessoa.nome if o.pessoa else None, "vertical_alvo": o.vertical_alvo,
         "verticais_atuais": o.verticais_atuais, "score": o.score, "componentes": o.componentes,
-        "motivos": o.motivos, "ponte": o.ponte_email, "status": o.status,
+        "motivos": o.motivos, "ponte": o.ponte_email, "responsavel": o.responsavel_email, "status": o.status,
     }
 
 

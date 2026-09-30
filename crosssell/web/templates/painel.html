@@ -19,7 +19,7 @@
   <button>Filtrar</button>
 </form>
 <div class="card scroll"><table>
-<tr><th>Score</th><th>Cliente</th><th>Hoje</th><th>Oferecer</th><th>Por quê</th><th>Quem apresenta</th><th>Status</th></tr>
+<tr><th>Score</th><th>Cliente</th><th>Hoje</th><th>Oferecer</th><th>Por quê</th><th>Quem apresenta</th><th>Quem atende</th><th>Status</th></tr>
 {% for o in oportunidades %}
 <tr>
   <td><b>{{ o.score }}</b><div class="bar"><i style="width:{{ o.score }}%"></i></div></td>
@@ -29,12 +29,13 @@
   <td><span class="tag {{ o.vertical_alvo }}">{{ LABEL[o.vertical_alvo] }}</span></td>
   <td class="small"><ul>{% for m in o.motivos %}<li>{{ m }}</li>{% endfor %}</ul></td>
   <td class="small">{{ o.ponte_email or "—" }}</td>
+  <td class="small">{{ o.responsavel_email or "a definir" }}</td>
   <td><form class="inline" method="post" action="/oportunidades/{{ o.id }}/status">
     <input type="hidden" name="voltar" value="/?vertical={{ vertical or '' }}&status={{ status or '' }}">
     <select name="status" onchange="this.form.submit()">{% for s in status_opcoes %}<option {% if s == o.status %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
   </form></td>
 </tr>
-{% else %}<tr><td colspan="7" class="mute">Nenhuma oportunidade. Importe dados e clique em Recalcular.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="8" class="mute">Nenhuma oportunidade. Importe dados e clique em Recalcular.</td></tr>{% endfor %}
 </table></div>
 
 <h2>Importar exportação</h2>

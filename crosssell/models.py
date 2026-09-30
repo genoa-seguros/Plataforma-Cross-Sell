@@ -79,7 +79,8 @@ class UsuarioInterno(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(unique=True)
     nome: Mapped[str]
-    vertical: Mapped[str]
+    verticais: Mapped[list] = mapped_column(JSON, default=list)
+    lider: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class Negocio(Base):
@@ -148,6 +149,7 @@ class Oportunidade(Base):
     componentes: Mapped[dict] = mapped_column(JSON, default=dict)
     motivos: Mapped[list] = mapped_column(JSON, default=list)
     ponte_email: Mapped[str | None]  # usuário interno com melhor relação para apresentar
+    responsavel_email: Mapped[str | None]  # líder/equipe da vertical-alvo que vai atender
     # nova | em_andamento | convertida | descartada
     status: Mapped[str] = mapped_column(default="nova")
     calculado_em: Mapped[datetime] = mapped_column(DateTime, default=_now)

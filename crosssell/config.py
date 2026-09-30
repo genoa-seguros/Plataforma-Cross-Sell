@@ -38,6 +38,25 @@ class Settings(BaseSettings):
             return {}
         return yaml.safe_load(self.verticais_file.read_text(encoding="utf-8")) or {}
 
+    def usuarios(self) -> list[dict]:
+        """Usuários internos normalizados: email, nome, verticais, lider."""
+        saida = []
+        for u in self.verticais_config().get("usuarios") or []:
+            verticais = u.get("verticais") or ([u["vertical"]] if u.get("vertical") else [])
+            saida.append({
+                "email": u["email"].strip().lower(),
+                "nome": u.get("nome") or u["email"].split("@")[0],
+                "verticais": list(verticais),
+                "lider": list(u.get("lider") or []),
+            })
+        return saida
+
+    def responsaveis(self, vertical: str) -> list[str]:
+        """Quem recebe oportunidades da vertical: o(s) líder(es) ou, sem líder, toda a equipe."""
+        equipe = [u for u in self.usuarios() if vertical in u["verticais"]]
+        lideres = [u["email"] for u in equipe if vertical in u["lider"]]
+        return lideres or [u["email"] for u in equipe]
+
 
 @lru_cache
 def get_settings() -> Settings:

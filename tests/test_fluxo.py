@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from crosssell.connectors import email_m365, enriquecimento, pipedrive, planilhas
-from crosssell.models import Empresa, Negocio, Oportunidade, Pessoa
+from crosssell.models import Empresa, Interacao, Negocio, Oportunidade, Pessoa
 from crosssell.scoring import oportunidades, relacionamento
 
 CNPJ = "14.069.185/0001-03"
@@ -22,10 +22,10 @@ def _pipedrive_transport():
                            "custom_fields": {"4f808fee58c9a509b20237a2ffb8b3f169293b0f": CNPJ}}],
         "persons": [{"id": 10, "name": "Ana Souza", "org_id": 2, "job_title": "Diretora Financeira",
                      "emails": [{"value": "ana@homeagent.com.br", "primary": True}]}],
-        # pipeline 31 = Linhas Financeiras (ganho), pipeline 1 = RE (aberto)
-        "deals": [{"id": 100, "title": "D&O Home Agent", "pipeline_id": 31, "status": "won", "value": 50000,
+        # pipeline 40 = Linhas Financeiras (ganho), pipeline 29 = RE (aberto)
+        "deals": [{"id": 100, "title": "D&O Home Agent", "pipeline_id": 40, "status": "won", "value": 50000,
                    "org_id": 2, "person_id": 10, "owner_id": 1, "won_time": "2025-12-01 10:00:00"},
-                  {"id": 101, "title": "Patrimonial", "pipeline_id": 1, "status": "open", "org_id": 2, "owner_id": 1},
+                  {"id": 101, "title": "Patrimonial", "pipeline_id": 29, "status": "open", "org_id": 2, "owner_id": 1},
                   {"id": 102, "title": "Sem vertical", "pipeline_id": 999, "status": "open"}],
     }
 
@@ -64,7 +64,7 @@ def _carregar(db, settings):
     planilhas.importar_quiver(db, settings, quiver_csv, "quiver.csv")
     enriquecimento.enriquecer_todas(db, http=httpx.Client(transport=_receita_transport()))
 
-    u = "rodrigo.pedroni@innoaseguros.com.br"
+    u = "pamela.silva@innoaseguros.com.br"
     msgs = []
     for d in range(0, 60, 4):  # conversa recorrente e recíproca com a Ana
         t = (AGORA - timedelta(days=d)).isoformat() + "Z"
@@ -74,7 +74,7 @@ def _carregar(db, settings):
     msgs.append({"message_id": "x1", "thread_id": "tx", "data": AGORA.isoformat(), "de": "rh@homeagent.com.br", "para": [u]})
     email_m365.registrar_mensagens(db, settings, u, msgs)
     relacionamento.calcular(db, agora=AGORA)
-    oportunidades.calcular(db, hoje=HOJE)
+    oportunidades.calcular(db, hoje=HOJE, settings=settings)
 
 
 def test_fluxo_completo(db, settings):
@@ -97,14 +97,35 @@ def test_fluxo_completo(db, settings):
     assert not any(k[0] == home.id and k[2] in ("ramos_elementares", "saude", "linhas_financeiras") for k in ops)
     # Ana (diretora, ponto focal) -> Linhas Pessoais, apresentada por quem fala com ela.
     op_ana = ops[(home.id, ana.id, "linhas_pessoais")]
-    assert op_ana.ponte_email == "rodrigo.pedroni@innoaseguros.com.br"
+    assert op_ana.ponte_email == "pamela.silva@innoaseguros.com.br"
+    assert op_ana.responsavel_email is None  # Linhas Pessoais ainda sem equipe no config
     # Sócio Carlos já é cliente PF no Quiver -> não duplica oportunidade de LP.
     carlos_socio = db.scalar(select(Pessoa).where(Pessoa.fonte == "receita"))
     assert (home.id, carlos_socio.id, "linhas_pessoais") not in ops
 
     outra = db.scalar(select(Empresa).where(Empresa.cnpj == "11444777000161"))
-    assert (outra.id, None, "ramos_elementares") in ops
-    assert (outra.id, None, "linhas_financeiras") in ops
+    assert ops[(outra.id, None, "ramos_elementares")].responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
+    assert ops[(outra.id, None, "linhas_financeiras")].responsavel_email == "victor.boldrini@innoaseguros.com.br"
+
+
+def test_responsaveis(settings):
+    assert settings.responsaveis("linhas_financeiras") == ["victor.boldrini@innoaseguros.com.br"]
+    assert settings.responsaveis("ramos_elementares") == ["bruno.rodrigues@innoaseguros.com.br"]
+    # Saúde sem líder definido -> equipe inteira
+    assert set(settings.responsaveis("saude")) == {"pedro.acciari@innoaseguros.com.br", "pamela.silva@innoaseguros.com.br"}
+
+
+def test_ponte_da_propria_vertical_conduz_direto(db, settings):
+    _carregar(db, settings)
+    outra = db.scalar(select(Empresa).where(Empresa.cnpj == "11444777000161"))
+    db.add(Interacao(message_id="p1", data=AGORA, usuario_email="pedro.acciari@innoaseguros.com.br",
+                     email_externo="fin@outra.com.br", direcao="recebido", empresa_id=outra.id))
+    db.commit()
+    oportunidades.calcular(db, hoje=HOJE, settings=settings)
+    op = db.scalar(select(Oportunidade).where(Oportunidade.empresa_id == outra.id,
+                                              Oportunidade.vertical_alvo == "linhas_financeiras"))
+    assert op.ponte_email == "pedro.acciari@innoaseguros.com.br"
+    assert any("pode conduzir direto" in m for m in op.motivos)
 
 
 def test_renovacao_proxima_aumenta_momento(db, settings):
@@ -127,7 +148,7 @@ def test_status_trabalhado_sobrevive_ao_recalculo(db, settings):
     o = db.scalars(select(Oportunidade)).first()
     o.status = "em_andamento"
     db.commit()
-    oportunidades.calcular(db, hoje=HOJE)
+    oportunidades.calcular(db, hoje=HOJE, settings=settings)
     assert db.get(Oportunidade, o.id).status == "em_andamento"
 
 

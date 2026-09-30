@@ -2,11 +2,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import typer
-from sqlalchemy import select
 
 from crosssell.config import get_settings
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import UsuarioInterno
 
 app = typer.Typer(help="Plataforma de Cross Sell Innoa")
 
@@ -19,12 +17,9 @@ def _db():
 @app.command()
 def initdb():
     """Cria as tabelas e carrega os usuários internos do config."""
-    db = _db()
-    for u in get_settings().verticais_config().get("usuarios", []):
-        if not db.scalar(select(UsuarioInterno).where(UsuarioInterno.email == u["email"].lower())):
-            db.add(UsuarioInterno(email=u["email"].lower(), nome=u["nome"], vertical=u["vertical"]))
-    db.commit()
-    typer.echo("ok")
+    from crosssell.pipeline import carregar_usuarios
+
+    typer.echo(f"{carregar_usuarios(_db(), get_settings())} usuários carregados")
 
 
 @app.command()

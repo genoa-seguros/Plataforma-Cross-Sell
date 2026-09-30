@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from crosssell.config import VERTICAL_LABEL
+from crosssell.config import VERTICAL_LABEL, Settings, get_settings
 from crosssell.models import Empresa, Interacao, Negocio, Oportunidade, Pessoa
 from crosssell.scoring.relacionamento import verticais_vigentes
 
@@ -95,8 +95,11 @@ def _score(rel: float, fit: float, mom: float) -> float:
     return round(100 * (PESO_REL * rel + PESO_FIT * fit + PESO_MOM * mom), 1)
 
 
-def calcular(db: Session, hoje: date | None = None) -> dict:
+def calcular(db: Session, hoje: date | None = None, settings: Settings | None = None) -> dict:
     hoje = hoje or date.today()
+    settings = settings or get_settings()
+    nomes = {u["email"]: u["nome"] for u in settings.usuarios()}
+    equipe = {v: {u["email"] for u in settings.usuarios() if v in u["verticais"]} for v in VERTICAL_LABEL}
     candidatas: dict[tuple, dict] = {}
 
     # Clientes PF (Linhas Pessoais) por nome, para cruzar com sócios do QSA.
@@ -156,8 +159,13 @@ def calcular(db: Session, hoje: date | None = None) -> dict:
         if o is None:
             o = Oportunidade(empresa_id=chave[0], pessoa_id=chave[1], vertical_alvo=chave[2])
             db.add(o)
-        o.score, o.motivos, o.componentes, o.verticais_atuais = c["score"], c["motivos"], c["componentes"], c["atuais"]
+        o.score, o.componentes, o.verticais_atuais = c["score"], c["componentes"], c["atuais"]
         o.ponte_email = _ponte(db, chave[0], chave[1])
+        o.responsavel_email = ", ".join(settings.responsaveis(chave[2])) or None
+        o.motivos = list(c["motivos"])
+        if o.ponte_email and o.ponte_email in equipe.get(chave[2], ()):
+            o.motivos.append(f"{nomes.get(o.ponte_email, o.ponte_email)} já fala com o cliente e atua em "
+                             f"{VERTICAL_LABEL[chave[2]]} — pode conduzir direto")
         o.calculado_em = agora
     # Oportunidades que deixaram de existir (ex.: cliente fechou a vertical) e não foram trabalhadas.
     for o in existentes.values():

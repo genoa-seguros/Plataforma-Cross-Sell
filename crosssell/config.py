@@ -1,0 +1,44 @@
+from functools import lru_cache
+from pathlib import Path
+
+import yaml
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+VERTICAIS = ("linhas_financeiras", "saude", "ramos_elementares", "linhas_pessoais")
+VERTICAL_LABEL = {
+    "linhas_financeiras": "Linhas Financeiras",
+    "saude": "Saúde",
+    "ramos_elementares": "Ramos Elementares",
+    "linhas_pessoais": "Linhas Pessoais",
+}
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = "sqlite:///./crosssell.db"
+    verticais_file: Path = Path("config/verticais.yaml")
+
+    pipedrive_api_token: str = ""
+    pipedrive_company_domain: str = "api"
+    pipedrive_cnpj_field: str = "4f808fee58c9a509b20237a2ffb8b3f169293b0f"
+
+    ms_tenant_id: str = ""
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+
+    internal_domains: str = "innoaseguros.com.br"
+
+    @property
+    def internal_domain_set(self) -> set[str]:
+        return {d.strip().lower() for d in self.internal_domains.split(",") if d.strip()}
+
+    def verticais_config(self) -> dict:
+        if not self.verticais_file.exists():
+            return {}
+        return yaml.safe_load(self.verticais_file.read_text(encoding="utf-8")) or {}
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

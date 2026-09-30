@@ -1,0 +1,47 @@
+# Mapeamento de fontes -> verticais.
+# Verticais: linhas_financeiras | saude | ramos_elementares | linhas_pessoais
+
+pipedrive:
+  # pipeline_id -> vertical. IDs existentes hoje no Pipedrive: 1, 23, 29, 31, 34, 38, 39, 40.
+  # PREENCHER: confirmar qual pipeline pertence a qual vertical.
+  pipelines:
+    1: ramos_elementares
+    23: saude
+    29: ramos_elementares
+    31: linhas_financeiras
+    34: saude
+    38: linhas_financeiras
+    39: linhas_financeiras
+    40: ramos_elementares
+
+# Usuários internos que atuam em cada vertical (para leitura de e-mail e atribuição).
+usuarios:
+  - email: rodrigo.pedroni@innoaseguros.com.br
+    nome: Rodrigo Pedroni
+    vertical: linhas_financeiras
+
+# Mapeamento de colunas das planilhas exportadas. Os nomes à direita são os
+# cabeçalhos da planilha (comparação sem acento/maiúsculas).
+importacao:
+  zeca:
+    cnpj: [cnpj, cnpj estipulante, documento]
+    razao_social: [razao social, estipulante, empresa, cliente]
+    produto: [produto, plano, ramo]
+    operadora: [operadora, seguradora]
+    numero_apolice: [apolice, contrato, numero contrato, numero apolice]
+    inicio_vigencia: [inicio vigencia, vigencia inicial, inicio]
+    fim_vigencia: [fim vigencia, vigencia final, renovacao, aniversario]
+    premio: [premio, faturamento, valor, premio mensal]
+    vidas: [vidas, beneficiarios, quantidade vidas]
+    status: [status, situacao]
+  quiver:
+    documento: [cpf/cnpj, cpf, cnpj, documento]
+    nome: [cliente, nome, segurado]
+    email: [email, e-mail]
+    produto: [produto, ramo]
+    seguradora: [seguradora, cia]
+    numero_apolice: [apolice, numero apolice]
+    inicio_vigencia: [inicio vigencia, vigencia inicial]
+    fim_vigencia: [fim vigencia, vigencia final]
+    premio: [premio, premio liquido, premio total]
+    status: [status, situacao]

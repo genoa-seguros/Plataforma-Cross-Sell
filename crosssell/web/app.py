@@ -56,6 +56,7 @@ def _serializar(o: Oportunidade) -> dict:
 def painel(request: Request, vertical: str | None = None, status: str | None = "nova", db: Session = Depends(get_db)):
     empresas = db.scalars(select(Empresa)).all()
     clientes = [(e, verticais_vigentes(e.negocios)) for e in empresas]
+    prospeccao = sum(1 for e, v in clientes if not v and any(n.status == "aberto" for n in e.negocios))
     clientes = [(e, v) for e, v in clientes if v]
     dist = Counter(len(v) for _, v in clientes)
     por_vertical = {v: sum(1 for _, vs in clientes if v in vs) for v in VERTICAIS}
@@ -64,7 +65,7 @@ def painel(request: Request, vertical: str | None = None, status: str | None = "
         .group_by(Oportunidade.vertical_alvo)).all())
     ultimas = db.scalars(select(SyncLog).order_by(SyncLog.id.desc()).limit(8)).all()
     return templates.TemplateResponse(request, "painel.html", {
-        "clientes": len(clientes), "dist": dist, "por_vertical": por_vertical, "abertas": abertas,
+        "clientes": len(clientes), "prospeccao": prospeccao, "dist": dist, "por_vertical": por_vertical, "abertas": abertas,
         "oportunidades": _oportunidades(db, vertical, status), "vertical": vertical, "status": status,
         "status_opcoes": STATUS_OPORTUNIDADE, "syncs": ultimas,
     })
@@ -80,7 +81,14 @@ def empresa(request: Request, empresa_id: int, db: Session = Depends(get_db)):
     for v in VERTICAIS:
         negs = [n for n in e.negocios if n.vertical == v]
         negs += [n for p in e.pessoas for n in p.negocios if n.vertical == v]
-        estado[v] = "cliente" if any(n.vigente for n in negs) else ("aberto" if any(n.status == "aberto" for n in negs) else "")
+        if any(n.vigente for n in negs):
+            estado[v] = "cliente"
+        elif any(n.status == "aberto" for n in negs):
+            estado[v] = "aberto"
+        elif any(n.ex_cliente for n in negs):
+            estado[v] = "ex"
+        else:
+            estado[v] = ""
     ops = db.scalars(select(Oportunidade).where(Oportunidade.empresa_id == e.id).order_by(Oportunidade.score.desc())).all()
     return templates.TemplateResponse(request, "empresa.html", {
         "e": e, "pessoas": pessoas, "estado": estado, "oportunidades": ops, "status_opcoes": STATUS_OPORTUNIDADE,

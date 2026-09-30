@@ -7,7 +7,7 @@ com fallback para domínio de e-mail e nome normalizado) e a Pessoa
 vira um registro de Negocio.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -112,7 +112,24 @@ class Negocio(Base):
 
     @property
     def vigente(self) -> bool:
-        return self.status in ("ganho", "ativo")
+        """Cliente de fato: negócio ganho/apólice ativa e ainda dentro da vigência.
+
+        Negócio aberto no funil NÃO torna a empresa cliente.
+        """
+        if self.status not in ("ganho", "ativo"):
+            return False
+        hoje = date.today()
+        if self.fim_vigencia:
+            return self.fim_vigencia >= hoje
+        if self.fonte == "pipedrive" and self.inicio_vigencia:
+            # Sem fim de vigência informado: assume apólice anual (+1 mês de tolerância).
+            return self.inicio_vigencia >= hoje - timedelta(days=395)
+        return True
+
+    @property
+    def ex_cliente(self) -> bool:
+        """Já foi cliente nesta vertical (vigência vencida ou apólice cancelada)."""
+        return self.status == "cancelado" or (self.status in ("ganho", "ativo") and not self.vigente)
 
 
 class Interacao(Base):

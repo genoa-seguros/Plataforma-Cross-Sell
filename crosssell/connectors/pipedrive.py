@@ -112,11 +112,15 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
         neg.vertical = vertical
         neg.titulo = d.get("title")
         neg.status = STATUS_MAP.get(d.get("status"), d.get("status") or "aberto")
+        # Negócio "ganho" que na verdade registra um cancelamento (ex.: "Medmal 2026 Cancelamento").
+        if neg.status == "ganho" and ("cancelamento" in (d.get("title") or "").lower() or (d.get("value") or 0) < 0):
+            neg.status = "cancelado"
         neg.valor = d.get("value")
         neg.empresa_id = empresa.id if empresa else None
         neg.pessoa_id = pessoa.id if pessoa else None
-        neg.inicio_vigencia = parse_data(d.get("won_time")) or neg.inicio_vigencia
-        neg.fim_vigencia = parse_data(d.get("expected_close_date")) if neg.status == "aberto" else neg.fim_vigencia
+        campos = d.get("custom_fields") or {}
+        neg.inicio_vigencia = parse_data(campos.get(settings.pipedrive_inicio_vigencia_field)) or parse_data(d.get("won_time"))
+        neg.fim_vigencia = parse_data(campos.get(settings.pipedrive_fim_vigencia_field))
         neg.responsavel_email = donos.get(d.get("owner_id"))
         contagem["negocios"] += 1
 

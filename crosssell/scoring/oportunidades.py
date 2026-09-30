@@ -126,6 +126,11 @@ def calcular(db: Session, hoje: date | None = None, settings: Settings | None = 
             motivos = [f"cliente de {', '.join(VERTICAL_LABEL[v] for v in atuais)}"]
             motivos += [f"sócio {s.nome} é cliente de Linhas Pessoais" for s in socios_pf]
             motivos += mot_fit + mot_mom
+            ex = [n for n in e.negocios if n.vertical == alvo and n.ex_cliente]
+            if ex:
+                fim = max((n.fim_vigencia for n in ex if n.fim_vigencia), default=None)
+                motivos.append(f"já foi cliente de {VERTICAL_LABEL[alvo]}"
+                               + (f" até {fim:%m/%Y}" if fim else "") + " — reconquista")
             if e.score_componentes.get("acesso_decisor"):
                 motivos.append("relação ativa com decisor")
             candidatas[(e.id, None, alvo)] = {

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block corpo %}
 <div class="grid">
-  <div class="card"><div class="mute small">Clientes (≥1 vertical)</div><div class="kpi">{{ clientes }}</div></div>
+  <div class="card"><div class="mute small">Clientes (apólice vigente)</div><div class="kpi">{{ clientes }}</div></div>
+  <div class="card"><div class="mute small">Só em prospecção</div><div class="kpi">{{ prospeccao }}</div>
+    <div class="small mute">negócio aberto no funil, nenhum ganho vigente</div></div>
   <div class="card"><div class="mute small">Clientes de 1 só vertical</div><div class="kpi">{{ dist.get(1, 0) }}</div>
     <div class="small mute">{% if clientes %}{{ (100 * dist.get(1, 0) / clientes) | round | int }}% da base{% endif %}</div></div>
   {% for v in VERTICAIS %}

@@ -9,7 +9,7 @@ pipedrive:
     23: saude                # Saúde / Vida (Pipo)
     29: ramos_elementares    # Eventos, Transportes
     34: saude                # "Saúde 2025", criados via API (Pipo)
-    38: saude                # Leads Flash Saúde — CONFIRMAR
+    38: saude                # Leads Flash Saúde
     40: linhas_financeiras   # Seguro Garantia
     # 31: linhas_financeiras # M&A (parado desde 2024) — CONFIRMAR
     # 39: linhas_financeiras # Canais/parcerias (Cyber + outros) — CONFIRMAR

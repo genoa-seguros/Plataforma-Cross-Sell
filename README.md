@@ -47,7 +47,13 @@ LinkedIn ──┘    CPF, nome)      └─ Oportunidades de cross sell ─► 
      ela (10%).
    - Empresa: contato mais forte (40%), nº de contatos ativos (20%), acesso a um
      decisor (sócio/C-level/diretor) (20%) e presença multi-vertical (20%).
-5. **Oportunidades.** Para cada cliente, cada vertical em que ele ainda não é cliente
+5. **Quem é cliente.** Só conta como cliente quem tem negócio **ganho** (Pipedrive) ou
+   apólice **ativa** (Zeca/Quiver) **dentro da vigência**. A vigência vem dos campos
+   customizados "início/fim de vigência" do negócio no Pipedrive. Negócio aberto no funil
+   é prospecção. Negócio "ganho" que é cancelamento (título com "cancelamento" ou valor
+   negativo) não conta. Vigência vencida marca a empresa como ex-cliente, e isso vira
+   motivo de **reconquista**.
+6. **Oportunidades.** Para cada cliente, cada vertical em que ele ainda não é cliente
    e não tem negócio aberto:
    `score = 45% relacionamento + 30% aderência + 25% momento`
    - *Aderência*: porte, nº de funcionários, capital social e CNAE (ex.: saúde para
@@ -62,17 +68,22 @@ LinkedIn ──┘    CPF, nome)      └─ Oportunidades de cross sell ─► 
 
 ## Sobre o LinkedIn
 
-A API oficial do LinkedIn não permite listar os funcionários de outras empresas, e
-raspagem viola os termos de uso (houve processos em 2025 contra fornecedores que
-faziam isso). O caminho viável:
+O LinkedIn não tem API aberta de Sales Navigator. A integração oficial (SNAP) é
+restrita a parceiros como Salesforce, Dynamics, HubSpot, Outreach e Gong. Não existe
+sync nativo com o Pipedrive, e o Sales Navigator não exporta listas de leads.
+Ferramentas que raspam o LinkedIn violam os termos de uso e arriscam a conta.
+O que dá para fazer de forma legítima:
 
 - **Receita Federal (já implementado):** porte, CNAE, capital social e **quadro
   societário**. É gratuito e já traz os decisores.
-- **Sales Navigator:** exportar listas de leads/contas (CSV) e importar pelo painel
-  (`LinkedIn / Sales Navigator`). O importador reconhece os cabeçalhos mais comuns.
-- **Provedor licenciado de dados B2B** (ex.: Econodata, Speedio, Apollo, Lusha): a
-  interface `ProvedorPessoas` em `crosssell/connectors/enriquecimento.py` serve para
-  plugar via API.
+- **Plataforma → Sales Navigator:** exportar as contas-alvo em CSV (nome, site) e
+  subir como *Account List* no Sales Navigator (Advanced/Advanced Plus, até 1.000
+  contas). O Sales Navigator passa a mostrar os decisores e os alertas dessas empresas.
+- **Conexões de cada usuário:** cada pessoa da equipe pode baixar as próprias conexões
+  (LinkedIn → Configurações → Privacidade de dados → Obter cópia dos dados → Conexões).
+  O arquivo mostra quem da Innoa está conectado a quem no cliente.
+- **Listas montadas manualmente** ou vindas de um provedor licenciado de dados B2B podem
+  ser importadas pelo painel (`LinkedIn / Sales Navigator`).
 
 ## Instalação
 

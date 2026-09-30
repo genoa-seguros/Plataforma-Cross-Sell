@@ -11,22 +11,42 @@ from crosssell.models import Empresa, Interacao, Negocio, Oportunidade, Pessoa
 from crosssell.scoring import oportunidades, relacionamento
 
 CNPJ = "14.069.185/0001-03"
-HOJE = date(2026, 9, 30)
-AGORA = datetime(2026, 9, 30, 12)
+HOJE = date.today()
+AGORA = datetime.combine(HOJE, datetime.min.time()).replace(hour=12)
+INI = "4f808fee58c9a509b20237a2ffb8b3f169293b0f"
+VIG_INI, VIG_FIM = "3ee3bdd07bab71fba84767ffb7d5d89f49b1f3d3", "0d4a74f324a5c95618a51042c3185da9c8846bc3"
+
+
+def _d(dias: int) -> str:
+    return (HOJE + timedelta(days=dias)).isoformat()
+
+
+def _br(dias: int) -> str:
+    return (HOJE + timedelta(days=dias)).strftime("%d/%m/%Y")
 
 
 def _pipedrive_transport():
     dados = {
         "organizations": [{"id": 2, "name": "Home Agent Teleserviços S.A.", "website": "https://www.homeagent.com.br",
                            "employee_count": 800,
-                           "custom_fields": {"4f808fee58c9a509b20237a2ffb8b3f169293b0f": CNPJ}}],
+                           "custom_fields": {INI: CNPJ}},
+                          {"id": 3, "name": "Prospect Ltda", "custom_fields": {}},
+                          {"id": 4, "name": "Ex Cliente SA", "custom_fields": {INI: "11.222.333/0001-81"}}],
         "persons": [{"id": 10, "name": "Ana Souza", "org_id": 2, "job_title": "Diretora Financeira",
                      "emails": [{"value": "ana@homeagent.com.br", "primary": True}]}],
         # pipeline 40 = Linhas Financeiras (ganho), pipeline 29 = RE (aberto)
-        "deals": [{"id": 100, "title": "D&O Home Agent", "pipeline_id": 40, "status": "won", "value": 50000,
-                   "org_id": 2, "person_id": 10, "owner_id": 1, "won_time": "2025-12-01 10:00:00"},
+        "deals": [{"id": 100, "title": "D&O 2026", "pipeline_id": 40, "status": "won", "value": 50000,
+                   "org_id": 2, "person_id": 10, "owner_id": 1, "won_time": _d(-300) + " 10:00:00",
+                   "custom_fields": {VIG_INI: _d(-303), VIG_FIM: _d(62)}},
                   {"id": 101, "title": "Patrimonial", "pipeline_id": 29, "status": "open", "org_id": 2, "owner_id": 1},
-                  {"id": 102, "title": "Sem vertical", "pipeline_id": 999, "status": "open"}],
+                  {"id": 102, "title": "Sem vertical", "pipeline_id": 999, "status": "open"},
+                  # Org 3: só tem negócio aberto em RE -> prospecção, não é cliente
+                  {"id": 103, "title": "Empresarial", "pipeline_id": 29, "status": "open", "org_id": 3},
+                  # Org 4: D&O ganho mas vencido + cancelamento "ganho" -> ex-cliente de LF
+                  {"id": 104, "title": "D&O 2024", "pipeline_id": 1, "status": "won", "value": 9000, "org_id": 4,
+                   "custom_fields": {VIG_INI: _d(-700), VIG_FIM: _d(-335)}},
+                  {"id": 105, "title": "Cyber 2025 Cancelamento", "pipeline_id": 1, "status": "won", "value": -500,
+                   "org_id": 4, "custom_fields": {VIG_INI: _d(-100), VIG_FIM: _d(265)}}],
     }
 
     def handler(req: httpx.Request):
@@ -53,8 +73,9 @@ def _carregar(db, settings):
     pipedrive.sincronizar(db, settings, pipedrive.PipedriveClient("x", transport=_pipedrive_transport()))
     zeca_csv = (
         "CNPJ;Razão Social;Operadora;Contrato;Início Vigência;Fim Vigência;Prêmio;Vidas;Status\n"
-        f"{CNPJ};Home Agent;Bradesco;Z-1;01/01/2026;01/12/2026;120.000,00;700;Ativo\n"
-        "11.444.777/0001-61;Outra Empresa Ltda;Amil;Z-2;01/03/2026;01/03/2027;10.000,00;40;Ativo\n"
+        f"{CNPJ};Home Agent;Bradesco;Z-1;{_br(-303)};{_br(62)};120.000,00;700;Ativo\n"
+        f"11.444.777/0001-61;Outra Empresa Ltda;Amil;Z-2;{_br(-200)};{_br(165)};10.000,00;40;Ativo\n"
+        f"11.222.333/0001-81;Ex Cliente SA;Amil;Z-3;{_br(-200)};{_br(165)};5.000,00;20;Ativo\n"
     ).encode()
     planilhas.importar_zeca(db, settings, zeca_csv, "zeca.csv")
     quiver_csv = (
@@ -81,7 +102,7 @@ def test_fluxo_completo(db, settings):
     _carregar(db, settings)
 
     empresas = db.scalars(select(Empresa)).all()
-    assert len(empresas) == 2  # Pipedrive e Zeca unificados pelo CNPJ
+    assert len(empresas) == 4  # Pipedrive e Zeca unificados pelo CNPJ
     home = db.scalar(select(Empresa).where(Empresa.cnpj == "14069185000103"))
     assert {n.vertical for n in home.negocios if n.vigente} == {"linhas_financeiras", "saude"}
     assert home.porte == "DEMAIS"
@@ -106,6 +127,23 @@ def test_fluxo_completo(db, settings):
     outra = db.scalar(select(Empresa).where(Empresa.cnpj == "11444777000161"))
     assert ops[(outra.id, None, "ramos_elementares")].responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
     assert ops[(outra.id, None, "linhas_financeiras")].responsavel_email == "victor.boldrini@innoaseguros.com.br"
+
+
+def test_funil_nao_e_cliente(db, settings):
+    _carregar(db, settings)
+    prospect = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 3))
+    assert not relacionamento.verticais_vigentes(prospect.negocios)
+    assert not db.scalars(select(Oportunidade).where(Oportunidade.empresa_id == prospect.id)).all()
+
+
+def test_vigencia_vencida_e_cancelamento(db, settings):
+    _carregar(db, settings)
+    ex = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 4))
+    assert relacionamento.verticais_vigentes(ex.negocios) == {"saude"}  # só o Zeca está vigente
+    assert db.scalar(select(Negocio).where(Negocio.id_externo == "105")).status == "cancelado"
+    op = db.scalar(select(Oportunidade).where(Oportunidade.empresa_id == ex.id,
+                                              Oportunidade.vertical_alvo == "linhas_financeiras"))
+    assert any("reconquista" in m for m in op.motivos)
 
 
 def test_responsaveis(settings):
@@ -139,7 +177,7 @@ def test_zeca_marca_migracao_como_cancelada(db, settings):
     _carregar(db, settings)
     csv2 = "CNPJ;Razão Social;Operadora;Contrato;Status\n11.444.777/0001-61;Outra;Amil;Z-2;Ativo\n".encode()
     res = planilhas.importar_zeca(db, settings, csv2, "zeca2.csv")
-    assert res["canceladas_por_ausencia"] == 1
+    assert res["canceladas_por_ausencia"] == 2  # Z-1 e Z-3 sumiram do arquivo
     assert db.scalar(select(Negocio).where(Negocio.id_externo == "Z-1")).status == "cancelado"
 
 

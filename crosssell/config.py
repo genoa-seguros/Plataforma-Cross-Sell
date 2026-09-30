@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     pipedrive_api_token: str = ""
     pipedrive_company_domain: str = "api"
     pipedrive_cnpj_field: str = "4f808fee58c9a509b20237a2ffb8b3f169293b0f"
+    # Campos customizados de negócio com a vigência da apólice.
+    pipedrive_inicio_vigencia_field: str = "3ee3bdd07bab71fba84767ffb7d5d89f49b1f3d3"
+    pipedrive_fim_vigencia_field: str = "0d4a74f324a5c95618a51042c3185da9c8846bc3"
 
     ms_tenant_id: str = ""
     ms_client_id: str = ""

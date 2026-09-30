@@ -5,7 +5,7 @@
 <div class="mute">{{ e.cnpj or "sem CNPJ" }}{% if e.porte %} · {{ e.porte }}{% endif %}{% if e.cnae %} · {{ e.cnae }}{% endif %}
   {% if e.cidade %} · {{ e.cidade }}/{{ e.uf }}{% endif %}{% if e.linkedin_url %} · <a href="{{ e.linkedin_url }}">LinkedIn</a>{% endif %}</div>
 <div style="margin:10px 0">{% for v in VERTICAIS %}
-  <span class="tag {{ v if estado[v] else 'off' }} {{ 'aberto' if estado[v] == 'aberto' else '' }}">{{ LABEL[v] }}{% if estado[v] == 'aberto' %} (em negociação){% endif %}</span>
+  <span class="tag {{ v if estado[v] in ('cliente', 'aberto') else 'off' }} {{ 'aberto' if estado[v] == 'aberto' else '' }}">{{ LABEL[v] }}{% if estado[v] == 'aberto' %} (em negociação, ainda não é cliente){% elif estado[v] == 'ex' %} (ex-cliente){% endif %}</span>
 {% endfor %}</div>
 
 <div class="grid">

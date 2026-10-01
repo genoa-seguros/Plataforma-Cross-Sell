@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 include = ["crosssell*"]
 
 [tool.setuptools.package-data]
-crosssell = ["web/templates/*.html"]
+crosssell = ["web/templates/*.html", "web/app.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -163,8 +163,9 @@ nodes = [
         "**Fetch Person**: Person URL `{{ $('Separar alvos').first().json.linkedin_url }}`; *Additional Data*: só Experience.\n\n"
         "**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. "
         "Ative *decision makers* e *posts*.\n\n"
-        "A Linked API responde de forma assíncrona: os nós **Aguardar** (Wait, *On Webhook Call*, "
-        "limite de 15 min) recebem o resultado.\n\n"
+        "A Linked API responde de forma assíncrona: em **todos** os nós da Linked API, preencha "
+        "*Webhook URL* com `{{ $execution.resumeUrl }}`. É esse endereço que acorda o nó **Aguardar** "
+        "(Wait, *On Webhook Call*, limite de 15 min) com o resultado.\n\n"
         "Em ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro "
         "ao nó **Registrar erro**."),
         w=520, h=420, cor=3),

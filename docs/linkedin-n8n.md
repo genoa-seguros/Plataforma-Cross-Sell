@@ -61,6 +61,10 @@ Ela é usada na entrada (nó 1) e na saída (nó 7). Pré-requisito: o nó da co
 | 6c | **Code** ("Mapear") | script abaixo, depois de 6a e 6b |
 | 7 | **HTTP Request** | POST para `{{ $('Webhook').first().json.body.callback_url }}`, *Authentication: Header Auth* (mesma credencial), *Body: JSON* = `{{ $json }}` |
 
+**Importante:** em todo nó da Linked API (Fetch e Search), preencha *Webhook URL* com
+`{{ $execution.resumeUrl }}`. A Linked API entrega o resultado nesse endereço, e é isso que acorda
+o nó **Aguardar** seguinte. Sem ele, o Aguardar espera os 15 minutos e segue vazio.
+
 O fluxo é linear, sem repetição, e termina sozinho. O ritmo é dado pelo tamanho do lote
 (`LINKEDIN_LOTE`) e pela própria Linked API, que espaça as ações da conta.
 

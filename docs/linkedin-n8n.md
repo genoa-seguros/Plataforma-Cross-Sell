@@ -10,7 +10,7 @@ Plataforma ─────(2) POST webhook──────▶ n8n ────
 ```
 
 1. A cada rotina (`crosssell rotina` ou `crosssell linkedin`), a plataforma separa até
-   `LINKEDIN_LOTE` alvos (padrão 30). São as empresas e os contatos dos negócios abertos que
+   `LINKEDIN_LOTE` alvos (padrão 10). São as empresas e os contatos dos negócios abertos que
    nunca foram lidos no LinkedIn ou foram lidos há mais de 90 dias.
 2. A plataforma chama o webhook do n8n com o lote e o endereço de retorno.
 3. O n8n responde na hora e consulta a Linked API alvo por alvo.
@@ -27,7 +27,7 @@ voltar dentro desse prazo, entra de novo na fila.
 N8N_LINKEDIN_WEBHOOK_URL=https://<seu-n8n>/webhook/crosssell-linkedin
 N8N_TOKEN=<token longo e aleatório; o mesmo vai no n8n>
 PLATAFORMA_URL=https://<endereço público da plataforma>
-LINKEDIN_LOTE=30
+LINKEDIN_LOTE=10
 ```
 
 Para gerar um token: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
@@ -55,13 +55,14 @@ Ela é usada na entrada (nó 1) e na saída (nó 7). Pré-requisito: o nó da co
 |---|---|---|
 | 1 | **Webhook** | POST, path `crosssell-linkedin`, *Authentication: Header Auth* (credencial acima), *Respond: Immediately* |
 | 2 | **Split Out** | campo `body.alvos` |
-| 3 | **Loop Over Items** | lote de 1 (um alvo por vez) |
-| 4 | **Wait** | 20 a 60 segundos (ritmo humano para a conta conectada) |
-| 5 | **Switch** em `tipo` | saídas `pessoa` e `empresa` |
+| 3 | **IF** ("É pessoa?") | `tipo` igual a `pessoa`: verdadeiro vai para Fetch Person, falso para Fetch Company |
 | 6a | **Linked API: Fetch Person** | URL = `linkedin_url`; se vier vazia, antes use *Search People* com `nome` + `empresa` e pegue o 1º resultado; ative *retrieve experience* |
 | 6b | **Linked API: Fetch Company** | URL = `linkedin_url` ou *Search Companies* com `nome`; ative *retrieve decision makers* e *retrieve posts* (até 5) |
 | 6c | **Code** ("Mapear") | script abaixo, depois de 6a e 6b |
-| 7 | **HTTP Request** | POST para `{{ $('Webhook').first().json.body.callback_url }}`, *Authentication: Header Auth* (mesma credencial), *Body: JSON* = `{{ $json }}`; volta para o nó 3 |
+| 7 | **HTTP Request** | POST para `{{ $('Webhook').first().json.body.callback_url }}`, *Authentication: Header Auth* (mesma credencial), *Body: JSON* = `{{ $json }}` |
+
+O fluxo é linear, sem repetição, e termina sozinho. O ritmo é dado pelo tamanho do lote
+(`LINKEDIN_LOTE`) e pela própria Linked API, que espaça as ações da conta.
 
 Nos nós 6a e 6b, ligue *On Error → Continue (using error output)* e envie a saída de erro para um
 **Set** com `id_alvo`, `tipo` e `erro = {{ $json.error.message }}`, que segue para o nó 7. Assim
@@ -73,7 +74,7 @@ a plataforma sabe que aquele alvo falhou.
 // Converte a resposta da Linked API no formato que a plataforma espera.
 // Os nomes dos campos variam entre versões: o pick() tenta alternativas.
 // Confira a saída dos nós 6a/6b na primeira execução e ajuste se precisar.
-const alvo = $('Loop Over Items').item.json;
+const alvo = $('Separar alvos').item.json;
 const r = $json.data ?? $json;
 const pick = (...caminhos) => {
   for (const c of caminhos) {
@@ -152,7 +153,7 @@ Respostas: `401` se o token estiver errado; `200` com a contagem do que foi apli
 ## Cuidados
 
 - A Linked API opera uma conta real do LinkedIn por um navegador na nuvem. Isso contraria os
-  termos de uso do LinkedIn, e a conta conectada pode ser restringida. O lote e o nó Wait
-  controlam o ritmo.
+  termos de uso do LinkedIn, e a conta conectada pode ser restringida. O tamanho do lote
+  controla o ritmo.
 - Guarde apenas dados profissionais e registre a finalidade (prospecção B2B e gestão de
   relacionamento) junto com o restante do tratamento de dados da plataforma.

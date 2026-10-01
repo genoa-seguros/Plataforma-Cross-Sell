@@ -34,43 +34,13 @@
       }
     },
     {
-      "id": "187ffe96-6504-515a-92b6-e7e0a30b0ddf",
-      "name": "Loop Over Items",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
-      "position": [
-        440,
-        300
-      ],
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
-      }
-    },
-    {
-      "id": "1e2a4a78-7c9c-56c3-a7b7-940ca5c12cdb",
-      "name": "Pausa",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        660,
-        380
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "amount": 30,
-        "unit": "seconds"
-      },
-      "webhookId": "cd80ec22-c860-562a-a858-fef097c46695"
-    },
-    {
       "id": "187035b8-c123-5379-adc7-e25c6a277175",
       "name": "É pessoa?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        880,
-        380
+        440,
+        300
       ],
       "parameters": {
         "conditions": {
@@ -101,8 +71,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1120,
-        280
+        680,
+        200
       ],
       "parameters": {}
     },
@@ -112,8 +82,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        1120,
-        480
+        680,
+        420
       ],
       "parameters": {}
     },
@@ -123,12 +93,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1360,
-        380
+        920,
+        300
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Loop Over Items').item.json;\nconst r = $json.data ?? $json;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: exp0.position || exp0.title || '',\n    empresa_atual: exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Separar alvos').item.json;\nconst r = $json.data ?? $json;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: exp0.position || exp0.title || '',\n    empresa_atual: exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
       }
     },
     {
@@ -137,8 +107,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1360,
-        640
+        920,
+        560
       ],
       "parameters": {
         "mode": "manual",
@@ -147,13 +117,13 @@
             {
               "id": "262bcaba-2399-5108-b930-fb55f7c20b1f",
               "name": "id_alvo",
-              "value": "={{ $('Loop Over Items').item.json.id_alvo }}",
+              "value": "={{ $('Separar alvos').item.json.id_alvo }}",
               "type": "string"
             },
             {
               "id": "b7280a22-6175-5612-b1d7-3499ad08f334",
               "name": "tipo",
-              "value": "={{ $('Loop Over Items').item.json.tipo }}",
+              "value": "={{ $('Separar alvos').item.json.tipo }}",
               "type": "string"
             },
             {
@@ -173,8 +143,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1600,
-        380
+        1160,
+        300
       ],
       "parameters": {
         "method": "POST",
@@ -187,7 +157,8 @@
         "options": {
           "timeout": 30000
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "865c89f6-753f-581f-ae07-84404d7f3d8e",
@@ -199,7 +170,7 @@
         -60
       ],
       "parameters": {
-        "content": "## CrossSell · LinkedIn\nA plataforma chama este **Webhook** com um lote de alvos; cada alvo é consultado na Linked API e o resultado volta para a plataforma.\n\n**Credencial** (*Header Auth*): nome `Authorization`, valor `Bearer <N8N_TOKEN>`. Selecione-a no **Webhook** e no **Devolver à plataforma**.\n\nAtive o fluxo e copie a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL` na plataforma.",
+        "content": "## CrossSell · LinkedIn\nA plataforma chama este **Webhook** com um lote de alvos; cada alvo é consultado na Linked API e o resultado volta para a plataforma. O fluxo é linear (sem repetição): termina sozinho.\n\n**Credencial** (*Header Auth*): nome `Authorization`, valor `Bearer <N8N_TOKEN>`. Selecione-a no **Webhook** e no **Devolver à plataforma**.\n\nAtive o fluxo e copie a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL` na plataforma.",
         "width": 620,
         "height": 300,
         "color": 5
@@ -211,8 +182,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1040,
-        60
+        600,
+        -160
       ],
       "parameters": {
         "content": "## ⚠ Trocar os 2 nós marcados\nSubstitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n**Fetch Person**: URL `{{ $json.linkedin_url }}`. Se vazia, use antes *Search People* com `{{ $json.nome }}` + `{{ $json.empresa }}` e pegue o 1º resultado. Ative *experience*.\n\n**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. Ative *decision makers* e *posts*.\n\nEm ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro ao nó **Registrar erro**.",
@@ -235,29 +206,6 @@
       ]
     },
     "Separar alvos": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Loop Over Items": {
-      "main": [
-        [],
-        [
-          {
-            "node": "Pausa",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pausa": {
       "main": [
         [
           {
@@ -324,17 +272,6 @@
         [
           {
             "node": "Devolver à plataforma",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Devolver à plataforma": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }

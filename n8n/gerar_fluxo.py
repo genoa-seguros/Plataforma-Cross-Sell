@@ -7,7 +7,7 @@ from pathlib import Path
 MAPEAR_JS = r"""// Converte a resposta da Linked API no formato que a plataforma espera.
 // Os nomes dos campos variam entre versões: o pick() tenta alternativas.
 // Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.
-const alvo = $('Loop Over Items').item.json;
+const alvo = $('Separar alvos').item.json;
 const r = $json.data ?? $json;
 const pick = (...caminhos) => {
   for (const c of caminhos) {
@@ -64,42 +64,39 @@ nodes = [
         "responseMode": "onReceived", "options": {}},
         webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/webhook"))),
     no("Separar alvos", "n8n-nodes-base.splitOut", 1, [220, 300], {"fieldToSplitOut": "body.alvos", "options": {}}),
-    no("Loop Over Items", "n8n-nodes-base.splitInBatches", 3, [440, 300], {"batchSize": 1, "options": {}}),
-    no("Pausa", "n8n-nodes-base.wait", 1.1, [660, 380], {"resume": "timeInterval", "amount": 30, "unit": "seconds"},
-       webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait"))),
-    no("É pessoa?", "n8n-nodes-base.if", 2, [880, 380], {
+    no("É pessoa?", "n8n-nodes-base.if", 2, [440, 300], {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
             "conditions": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/if")), "leftValue": "={{ $json.tipo }}",
                             "rightValue": "pessoa", "operator": {"type": "string", "operation": "equals"}}],
             "combinator": "and"},
         "options": {}}),
-    no("⚠ TROCAR: Linked API · Fetch Person", "n8n-nodes-base.noOp", 1, [1120, 280], {}),
-    no("⚠ TROCAR: Linked API · Fetch Company", "n8n-nodes-base.noOp", 1, [1120, 480], {}),
-    no("Mapear", "n8n-nodes-base.code", 2, [1360, 380], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
-    no("Registrar erro", "n8n-nodes-base.set", 3.4, [1360, 640], {
+    no("⚠ TROCAR: Linked API · Fetch Person", "n8n-nodes-base.noOp", 1, [680, 200], {}),
+    no("⚠ TROCAR: Linked API · Fetch Company", "n8n-nodes-base.noOp", 1, [680, 420], {}),
+    no("Mapear", "n8n-nodes-base.code", 2, [920, 300], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
+    no("Registrar erro", "n8n-nodes-base.set", 3.4, [920, 560], {
         "mode": "manual",
         "assignments": {"assignments": [
-            atribuicao("id_alvo", "={{ $('Loop Over Items').item.json.id_alvo }}"),
-            atribuicao("tipo", "={{ $('Loop Over Items').item.json.tipo }}"),
+            atribuicao("id_alvo", "={{ $('Separar alvos').item.json.id_alvo }}"),
+            atribuicao("tipo", "={{ $('Separar alvos').item.json.tipo }}"),
             atribuicao("erro", "={{ $json.error?.message || $json.error || 'Falha na Linked API' }}"),
         ]},
         "options": {}}),
-    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1600, 380], {
+    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1160, 300], {
         "method": "POST",
         "url": "={{ $('Webhook').first().json.body.callback_url }}",
         "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
         "sendBody": True, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json) }}",
-        "options": {"timeout": 30000}}),
+        "options": {"timeout": 30000}}, onError="continueRegularOutput"),
     nota("Leia antes", [-40, -60], (
         "## CrossSell · LinkedIn\n"
         "A plataforma chama este **Webhook** com um lote de alvos; cada alvo é consultado na Linked API "
-        "e o resultado volta para a plataforma.\n\n"
+        "e o resultado volta para a plataforma. O fluxo é linear (sem repetição): termina sozinho.\n\n"
         "**Credencial** (*Header Auth*): nome `Authorization`, valor `Bearer <N8N_TOKEN>`. "
         "Selecione-a no **Webhook** e no **Devolver à plataforma**.\n\n"
         "Ative o fluxo e copie a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL` na plataforma."),
         w=620, h=300, cor=5),
-    nota("Trocar nós da Linked API", [1040, 60], (
+    nota("Trocar nós da Linked API", [600, -160], (
         "## ⚠ Trocar os 2 nós marcados\n"
         "Substitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n"
         "**Fetch Person**: URL `{{ $json.linkedin_url }}`. Se vazia, use antes *Search People* com "
@@ -113,15 +110,12 @@ nodes = [
 
 conexoes = {
     "Webhook": [["Separar alvos"]],
-    "Separar alvos": [["Loop Over Items"]],
-    "Loop Over Items": [[], ["Pausa"]],          # saída 0 = concluído, saída 1 = próximo item
-    "Pausa": [["É pessoa?"]],
+    "Separar alvos": [["É pessoa?"]],
     "É pessoa?": [["⚠ TROCAR: Linked API · Fetch Person"], ["⚠ TROCAR: Linked API · Fetch Company"]],
     "⚠ TROCAR: Linked API · Fetch Person": [["Mapear"]],
     "⚠ TROCAR: Linked API · Fetch Company": [["Mapear"]],
     "Mapear": [["Devolver à plataforma"]],
     "Registrar erro": [["Devolver à plataforma"]],
-    "Devolver à plataforma": [["Loop Over Items"]],
 }
 
 fluxo = {

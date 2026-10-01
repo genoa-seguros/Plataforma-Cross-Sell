@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     n8n_linkedin_webhook_url: str = ""
     n8n_token: str = ""
     plataforma_url: str = ""  # endereço público da plataforma, para o n8n devolver os resultados
-    linkedin_lote: int = 30  # alvos por disparo (ritmo da conta conectada à Linked API)
+    linkedin_lote: int = 10  # alvos por disparo (ritmo da conta conectada à Linked API)
     linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
 
     # Login: o master é criado pelo comando `crosssell criar-master`.

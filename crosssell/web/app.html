@@ -197,8 +197,10 @@ const previa = {
       });
       return {ok:true};
     }
-    if (path === "/api/linkedin/exportar") { const p = D.linkedin.pendentes; D.linkedin.exportado = {em: new Date().toISOString(), registros: p.empresas + p.pessoas}; return {alvos: p.empresas + p.pessoas}; }
-    if (path === "/api/linkedin/importar") return {pessoas: 0, empresas: 0, decisores_novos: 0, nao_confirmado: 0};
+    if (path === "/api/linkedin/disparar") {
+      const p = D.linkedin.pendentes, n = Math.min(D.linkedin.lote, p.empresas + p.pessoas);
+      D.linkedin.disparado = {em: new Date().toISOString(), registros: n}; p.empresas = 0; p.pessoas = 0; return {enviados: n};
+    }
     if (path === "/api/equipe/convidar") {
       const u = {id: ++this.seq, email: b.email.toLowerCase(), nome: b.nome, papel:"membro", ativo:true, verticais:b.verticais, lider:b.lider, pipedrive:false, pendente:true};
       D.equipe.push(u); return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id};
@@ -438,25 +440,20 @@ async function telaEquipe() {
 async function telaLinkedin() {
   const el = document.getElementById("lk");
   const st = await api.get("/api/linkedin");
-  const quando = x => x ? `${dt(x.em)} ${x.em.slice(11, 16)} · ${x.registros} registros${x.erro ? " · erro" : ""}` : "nunca";
+  const quando = x => x ? `${dt(x.em)} ${x.em.slice(11, 16)} · ${x.registros} itens${x.erro ? " · com erro" : ""}` : "nunca";
   el.innerHTML = `<h2 style="margin:0">LinkedIn</h2>
-    <p class="nota">A plataforma escreve os alvos na aba <b>Alvos</b> da planilha; o fluxo do n8n com a Linked API preenche a aba <b>Resultados</b>; a plataforma lê os resultados e atualiza perfis, decisores e posts. Perfis são relidos a cada 90 dias.</p>
-    ${st.configurado ? "" : '<p class="erro">Planilha não configurada: defina GOOGLE_SHEETS_ID e GOOGLE_SERVICE_ACCOUNT_FILE no servidor.</p>'}
+    <p class="nota">Automático: a cada rotina, a plataforma envia ao n8n até ${st.lote} pessoas e empresas dos negócios abertos que ainda não foram lidas (ou foram lidas há mais de 90 dias). O n8n consulta a Linked API e devolve os perfis, decisores e posts direto para a plataforma.</p>
+    ${st.configurado ? "" : '<p class="erro">Integração não configurada: defina N8N_LINKEDIN_WEBHOOK_URL, N8N_TOKEN e PLATAFORMA_URL no servidor.</p>'}
     <div class="kpi-row">
-      <div class="kpi"><b class="num">${st.pendentes.empresas}</b><span>empresas a ler</span></div>
-      <div class="kpi"><b class="num">${st.pendentes.pessoas}</b><span>pessoas a ler</span></div>
+      <div class="kpi"><b class="num">${st.pendentes.empresas}</b><span>empresas na fila</span></div>
+      <div class="kpi"><b class="num">${st.pendentes.pessoas}</b><span>pessoas na fila</span></div>
     </div>
-    <div class="form-linha">
-      <button type="button" class="btn" id="lk-exp" ${st.configurado ? "" : "disabled"}>Enviar alvos para a planilha</button>
-      <button type="button" class="btn sec" id="lk-imp" ${st.configurado ? "" : "disabled"}>Ler resultados da planilha</button>
-      ${st.planilha ? `<a href="${esc(st.planilha)}" target="_blank" rel="noopener" class="small">Abrir planilha</a>` : ""}
-    </div>
-    <p class="nota">Último envio: ${quando(st.exportado)} · Última leitura: ${quando(st.importado)}</p>`;
-  const acao = async (rota, msg) => {
-    try { const r = await api.post(rota); aviso(msg(r)); telaLinkedin(); } catch (err) { aviso(err.message); }
+    <div class="form-linha"><button type="button" class="btn sec" id="lk-disp" ${st.configurado ? "" : "disabled"}>Disparar agora</button></div>
+    <p class="nota">Último envio ao n8n: ${quando(st.disparado)} · Último retorno: ${quando(st.recebido)}</p>`;
+  document.getElementById("lk-disp").onclick = async () => {
+    try { const r = await api.post("/api/linkedin/disparar"); aviso(r.enviados ? `${r.enviados} alvos enviados ao n8n` : "Nada na fila"); telaLinkedin(); }
+    catch (err) { aviso(err.message); }
   };
-  document.getElementById("lk-exp").onclick = () => acao("/api/linkedin/exportar", r => `${r.alvos} alvos enviados para a planilha`);
-  document.getElementById("lk-imp").onclick = () => acao("/api/linkedin/importar", r => `${r.pessoas} pessoas e ${r.empresas} empresas atualizadas · ${r.decisores_novos} decisores novos${r.nao_confirmado ? ` · ${r.nao_confirmado} perfis não conferem com o nome` : ""}`);
 }
 
 /* ---------- Ficha da empresa ---------- */

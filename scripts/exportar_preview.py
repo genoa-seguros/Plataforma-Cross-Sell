@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from crosssell import tabela
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
-from crosssell.connectors import linkedin_planilha as lk
+from crosssell.connectors import linkedin as lk
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import Atividade, Usuario
 from crosssell.web import app as webapp
@@ -45,9 +45,10 @@ def exportar(como: str | None) -> dict:
         "empresas": empresas,
         "equipe": [webapp._usuario_json(u) for u in usuarios],
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
-        "linkedin": {"configurado": True, "planilha": None,
+        "linkedin": {"configurado": True, "lote": s.linkedin_lote,
                      "pendentes": {k: sum(a["tipo"] == t for a in lk.alvos(db, s)) for k, t in (("empresas", "empresa"), ("pessoas", "pessoa"))},
-                     "exportado": None, "importado": {"em": hoje.isoformat() + "T07:05", "registros": 28, "erro": None}},
+                     "disparado": {"em": hoje.isoformat() + "T06:30", "registros": 28, "erro": None},
+                     "recebido": {"em": hoje.isoformat() + "T06:52", "registros": 28, "erro": None}},
     }
 
 

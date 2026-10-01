@@ -32,11 +32,11 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-opus-5-5"
     temperatura_max_emails: int = 5
 
-    # LinkedIn via Google Sheets + n8n (Linked API). A planilha é compartilhada com a conta de serviço.
-    google_sheets_id: str = ""
-    google_service_account_file: str = ""
-    linkedin_aba_alvos: str = "Alvos"
-    linkedin_aba_resultados: str = "Resultados"
+    # LinkedIn via n8n (Linked API). O mesmo token autentica o disparo e o retorno.
+    n8n_linkedin_webhook_url: str = ""
+    n8n_token: str = ""
+    plataforma_url: str = ""  # endereço público da plataforma, para o n8n devolver os resultados
+    linkedin_lote: int = 30  # alvos por disparo (ritmo da conta conectada à Linked API)
     linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
 
     # Login: o master é criado pelo comando `crosssell criar-master`.

@@ -44,7 +44,8 @@ class Empresa(Base):
     score_componentes: Mapped[dict] = mapped_column(JSON, default=dict)
 
     noticias_em: Mapped[datetime | None]
-    linkedin_em: Mapped[datetime | None]  # última leitura do LinkedIn (via planilha do n8n)
+    linkedin_em: Mapped[datetime | None]  # última leitura do LinkedIn (via n8n)
+    linkedin_pedido_em: Mapped[datetime | None]  # último envio ao n8n
 
     pessoas: Mapped[list["Pessoa"]] = relationship(back_populates="empresa")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="empresa")
@@ -76,10 +77,11 @@ class Pessoa(Base):
     temperatura: Mapped[str | None]
     temperatura_motivo: Mapped[str | None]
     temperatura_em: Mapped[datetime | None]
-    # LinkedIn (via planilha alimentada pelo n8n + Linked API)
+    # LinkedIn (via n8n + Linked API)
     linkedin_headline: Mapped[str | None]
     linkedin_empresa_atual: Mapped[str | None]
     linkedin_em: Mapped[datetime | None]
+    linkedin_pedido_em: Mapped[datetime | None]
 
     empresa: Mapped[Empresa | None] = relationship(back_populates="pessoas")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="pessoa")

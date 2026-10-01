@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from crosssell.config import VERTICAL_LABEL, Settings
-from crosssell.connectors.linkedin_planilha import mudou_de_empresa
+from crosssell.connectors.linkedin import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Usuario
 
 PESO_REL, PESO_VINC, PESO_MOM = 0.45, 0.30, 0.25

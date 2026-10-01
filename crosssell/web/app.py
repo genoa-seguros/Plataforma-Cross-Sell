@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, tabela
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
-from crosssell.connectors import linkedin_planilha as lk
+from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import Atividade, Empresa, Negocio, SyncLog, Usuario
@@ -40,13 +40,6 @@ def get_db():
 
 def get_pipedrive():
     return pd.cliente(get_settings())
-
-
-def get_sheets():
-    s = get_settings()
-    if not s.google_sheets_id or not s.google_service_account_file:
-        raise HTTPException(400, "Planilha do LinkedIn não configurada (GOOGLE_SHEETS_ID e GOOGLE_SERVICE_ACCOUNT_FILE).")
-    return lk.cliente(s)
 
 
 def usuario_atual(request: Request, db: Session = Depends(get_db)) -> Usuario:
@@ -284,7 +277,7 @@ async def api_importar(fonte: str = Form(...), arquivo: UploadFile = File(...), 
     return res
 
 
-# --- LinkedIn (Google Sheets <-> n8n + Linked API) -------------------------
+# --- LinkedIn (n8n + Linked API) -------------------------------------------
 
 def _ultimo(db: Session, fonte: str) -> dict | None:
     log = db.scalar(select(SyncLog).where(SyncLog.fonte == fonte).order_by(SyncLog.id.desc()))
@@ -294,23 +287,31 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 @app.get("/api/linkedin")
 def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     s = get_settings()
-    alvos = lk.alvos(db, s)
-    return {"configurado": bool(s.google_sheets_id and s.google_service_account_file),
-            "planilha": f"https://docs.google.com/spreadsheets/d/{s.google_sheets_id}" if s.google_sheets_id else None,
-            "pendentes": {"empresas": sum(a["tipo"] == "empresa" for a in alvos),
-                          "pessoas": sum(a["tipo"] == "pessoa" for a in alvos)},
-            "exportado": _ultimo(db, "linkedin-alvos"), "importado": _ultimo(db, "linkedin-resultados")}
+    pend = lk.alvos(db, s)
+    return {"configurado": lk.configurado(s), "lote": s.linkedin_lote,
+            "pendentes": {"empresas": sum(a["tipo"] == "empresa" for a in pend),
+                          "pessoas": sum(a["tipo"] == "pessoa" for a in pend)},
+            "disparado": _ultimo(db, "linkedin-disparo"), "recebido": _ultimo(db, "linkedin-retorno")}
 
 
-@app.post("/api/linkedin/exportar")
-def api_linkedin_exportar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
-                          sheets: lk.SheetsClient = Depends(get_sheets)):
-    return registrar(db, "linkedin-alvos", lk.exportar, db, get_settings(), sheets)
+@app.post("/api/linkedin/disparar")
+def api_linkedin_disparar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    s = get_settings()
+    if not lk.configurado(s):
+        raise HTTPException(400, "Integração com o n8n não configurada (N8N_LINKEDIN_WEBHOOK_URL, N8N_TOKEN, PLATAFORMA_URL).")
+    try:
+        return registrar(db, "linkedin-disparo", lk.disparar, db, s)
+    except Exception as exc:  # o n8n fora do ar não deve derrubar a tela
+        raise HTTPException(502, f"O n8n não aceitou o disparo: {exc}")
 
 
-@app.post("/api/linkedin/importar")
-def api_linkedin_importar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
-                          sheets: lk.SheetsClient = Depends(get_sheets)):
-    res = registrar(db, "linkedin-resultados", lk.importar, db, get_settings(), sheets)
+@app.post("/api/integracoes/linkedin/resultados")
+async def api_linkedin_resultados(request: Request, db: Session = Depends(get_db)):
+    """Retorno do n8n. Autenticado pelo token compartilhado, não por sessão."""
+    if not lk.token_valido(get_settings(), request.headers.get("authorization")):
+        raise HTTPException(401, "Token inválido.")
+    corpo = await request.json()
+    itens = corpo if isinstance(corpo, list) else corpo.get("resultados", [corpo]) if isinstance(corpo, dict) else []
+    res = registrar(db, "linkedin-retorno", lk.receber, db, [i for i in itens if isinstance(i, dict)])
     recalcular(db)
     return res

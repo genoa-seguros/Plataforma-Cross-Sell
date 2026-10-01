@@ -1,65 +1,75 @@
 import json
+from datetime import datetime, timedelta
 
 import httpx
 from sqlalchemy import select
 
 from crosssell import tabela
-from crosssell.connectors import linkedin_planilha as lk
+from crosssell.connectors import linkedin as lk
 from crosssell.models import Empresa, Noticia, Pessoa
 from tests.test_fluxo import carregar
 
 
-class PlanilhaFalsa:
-    def __init__(self, resultados=None):
-        self.abas = {"Alvos": [], "Resultados": resultados or []}
+def config(settings):
+    return settings.model_copy(update={"n8n_linkedin_webhook_url": "https://n8n.exemplo/webhook/linkedin",
+                                       "n8n_token": "segredo-compartilhado", "plataforma_url": "https://plataforma.exemplo",
+                                       "linkedin_lote": 3})
 
-    def transport(self):
+
+class N8nFalso:
+    def __init__(self):
+        self.recebidos = []
+
+    def client(self):
         def handler(req: httpx.Request):
-            aba = req.url.path.split("/values/")[1].split("!")[0]
-            if req.method == "GET":
-                return httpx.Response(200, json={"values": self.abas[aba]})
-            if req.url.path.endswith(":clear"):
-                self.abas[aba] = []
-                return httpx.Response(200, json={})
-            self.abas[aba] = json.loads(req.content)["values"]
-            return httpx.Response(200, json={})
-        return httpx.MockTransport(handler)
+            self.recebidos.append({"auth": req.headers.get("authorization"), "corpo": json.loads(req.content)})
+            return httpx.Response(200, json={"message": "Workflow was started"})
+        return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def cliente(planilha):
-    return lk.SheetsClient("planilha", token=lambda: "t", transport=planilha.transport())
+def test_disparo_envia_lote_e_nao_reenvia_em_andamento(db, settings):
+    s = config(settings)
+    carregar(db, s)
+    n8n = N8nFalso()
+    res = lk.disparar(db, s, n8n.client())
+    pedido = n8n.recebidos[0]
+    assert pedido["auth"] == "Bearer segredo-compartilhado"
+    assert pedido["corpo"]["callback_url"] == "https://plataforma.exemplo/api/integracoes/linkedin/resultados"
+    assert res["enviados"] == 3 and len(pedido["corpo"]["alvos"]) == 3  # respeita o lote
+    enviados = {a["id_alvo"] for a in pedido["corpo"]["alvos"]}
+
+    # Segundo disparo manda só o que sobrou; os já pedidos ficam aguardando o retorno
+    lk.disparar(db, s, n8n.client())
+    segundo = {a["id_alvo"] for a in n8n.recebidos[1]["corpo"]["alvos"]}
+    assert segundo and not (segundo & enviados)
+    assert lk.disparar(db, s, n8n.client()) == {"enviados": 0}
+
+    # Sem retorno depois do prazo, volta para a fila
+    depois = datetime.utcnow() + lk.PRAZO_PEDIDO + timedelta(hours=1)
+    assert {a["id_alvo"] for a in lk.alvos(db, s, agora=depois)} == enviados | segundo
 
 
-def test_exporta_alvos_dos_negocios_abertos(db, settings):
-    carregar(db, settings)
-    planilha = PlanilhaFalsa()
-    res = lk.exportar(db, settings, cliente(planilha))
-    cab, *linhas = planilha.abas["Alvos"]
-    assert cab == lk.ALVOS
-    ids = {r[0] for r in linhas}
-    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
-    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
-    assert f"E{alfa.id}" in ids and f"P{ana.id}" in ids
-    assert res["empresas"] == 2 and res["pessoas"] == 2
-
-
-def test_importa_resultados_e_confere_nome(db, settings):
+def test_retorno_atualiza_e_confere_nome(db, settings):
     carregar(db, settings)
     alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
     ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
     caio = db.scalar(select(Pessoa).where(Pessoa.email == "caio@beta.com.br"))
-    decisores = json.dumps([{"nome": "Marta Reis", "headline": "Diretora Jurídica", "linkedin_url": "https://linkedin.com/in/marta"}])
-    posts = json.dumps([{"texto": "Inauguramos nossa fábrica em Sorocaba!\\nObrigado a todos", "data": "2026-09-20",
-                         "url": "https://linkedin.com/posts/alfa-1"}])
-    linhas = [lk.RESULTADOS,
-              [f"P{ana.id}", "pessoa", "https://linkedin.com/in/ana", "Ana Souza", "CFO | Finanças industriais", "CFO",
-               "Grupo Gama", "São Paulo", "", "", "", "", "", "", "2026-09-30 10:00", ""],
-              [f"P{caio.id}", "pessoa", "https://linkedin.com/in/outro", "Carlos Pereira", "Vendas", "", "", "", "", "",
-               "", "", "", "", "2026-09-30 10:00", ""],
-              [f"E{alfa.id}", "empresa", "https://linkedin.com/company/alfa", "Metalúrgica Alfa", "", "", "", "",
-               "Manufatura", "201-500", "https://alfa.com.br", "Sorocaba, SP", decisores, posts, "2026-09-30 10:05", ""]]
-    res = lk.importar(db, settings, cliente(PlanilhaFalsa(linhas)))
-    assert res["pessoas"] == 1 and res["empresas"] == 1 and res["nao_confirmado"] == 1 and res["decisores_novos"] == 1
+    resultados = [
+        {"id_alvo": f"P{ana.id}", "tipo": "pessoa", "linkedin_url": "https://linkedin.com/in/ana", "nome": "Ana Souza",
+         "headline": "CFO | Finanças industriais", "cargo_atual": "CFO", "empresa_atual": "Grupo Gama",
+         "capturado_em": "2026-09-30T10:00:00"},
+        {"id_alvo": f"P{caio.id}", "tipo": "pessoa", "linkedin_url": "https://linkedin.com/in/outro", "nome": "Carlos Pereira"},
+        {"id_alvo": f"E{alfa.id}", "tipo": "empresa", "linkedin_url": "https://linkedin.com/company/alfa",
+         "setor": "Manufatura", "funcionarios": "201-500", "site": "https://alfa.com.br", "sede": "Sorocaba, SP",
+         "decisores": [{"nome": "Marta Reis", "headline": "Diretora Jurídica", "linkedin_url": "https://linkedin.com/in/marta"}],
+         "posts": [{"texto": "Inauguramos nossa fábrica em Sorocaba!\nObrigado", "data": "2026-09-20",
+                    "url": "https://linkedin.com/posts/alfa-1"}],
+         "capturado_em": "2026-09-30T10:05:00"},
+        {"id_alvo": "E999999", "tipo": "empresa", "erro": "Perfil não encontrado"},
+    ]
+    res = lk.receber(db, resultados)
+    assert res["pessoas"] == 1 and res["empresas"] == 1 and res["nao_confirmado"] == 1
+    assert res["decisores_novos"] == 1 and res["erros"] == 1
     assert ana.linkedin_url == "https://linkedin.com/in/ana" and ana.linkedin_headline.startswith("CFO")
     assert caio.linkedin_url is None  # nome não confere: perfil descartado
     assert alfa.funcionarios == 500 and alfa.setor == "Manufatura"
@@ -71,15 +81,34 @@ def test_importa_resultados_e_confere_nome(db, settings):
     assert any("hoje está em Grupo Gama" in m for m in linha["motivos"])
     assert any("decisor no LinkedIn sem relação ainda: Marta Reis" in m for m in linha["motivos"])
     assert linha["pessoa"]["linkedin"] == "https://linkedin.com/in/ana"
-
-    # Reimportar a mesma planilha não reaplica, e quem já foi lido sai dos alvos
-    assert lk.importar(db, settings, cliente(PlanilhaFalsa(linhas)))["ja_lidos"] == 2
-    ids = {a["id_alvo"] for a in lk.alvos(db, settings)}
-    assert f"P{ana.id}" not in ids and f"E{alfa.id}" not in ids and f"P{caio.id}" in ids
+    assert lk.receber(db, resultados)["ja_lidos"] == 2  # reenvio do n8n não duplica
 
 
-def test_decisores_em_texto_simples():
+def test_rota_de_retorno_exige_token(engine, db, settings, monkeypatch):
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+
+    from crosssell.web import app as webapp
+
+    s = config(settings)
+    carregar(db, s)
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    Local = sessionmaker(bind=engine, expire_on_commit=False)
+    webapp.app.dependency_overrides[webapp.get_db] = lambda: Local()
+    monkeypatch.setattr(webapp, "get_settings", lambda: s)
+    c = TestClient(webapp.app)
+    corpo = {"id_alvo": f"P{ana.id}", "nome": "Ana Souza", "headline": "CFO"}
+    url = "/api/integracoes/linkedin/resultados"
+    assert c.post(url, json=corpo).status_code == 401
+    assert c.post(url, json=corpo, headers={"Authorization": "Bearer errado"}).status_code == 401
+    r = c.post(url, json={"resultados": [corpo]}, headers={"Authorization": "Bearer segredo-compartilhado"})
+    assert r.status_code == 200 and r.json()["pessoas"] == 1
+    webapp.app.dependency_overrides.clear()
+
+
+def test_formatos_aceitos():
     assert lk._lista("Marta Reis | Diretora | https://x\nJoão Lima | CEO") == [
         {"nome": "Marta Reis", "headline": "Diretora", "linkedin_url": "https://x"},
         {"nome": "João Lima", "headline": "CEO", "linkedin_url": ""}]
-    assert lk._num("1.200") == 1200 and lk._num("51-200") == 200 and lk._num("") is None
+    assert lk._lista('[{"nome": "A"}]') == [{"nome": "A"}]
+    assert lk._num("1.200") == 1200 and lk._num("51-200") == 200 and lk._num(350) == 350 and lk._num("") is None

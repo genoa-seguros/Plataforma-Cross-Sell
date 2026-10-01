@@ -49,16 +49,17 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 | Microsoft 365 | Microsoft Graph (permissão de aplicativo `Mail.Read`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
-| LinkedIn | Google Sheets ↔ n8n + Linked API | perfis, cargos, decisores, posts; aviso de contato que mudou de empresa |
+| LinkedIn | webhook do n8n + Linked API, retorno por API | perfis, cargos, decisores, posts; aviso de contato que mudou de empresa |
 | Receita Federal (BrasilAPI) | API pública | porte, CNAE, capital social, sócios |
 
-### LinkedIn (planilha + n8n + Linked API)
+### LinkedIn (n8n + Linked API)
 
-A plataforma escreve os alvos (empresas e contatos dos negócios abertos) na aba **Alvos**
-de uma planilha do Google. Um fluxo no n8n com a Linked API preenche a aba **Resultados**.
-A plataforma lê os resultados e atualiza perfis, headline, setor, número de funcionários,
-decisores (até 20 por empresa) e posts. O perfil só é aceito se o nome conferir.
-Passo a passo do fluxo e script do nó de mapeamento: [`docs/linkedin-n8n.md`](docs/linkedin-n8n.md).
+É automático, sem planilha. A cada rotina, a plataforma envia ao webhook do n8n um lote com as
+empresas e os contatos dos negócios abertos que ainda não foram lidos no LinkedIn. O n8n
+consulta a Linked API e devolve cada resultado em `POST /api/integracoes/linkedin/resultados`,
+autenticado por token. A plataforma atualiza perfis, headline, setor, número de funcionários,
+decisores e posts. O perfil só é aceito se o nome conferir.
+Fluxo do n8n, contrato da API e script de mapeamento: [`docs/linkedin-n8n.md`](docs/linkedin-n8n.md).
 
 ## Instalação
 
@@ -75,12 +76,13 @@ própria senha pelo link, que vale 7 dias e só pode ser usado uma vez.
 
 ## Rotina (cron)
 
+Uma entrada só faz tudo, sem ação manual: `crosssell rotina`, de hora em hora. Ou, em separado:
+
 ```bash
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell noticias                # diário
-crosssell linkedin-exportar       # diário, antes do fluxo do n8n
-crosssell linkedin-importar       # diário, depois do fluxo do n8n
+crosssell linkedin                # diário: envia o próximo lote ao n8n
 crosssell recalcular              # diário
 crosssell importar zeca arquivo.xlsx   # quando houver nova exportação
 ```
@@ -115,7 +117,7 @@ pytest
 - [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,
       `api.anthropic.com`, `news.google.com` e `brasilapi.com.br`.
 - [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 e chave da Claude API.
-- [ ] Planilha do LinkedIn + conta de serviço do Google, e o fluxo do n8n (`docs/linkedin-n8n.md`).
-      Liberar `sheets.googleapis.com` e `oauth2.googleapis.com` na rede.
+- [ ] Fluxo do n8n (`docs/linkedin-n8n.md`), token compartilhado e endereço público da plataforma
+      (o n8n precisa alcançá-la para devolver os resultados).
 - [ ] Exportação real do Zeca para ajustar os cabeçalhos em `config/verticais.yaml`.
 - [ ] Hospedagem (Postgres + container com HTTPS).

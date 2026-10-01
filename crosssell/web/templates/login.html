@@ -1,0 +1,11 @@
+{% extends "_acesso.html" %}
+{% block corpo %}
+<h1>Entrar</h1>
+<form method="post" action="/login" style="display:grid;gap:12px">
+  <label>E-mail <input type="email" name="email" id="email" value="{{ email or '' }}" autocomplete="username" required autofocus></label>
+  <label>Senha <input type="password" name="senha" id="senha" autocomplete="current-password" required></label>
+  {% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+  <button>Entrar</button>
+</form>
+<p class="nota">O acesso é feito por convite. Peça ao administrador se ainda não tiver o seu.</p>
+{% endblock %}

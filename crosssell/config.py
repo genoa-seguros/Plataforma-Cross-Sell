@@ -4,12 +4,11 @@ from pathlib import Path
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-VERTICAIS = ("linhas_financeiras", "saude", "ramos_elementares", "linhas_pessoais")
+VERTICAIS = ("linhas_financeiras", "saude", "ramos_elementares")
 VERTICAL_LABEL = {
     "linhas_financeiras": "Linhas Financeiras",
     "saude": "Saúde",
     "ramos_elementares": "Ramos Elementares",
-    "linhas_pessoais": "Linhas Pessoais",
 }
 
 
@@ -22,15 +21,20 @@ class Settings(BaseSettings):
     pipedrive_api_token: str = ""
     pipedrive_company_domain: str = "api"
     pipedrive_cnpj_field: str = "4f808fee58c9a509b20237a2ffb8b3f169293b0f"
-    # Campos customizados de negócio com a vigência da apólice.
-    pipedrive_inicio_vigencia_field: str = "3ee3bdd07bab71fba84767ffb7d5d89f49b1f3d3"
-    pipedrive_fim_vigencia_field: str = "0d4a74f324a5c95618a51042c3185da9c8846bc3"
 
     ms_tenant_id: str = ""
     ms_client_id: str = ""
     ms_client_secret: str = ""
 
     internal_domains: str = "innoaseguros.com.br"
+
+    # Temperatura dos e-mails (Claude API). A chave vem de ANTHROPIC_API_KEY.
+    anthropic_model: str = "claude-opus-5-5"
+    temperatura_max_emails: int = 5
+
+    # Login: o master é criado pelo comando `crosssell criar-master`.
+    sessao_dias: int = 14
+    cookie_seguro: bool = True  # exige HTTPS em produção; desligue só em ambiente local
 
     @property
     def internal_domain_set(self) -> set[str]:
@@ -41,24 +45,26 @@ class Settings(BaseSettings):
             return {}
         return yaml.safe_load(self.verticais_file.read_text(encoding="utf-8")) or {}
 
-    def usuarios(self) -> list[dict]:
-        """Usuários internos normalizados: email, nome, verticais, lider."""
+    def pipelines(self) -> dict[int, dict]:
+        """pipeline_id -> {nome, vertical, tabela}."""
+        brutos = (self.verticais_config().get("pipedrive") or {}).get("pipelines") or {}
+        return {int(k): {"nome": v.get("nome") or f"Funil {k}", "vertical": v.get("vertical"),
+                         "tabela": bool(v.get("tabela"))} for k, v in brutos.items()}
+
+    def campos_pipedrive(self) -> dict:
+        return (self.verticais_config().get("pipedrive") or {}).get("campos") or {}
+
+    def usuarios_iniciais(self) -> list[dict]:
+        """Equipe inicial do config: email, nome, verticais, lider."""
         saida = []
         for u in self.verticais_config().get("usuarios") or []:
-            verticais = u.get("verticais") or ([u["vertical"]] if u.get("vertical") else [])
             saida.append({
                 "email": u["email"].strip().lower(),
                 "nome": u.get("nome") or u["email"].split("@")[0],
-                "verticais": list(verticais),
+                "verticais": list(u.get("verticais") or []),
                 "lider": list(u.get("lider") or []),
             })
         return saida
-
-    def responsaveis(self, vertical: str) -> list[str]:
-        """Quem recebe oportunidades da vertical: o(s) líder(es) ou, sem líder, toda a equipe."""
-        equipe = [u for u in self.usuarios() if vertical in u["verticais"]]
-        lideres = [u["email"] for u in equipe if vertical in u["lider"]]
-        return lideres or [u["email"] for u in equipe]
 
 
 @lru_cache

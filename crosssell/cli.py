@@ -16,27 +16,57 @@ def _db():
 
 @app.command()
 def initdb():
-    """Cria as tabelas e carrega os usuários internos do config."""
+    """Cria as tabelas e a equipe inicial do config (sem senha; cada um entra por convite)."""
     from crosssell.pipeline import carregar_usuarios
 
-    typer.echo(f"{carregar_usuarios(_db(), get_settings())} usuários carregados")
+    typer.echo(f"{carregar_usuarios(_db(), get_settings())} usuários criados")
+
+
+@app.command("criar-master")
+def criar_master(email: str, nome: str):
+    """Cria (ou promove) o usuário master e define a senha dele."""
+    from crosssell import auth
+
+    db = _db()
+    senha = typer.prompt("Senha", hide_input=True, confirmation_prompt=True)
+    erro = auth.validar_senha(senha)
+    if erro:
+        raise typer.BadParameter(erro)
+    u, _ = auth.convidar(db, email, nome, verticais=[], papel="master")
+    u.papel = "master"
+    auth.aceitar_convite(db, u, senha)
+    typer.echo(f"Master {u.email} pronto.")
+
+
+@app.command()
+def convidar(email: str, nome: str, base_url: str = typer.Option("http://localhost:8000"),
+             vertical: list[str] = typer.Option([], help="linhas_financeiras | saude | ramos_elementares")):
+    """Gera um link de convite (o mesmo que a tela Equipe gera)."""
+    from crosssell import auth
+
+    _, token = auth.convidar(_db(), email, nome, vertical)
+    typer.echo(f"{base_url.rstrip('/')}/convite/{token}")
 
 
 @app.command()
 def pipedrive(dias: int = typer.Option(0, help="Somente alterados nos últimos N dias (0 = tudo)")):
-    """Sincroniza organizações, pessoas e negócios do Pipedrive."""
+    """Sincroniza organizações, pessoas, negócios e o status das atividades do Pipedrive."""
+    from datetime import date
+
     from crosssell.connectors import pipedrive as pd
     from crosssell.pipeline import registrar
 
-    db = _db()
+    db, s = _db(), get_settings()
+    client = pd.cliente(s)
     desde = datetime.utcnow() - timedelta(days=dias) if dias else None
-    typer.echo(registrar(db, "pipedrive", pd.sincronizar, db, get_settings(), updated_since=desde))
+    typer.echo(registrar(db, "pipedrive", pd.sincronizar, db, s, client, updated_since=desde))
+    typer.echo(f"{pd.sincronizar_atividades(db, client, date.today() - timedelta(days=30))} atividades atualizadas")
 
 
 @app.command()
-def importar(fonte: str = typer.Argument(..., help="zeca | quiver | linkedin"), arquivo: Path = typer.Argument(...),
+def importar(fonte: str = typer.Argument(..., help="zeca | linkedin"), arquivo: Path = typer.Argument(...),
              parcial: bool = typer.Option(False, help="Zeca: não cancelar apólices ausentes do arquivo")):
-    """Importa uma exportação (CSV/XLSX) do Zeca, Quiver ou LinkedIn/Sales Navigator."""
+    """Importa uma exportação (CSV/XLSX) do Zeca ou uma lista de pessoas (LinkedIn)."""
     from crosssell.connectors import enriquecimento, planilhas
     from crosssell.pipeline import registrar
 
@@ -44,23 +74,35 @@ def importar(fonte: str = typer.Argument(..., help="zeca | quiver | linkedin"), 
     conteudo = arquivo.read_bytes()
     if fonte == "zeca":
         res = registrar(db, "zeca", planilhas.importar_zeca, db, s, conteudo, arquivo.name, carga_completa=not parcial)
-    elif fonte == "quiver":
-        res = registrar(db, "quiver", planilhas.importar_quiver, db, s, conteudo, arquivo.name)
     elif fonte == "linkedin":
         res = registrar(db, "linkedin", enriquecimento.importar_linkedin, db, s, conteudo, arquivo.name)
     else:
-        raise typer.BadParameter("fonte deve ser zeca, quiver ou linkedin")
+        raise typer.BadParameter("fonte deve ser zeca ou linkedin")
     typer.echo(res)
 
 
 @app.command()
-def emails(dias: int = 30):
-    """Lê metadados de e-mail (Microsoft 365) dos usuários das verticais."""
+def emails(dias: int = 30, temperatura: bool = typer.Option(True, help="Classificar a temperatura com a Claude API")):
+    """Lê os e-mails (Microsoft 365) dos usuários ativos e atualiza a temperatura dos contatos."""
     from crosssell.connectors import email_m365
     from crosssell.pipeline import registrar
+    from crosssell.temperatura import Classificador
 
-    db = _db()
-    typer.echo(registrar(db, "email", email_m365.sincronizar, db, get_settings(), dias=dias))
+    db, s = _db(), get_settings()
+    classificador = Classificador(s) if temperatura else None
+    typer.echo(registrar(db, "email", email_m365.sincronizar, db, s, dias=dias, classificador=classificador))
+
+
+@app.command()
+def noticias(horas: int = typer.Option(24, help="Não rebuscar empresas atualizadas há menos de N horas")):
+    """Busca notícias das empresas que estão na tabela de negócios abertos."""
+    from crosssell import tabela
+    from crosssell.connectors import noticias as nt
+    from crosssell.pipeline import registrar
+
+    db, s = _db(), get_settings()
+    ids = sorted({x["empresa"]["id"] for x in tabela.montar(db, s) if x["empresa"]})
+    typer.echo(registrar(db, "noticias", nt.atualizar, db, ids, horas=horas))
 
 
 @app.command()
@@ -75,7 +117,7 @@ def enriquecer(limite: int = 200):
 
 @app.command()
 def recalcular():
-    """Recalcula scores de relacionamento e oportunidades."""
+    """Recalcula os scores de relacionamento."""
     from crosssell.pipeline import recalcular as rc
 
     typer.echo(rc(_db()))
@@ -83,7 +125,7 @@ def recalcular():
 
 @app.command()
 def serve(host: str = "0.0.0.0", port: int = 8000):
-    """Sobe o painel web."""
+    """Sobe a plataforma web."""
     import uvicorn
 
     init_db()

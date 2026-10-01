@@ -2,12 +2,12 @@
 
 A chave de ligação entre as verticais é a Empresa (identificada por CNPJ,
 com fallback para domínio de e-mail e nome normalizado) e a Pessoa
-(identificada por e-mail ou CPF). Tudo que é "produto" em qualquer vertical
-— negócio no Pipedrive, apólice de saúde no Zeca ou apólice PF no Quiver —
-vira um registro de Negocio.
+(identificada por e-mail). Tudo que é "produto" em qualquer vertical
+— negócio no Pipedrive, apólice de saúde no Zeca ou marcação manual de
+cliente Saúde — vira um registro de Negocio.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -43,8 +43,11 @@ class Empresa(Base):
     score_relacionamento: Mapped[float] = mapped_column(Float, default=0.0)
     score_componentes: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    noticias_em: Mapped[datetime | None]
+
     pessoas: Mapped[list["Pessoa"]] = relationship(back_populates="empresa")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="empresa")
+    noticias: Mapped[list["Noticia"]] = relationship(order_by="Noticia.publicada_em.desc()")
 
 
 class Pessoa(Base):
@@ -68,19 +71,46 @@ class Pessoa(Base):
     score_relacionamento: Mapped[float] = mapped_column(Float, default=0.0)
     score_componentes: Mapped[dict] = mapped_column(JSON, default=dict)
     ponto_focal: Mapped[bool] = mapped_column(default=False)
+    # Temperatura dos e-mails que a pessoa escreve (IA): pouca | media | muita
+    temperatura: Mapped[str | None]
+    temperatura_motivo: Mapped[str | None]
+    temperatura_em: Mapped[datetime | None]
 
     empresa: Mapped[Empresa | None] = relationship(back_populates="pessoas")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="pessoa")
 
 
-class UsuarioInterno(Base):
-    __tablename__ = "usuarios_internos"
+class Usuario(Base):
+    """Pessoa da Innoa com acesso à plataforma. Usuário ativo tem os e-mails lidos."""
+
+    __tablename__ = "usuarios"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(unique=True)
     nome: Mapped[str]
+    papel: Mapped[str] = mapped_column(default="membro")  # master | membro
+    ativo: Mapped[bool] = mapped_column(default=True)
+    senha_hash: Mapped[str | None]
+    convite_token: Mapped[str | None] = mapped_column(unique=True)
+    convite_expira: Mapped[datetime | None]
     verticais: Mapped[list] = mapped_column(JSON, default=list)
     lider: Mapped[list] = mapped_column(JSON, default=list)
+    pipedrive_user_id: Mapped[int | None]
+    criado_em: Mapped[datetime] = mapped_column(default=_now)
+
+    @property
+    def le_emails(self) -> bool:
+        return self.ativo
+
+
+class Sessao(Base):
+    __tablename__ = "sessoes"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    expira: Mapped[datetime]
+
+    usuario: Mapped[Usuario] = relationship()
 
 
 class Negocio(Base):
@@ -92,10 +122,13 @@ class Negocio(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
     pessoa_id: Mapped[int | None] = mapped_column(ForeignKey("pessoas.id"), index=True)
-    vertical: Mapped[str] = mapped_column(index=True)
-    fonte: Mapped[str]  # pipedrive | zeca | quiver
+    vertical: Mapped[str | None] = mapped_column(index=True)  # None: funil sem vertical (Canais Parceria)
+    fonte: Mapped[str]  # pipedrive | zeca | manual
     id_externo: Mapped[str]
     titulo: Mapped[str | None]
+    pipeline_id: Mapped[int | None] = mapped_column(index=True)
+    etapa: Mapped[str | None]
+    pipedrive_owner_id: Mapped[int | None]
     # aberto | ganho | perdido (pipeline) ; ativo | cancelado (apólices)
     status: Mapped[str] = mapped_column(index=True)
     produto: Mapped[str | None]
@@ -112,31 +145,30 @@ class Negocio(Base):
 
     @property
     def vigente(self) -> bool:
-        """Cliente de fato: negócio ganho/apólice ativa e ainda dentro da vigência.
+        """Seguro vigente: negócio GANHO com fim de vigência depois de hoje.
 
-        Negócio aberto no funil NÃO torna a empresa cliente.
+        Negócio aberto no funil não torna a empresa cliente. Apólices do Zeca
+        e marcações manuais de Saúde valem enquanto ativas (e dentro do fim, se houver).
         """
-        if self.status not in ("ganho", "ativo"):
-            return False
         hoje = date.today()
-        if self.fim_vigencia:
-            return self.fim_vigencia >= hoje
-        if self.fonte == "pipedrive" and self.inicio_vigencia:
-            # Sem fim de vigência informado: assume apólice anual (+1 mês de tolerância).
-            return self.inicio_vigencia >= hoje - timedelta(days=395)
-        return True
+        if self.fonte == "pipedrive":
+            return self.status == "ganho" and self.fim_vigencia is not None and self.fim_vigencia > hoje
+        if self.status != "ativo":
+            return False
+        return self.fim_vigencia is None or self.fim_vigencia >= hoje
 
     @property
     def ex_cliente(self) -> bool:
         """Já foi cliente nesta vertical (vigência vencida ou apólice cancelada)."""
-        return self.status == "cancelado" or (self.status in ("ganho", "ativo") and not self.vigente)
+        return self.status == "cancelado" or (self.status in ("ganho", "ativo") and not self.vigente
+                                              and self.fim_vigencia is not None)
 
 
 class Interacao(Base):
     """Metadado de uma troca de e-mail entre um usuário interno e um contato externo.
 
-    Por LGPD e por economia, guardamos apenas metadados (quem, quando, direção,
-    thread). Assunto e corpo não são armazenados.
+    Guardamos apenas metadados (quem, quando, direção, thread). O texto dos
+    e-mails recebidos é lido só para medir a temperatura e não é armazenado.
     """
 
     __tablename__ = "interacoes"
@@ -153,26 +185,43 @@ class Interacao(Base):
     empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
 
 
-class Oportunidade(Base):
-    __tablename__ = "oportunidades"
-    __table_args__ = (UniqueConstraint("empresa_id", "pessoa_id", "vertical_alvo"),)
+class Atividade(Base):
+    """Atividade criada pela plataforma no Pipedrive (dentro da pessoa)."""
+
+    __tablename__ = "atividades"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
+    pipedrive_id: Mapped[int | None] = mapped_column(unique=True)
+    negocio_id: Mapped[int | None] = mapped_column(ForeignKey("negocios.id"), index=True)
     pessoa_id: Mapped[int | None] = mapped_column(ForeignKey("pessoas.id"), index=True)
-    vertical_alvo: Mapped[str] = mapped_column(index=True)
-    verticais_atuais: Mapped[list] = mapped_column(JSON, default=list)
-    score: Mapped[float] = mapped_column(index=True)
-    componentes: Mapped[dict] = mapped_column(JSON, default=dict)
-    motivos: Mapped[list] = mapped_column(JSON, default=list)
-    ponte_email: Mapped[str | None]  # usuário interno com melhor relação para apresentar
-    responsavel_email: Mapped[str | None]  # líder/equipe da vertical-alvo que vai atender
-    # nova | em_andamento | convertida | descartada
-    status: Mapped[str] = mapped_column(default="nova")
-    calculado_em: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
+    assunto: Mapped[str]
+    tipo: Mapped[str] = mapped_column(default="task")
+    vencimento: Mapped[date] = mapped_column(Date, index=True)
+    responsavel_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    criada_por_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    nota: Mapped[str | None]
+    concluida: Mapped[bool] = mapped_column(default=False)
+    concluida_em: Mapped[datetime | None]
+    criada_em: Mapped[datetime] = mapped_column(default=_now)
 
-    empresa: Mapped[Empresa | None] = relationship()
+    negocio: Mapped["Negocio | None"] = relationship()
     pessoa: Mapped[Pessoa | None] = relationship()
+    empresa: Mapped[Empresa | None] = relationship()
+    responsavel: Mapped[Usuario] = relationship(foreign_keys=[responsavel_id])
+
+
+class Noticia(Base):
+    __tablename__ = "noticias"
+    __table_args__ = (UniqueConstraint("empresa_id", "url"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    titulo: Mapped[str]
+    fonte: Mapped[str | None]
+    url: Mapped[str]
+    publicada_em: Mapped[datetime | None] = mapped_column(index=True)
+    coletada_em: Mapped[datetime] = mapped_column(default=_now)
 
 
 class SyncLog(Base):

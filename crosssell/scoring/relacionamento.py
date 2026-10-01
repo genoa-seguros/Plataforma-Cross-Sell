@@ -10,7 +10,7 @@ Empresa:
   melhor contato      40%  score do contato mais forte
   contatos ativos     20%  nº de pessoas com score >= 20 (satura em 5)
   acesso a decisores  20%  existe sócio/C-level/diretor com score >= 20
-  presença multi-vertical 20%  nº de verticais em que já é cliente (de 4)
+  presença multi-vertical 20%  nº de verticais em que já é cliente (de 3)
 """
 
 import math
@@ -48,7 +48,7 @@ def score_pessoa(interacoes: list[Interacao], agora: datetime) -> tuple[float, d
 
 
 def verticais_vigentes(negocios: list[Negocio]) -> set[str]:
-    return {n.vertical for n in negocios if n.vigente}
+    return {n.vertical for n in negocios if n.vigente and n.vertical}
 
 
 def calcular(db: Session, agora: datetime | None = None) -> dict:
@@ -73,7 +73,7 @@ def calcular(db: Session, agora: datetime | None = None) -> dict:
             p.ponto_focal = True
         melhor = contatos[0].score_relacionamento / 100 if contatos else 0.0
         decisor = 1.0 if any(p.senioridade in DECISORES for p in ativos) else 0.0
-        vert = len(verticais_vigentes(e.negocios)) / 4
+        vert = len(verticais_vigentes(e.negocios)) / 3
         e.score_relacionamento = round(
             100 * (0.40 * melhor + 0.20 * min(1.0, len(ativos) / 5) + 0.20 * decisor + 0.20 * vert), 1
         )

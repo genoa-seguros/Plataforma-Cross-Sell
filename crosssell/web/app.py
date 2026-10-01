@@ -1,18 +1,24 @@
-from collections import Counter
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from crosssell import auth, tabela
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
+from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Empresa, Oportunidade, Pessoa, SyncLog
+from crosssell.models import Atividade, Empresa, Negocio, Usuario
 from crosssell.pipeline import recalcular, registrar
-from crosssell.scoring.relacionamento import verticais_vigentes
+
+AQUI = Path(__file__).parent
+templates = Jinja2Templates(directory=AQUI / "templates")
+
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -21,9 +27,6 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)
-templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
-templates.env.globals.update(VERTICAIS=VERTICAIS, LABEL=VERTICAL_LABEL)
-STATUS_OPORTUNIDADE = ("nova", "em_andamento", "convertida", "descartada")
 
 
 def get_db():
@@ -34,114 +37,237 @@ def get_db():
         db.close()
 
 
-def _oportunidades(db: Session, vertical: str | None, status: str | None, limite: int = 200):
-    q = select(Oportunidade).order_by(Oportunidade.score.desc()).limit(limite)
-    if vertical:
-        q = q.where(Oportunidade.vertical_alvo == vertical)
-    if status:
-        q = q.where(Oportunidade.status == status)
-    return db.scalars(q).all()
+def get_pipedrive():
+    return pd.cliente(get_settings())
 
 
-def _serializar(o: Oportunidade) -> dict:
-    return {
-        "id": o.id, "empresa": o.empresa.razao_social if o.empresa else None, "empresa_id": o.empresa_id,
-        "pessoa": o.pessoa.nome if o.pessoa else None, "vertical_alvo": o.vertical_alvo,
-        "verticais_atuais": o.verticais_atuais, "score": o.score, "componentes": o.componentes,
-        "motivos": o.motivos, "ponte": o.ponte_email, "responsavel": o.responsavel_email, "status": o.status,
-    }
+def usuario_atual(request: Request, db: Session = Depends(get_db)) -> Usuario:
+    u = auth.usuario_da_sessao(db, request.cookies.get(auth.COOKIE))
+    if u is None:
+        raise HTTPException(401, "Faça login para continuar.")
+    # Proteção contra CSRF: chamadas que alteram dados vêm do app (fetch com cabeçalho próprio).
+    if request.method != "GET" and request.headers.get("x-cross-sell") != "1":
+        raise HTTPException(403, "Requisição de origem não reconhecida.")
+    return u
 
+
+def somente_master(u: Usuario = Depends(usuario_atual)) -> Usuario:
+    if u.papel != "master":
+        raise HTTPException(403, "Só o usuário master pode gerenciar a equipe.")
+    return u
+
+
+# --- Páginas -------------------------------------------------------------
 
 @app.get("/")
-def painel(request: Request, vertical: str | None = None, status: str | None = "nova", db: Session = Depends(get_db)):
-    empresas = db.scalars(select(Empresa)).all()
-    clientes = [(e, verticais_vigentes(e.negocios)) for e in empresas]
-    prospeccao = sum(1 for e, v in clientes if not v and any(n.status == "aberto" for n in e.negocios))
-    clientes = [(e, v) for e, v in clientes if v]
-    dist = Counter(len(v) for _, v in clientes)
-    por_vertical = {v: sum(1 for _, vs in clientes if v in vs) for v in VERTICAIS}
-    abertas = dict(db.execute(
-        select(Oportunidade.vertical_alvo, func.count()).where(Oportunidade.status == "nova")
-        .group_by(Oportunidade.vertical_alvo)).all())
-    ultimas = db.scalars(select(SyncLog).order_by(SyncLog.id.desc()).limit(8)).all()
-    return templates.TemplateResponse(request, "painel.html", {
-        "clientes": len(clientes), "prospeccao": prospeccao, "dist": dist, "por_vertical": por_vertical, "abertas": abertas,
-        "oportunidades": _oportunidades(db, vertical, status), "vertical": vertical, "status": status,
-        "status_opcoes": STATUS_OPORTUNIDADE, "syncs": ultimas,
-    })
+def inicio(request: Request, db: Session = Depends(get_db)):
+    if auth.usuario_da_sessao(db, request.cookies.get(auth.COOKIE)) is None:
+        return RedirectResponse("/login", status_code=303)
+    return FileResponse(AQUI / "app.html")
 
 
-@app.get("/empresas/{empresa_id}")
-def empresa(request: Request, empresa_id: int, db: Session = Depends(get_db)):
-    e = db.get(Empresa, empresa_id)
-    if e is None:
-        raise HTTPException(404)
-    pessoas = sorted(e.pessoas, key=lambda p: p.score_relacionamento, reverse=True)
-    estado = {}
-    for v in VERTICAIS:
-        negs = [n for n in e.negocios if n.vertical == v]
-        negs += [n for p in e.pessoas for n in p.negocios if n.vertical == v]
-        if any(n.vigente for n in negs):
-            estado[v] = "cliente"
-        elif any(n.status == "aberto" for n in negs):
-            estado[v] = "aberto"
-        elif any(n.ex_cliente for n in negs):
-            estado[v] = "ex"
-        else:
-            estado[v] = ""
-    ops = db.scalars(select(Oportunidade).where(Oportunidade.empresa_id == e.id).order_by(Oportunidade.score.desc())).all()
-    return templates.TemplateResponse(request, "empresa.html", {
-        "e": e, "pessoas": pessoas, "estado": estado, "oportunidades": ops, "status_opcoes": STATUS_OPORTUNIDADE,
-    })
+@app.get("/login")
+def login_form(request: Request):
+    return templates.TemplateResponse(request, "login.html", {"erro": None})
 
 
-@app.post("/oportunidades/{op_id}/status")
-def mudar_status(op_id: int, status: str = Form(...), voltar: str = Form("/"), db: Session = Depends(get_db)):
-    o = db.get(Oportunidade, op_id)
-    if o is None or status not in STATUS_OPORTUNIDADE:
-        raise HTTPException(400)
-    o.status = status
-    db.commit()
-    return RedirectResponse(voltar if voltar.startswith("/") else "/", status_code=303)
+@app.post("/login")
+def login(request: Request, email: str = Form(...), senha: str = Form(...), db: Session = Depends(get_db)):
+    u = auth.autenticar(db, email, senha)
+    if u is None:
+        return templates.TemplateResponse(request, "login.html", {"erro": "E-mail ou senha incorretos.", "email": email},
+                                          status_code=401)
+    s = get_settings()
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(auth.COOKIE, auth.abrir_sessao(db, u, s.sessao_dias), max_age=s.sessao_dias * 86400,
+                    httponly=True, samesite="lax", secure=s.cookie_seguro)
+    return resp
 
 
-@app.post("/importar")
-async def importar(fonte: str = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
-    from crosssell.connectors import enriquecimento, planilhas
-
-    fns = {"zeca": planilhas.importar_zeca, "quiver": planilhas.importar_quiver,
-           "linkedin": enriquecimento.importar_linkedin}
-    if fonte not in fns:
-        raise HTTPException(400, "fonte inválida")
-    conteudo = await arquivo.read()
-    registrar(db, fonte, fns[fonte], db, get_settings(), conteudo, arquivo.filename or "arquivo.csv")
-    recalcular(db)
-    return RedirectResponse("/", status_code=303)
+@app.get("/logout")
+def logout(request: Request, db: Session = Depends(get_db)):
+    auth.encerrar_sessao(db, request.cookies.get(auth.COOKIE))
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth.COOKIE)
+    return resp
 
 
-@app.post("/recalcular")
-def post_recalcular(db: Session = Depends(get_db)):
-    recalcular(db)
-    return RedirectResponse("/", status_code=303)
+@app.get("/convite/{token}")
+def convite_form(request: Request, token: str, db: Session = Depends(get_db)):
+    u = auth.usuario_do_convite(db, token)
+    return templates.TemplateResponse(request, "convite.html", {"u": u, "erro": None}, status_code=200 if u else 404)
 
 
-# --- API JSON (para integrar com Pipedrive, BI ou um agente) ---
+@app.post("/convite/{token}")
+def convite(request: Request, token: str, senha: str = Form(...), confirmacao: str = Form(...),
+            db: Session = Depends(get_db)):
+    u = auth.usuario_do_convite(db, token)
+    if u is None:
+        return templates.TemplateResponse(request, "convite.html", {"u": None, "erro": None}, status_code=404)
+    erro = auth.validar_senha(senha) or (None if senha == confirmacao else "As duas senhas não são iguais.")
+    if erro:
+        return templates.TemplateResponse(request, "convite.html", {"u": u, "erro": erro}, status_code=400)
+    auth.aceitar_convite(db, u, senha)
+    return RedirectResponse("/login", status_code=303)
 
-@app.get("/api/oportunidades")
-def api_oportunidades(vertical: str | None = None, status: str | None = None, limite: int = 100,
-                      db: Session = Depends(get_db)):
-    return [_serializar(o) for o in _oportunidades(db, vertical, status, limite)]
+
+# --- API -----------------------------------------------------------------
+
+def _usuario_json(u: Usuario) -> dict:
+    return {"id": u.id, "email": u.email, "nome": u.nome, "papel": u.papel, "ativo": u.ativo,
+            "verticais": u.verticais, "lider": u.lider, "pipedrive": bool(u.pipedrive_user_id),
+            "pendente": u.senha_hash is None}
+
+
+@app.get("/api/eu")
+def api_eu(u: Usuario = Depends(usuario_atual)):
+    return _usuario_json(u)
+
+
+@app.get("/api/tabela")
+def api_tabela(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    usuarios = db.scalars(select(Usuario).where(Usuario.ativo.is_(True)).order_by(Usuario.nome)).all()
+    return {"linhas": tabela.montar(db, get_settings()), "usuarios": [_usuario_json(x) for x in usuarios],
+            "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS}}
 
 
 @app.get("/api/empresas/{empresa_id}")
-def api_empresa(empresa_id: int, db: Session = Depends(get_db)):
+def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     e = db.get(Empresa, empresa_id)
     if e is None:
-        raise HTTPException(404)
+        raise HTTPException(404, "Empresa não encontrada.")
     return {
-        "id": e.id, "razao_social": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
-        "funcionarios": e.funcionarios, "score_relacionamento": e.score_relacionamento,
-        "componentes": e.score_componentes, "verticais_cliente": sorted(verticais_vigentes(e.negocios)),
-        "pontos_focais": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento}
-                          for p in db.scalars(select(Pessoa).where(Pessoa.empresa_id == e.id, Pessoa.ponto_focal))],
+        "id": e.id, "nome": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
+        "cidade": e.cidade, "uf": e.uf, "funcionarios": e.funcionarios, "score": e.score_relacionamento,
+        "comp": e.score_componentes,
+        "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
+                     "focal": p.ponto_focal, "temperatura": p.temperatura, "temperaturaMotivo": p.temperatura_motivo,
+                     "usuarios": (p.score_componentes or {}).get("usuarios", []),
+                     "i90": (p.score_componentes or {}).get("interacoes_90d", 0)}
+                    for p in sorted(e.pessoas, key=lambda p: p.score_relacionamento, reverse=True)],
+        "negocios": [{"vertical": n.vertical, "produto": n.produto or n.titulo, "titulo": n.titulo, "fonte": n.fonte,
+                      "status": n.status, "vigente": n.vigente, "etapa": n.etapa,
+                      "ini": n.inicio_vigencia.isoformat() if n.inicio_vigencia else None,
+                      "fim": n.fim_vigencia.isoformat() if n.fim_vigencia else None, "valor": n.valor}
+                     for n in e.negocios],
+        "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
+                      "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:10]],
     }
+
+
+class SaudeIn(BaseModel):
+    cliente: bool
+
+
+@app.post("/api/empresas/{empresa_id}/saude")
+def api_saude(empresa_id: int, dados: SaudeIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    if db.get(Empresa, empresa_id) is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    pd.marcar_saude(db, empresa_id, dados.cliente)
+    db.commit()
+    return {"ok": True}
+
+
+class AtividadeIn(BaseModel):
+    negocio_id: int
+    pessoa_id: int
+    assunto: str
+    tipo: str = "task"
+    vencimento: date
+    responsavel_id: int
+    nota: str | None = None
+
+
+@app.post("/api/atividades")
+def api_criar_atividade(dados: AtividadeIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual),
+                        client: pd.PipedriveClient = Depends(get_pipedrive)):
+    neg = db.get(Negocio, dados.negocio_id)
+    resp = db.get(Usuario, dados.responsavel_id)
+    if neg is None or resp is None or not resp.ativo:
+        raise HTTPException(400, "Negócio ou responsável inválido.")
+    try:
+        at = pd.criar_atividade(db, client, negocio=neg, pessoa_id=dados.pessoa_id, assunto=dados.assunto.strip(),
+                                vencimento=dados.vencimento, responsavel=resp, criada_por=u, tipo=dados.tipo,
+                                nota=dados.nota)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"id": at.id, "pipedriveId": at.pipedrive_id}
+
+
+class ConcluirIn(BaseModel):
+    concluida: bool = True
+
+
+@app.post("/api/atividades/{atividade_id}/concluir")
+def api_concluir(atividade_id: int, dados: ConcluirIn, db: Session = Depends(get_db),
+                 _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+    at = db.get(Atividade, atividade_id)
+    if at is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+    pd.concluir_atividade(db, client, at, dados.concluida)
+    return {"ok": True}
+
+
+@app.get("/api/todos")
+def api_todos(ref: date | None = None, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    return tabela.todos(db, ref)
+
+
+@app.get("/api/equipe")
+def api_equipe(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    return [_usuario_json(u) for u in db.scalars(select(Usuario).order_by(Usuario.ativo.desc(), Usuario.nome))]
+
+
+class ConviteIn(BaseModel):
+    email: str
+    nome: str
+    verticais: list[str] = []
+    lider: list[str] = []
+
+
+def _link(request: Request, token: str) -> str:
+    return str(request.base_url).rstrip("/") + f"/convite/{token}"
+
+
+@app.post("/api/equipe/convidar")
+def api_convidar(dados: ConviteIn, request: Request, db: Session = Depends(get_db),
+                 _m: Usuario = Depends(somente_master)):
+    if "@" not in dados.email:
+        raise HTTPException(400, "Informe um e-mail válido.")
+    verticais = [v for v in dados.verticais if v in VERTICAIS]
+    u, token = auth.convidar(db, dados.email, dados.nome, verticais, [v for v in dados.lider if v in verticais])
+    return {"usuario": _usuario_json(u), "link": _link(request, token)}
+
+
+@app.post("/api/equipe/{usuario_id}/desconvidar")
+def api_desconvidar(usuario_id: int, db: Session = Depends(get_db), m: Usuario = Depends(somente_master)):
+    u = db.get(Usuario, usuario_id)
+    if u is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    if u.id == m.id:
+        raise HTTPException(400, "Você não pode remover o próprio acesso.")
+    auth.desconvidar(db, u)
+    return _usuario_json(u)
+
+
+@app.post("/api/equipe/{usuario_id}/reenviar")
+def api_reenviar(usuario_id: int, request: Request, db: Session = Depends(get_db),
+                 _m: Usuario = Depends(somente_master)):
+    u = db.get(Usuario, usuario_id)
+    if u is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    u, token = auth.convidar(db, u.email, u.nome, u.verticais, u.lider, papel=u.papel)
+    return {"usuario": _usuario_json(u), "link": _link(request, token)}
+
+
+@app.post("/api/importar")
+async def api_importar(fonte: str = Form(...), arquivo: UploadFile = File(...), db: Session = Depends(get_db),
+                       _u: Usuario = Depends(usuario_atual)):
+    from crosssell.connectors import enriquecimento, planilhas
+
+    fns = {"zeca": planilhas.importar_zeca, "linkedin": enriquecimento.importar_linkedin}
+    if fonte not in fns:
+        raise HTTPException(400, "Fonte inválida: use zeca ou linkedin.")
+    res = registrar(db, fonte, fns[fonte], db, get_settings(), await arquivo.read(), arquivo.filename or "arquivo.csv")
+    recalcular(db)
+    return res

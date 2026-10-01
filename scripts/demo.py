@@ -1,65 +1,65 @@
-"""Popula um banco com dados FICTÍCIOS para demonstração do painel.
+"""Popula um banco com dados FICTÍCIOS para demonstração.
 
 Uso: DATABASE_URL=sqlite:///demo.db python scripts/demo.py
 
-As empresas, pessoas e valores são inventados. As regras de score e de
-oportunidade aplicadas são as reais da plataforma.
+Empresas, pessoas, notícias e valores são inventados. As regras (seguro vigente,
+tabela, score, to-dos) são as reais da plataforma.
 """
 
 import random
 from datetime import date, datetime, timedelta
 
+from crosssell import auth
 from crosssell.config import get_settings
 from crosssell.connectors.email_m365 import registrar_mensagens
+from crosssell.connectors.pipedrive import marcar_saude
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Empresa, Negocio, Pessoa
+from crosssell.models import Atividade, Empresa, Negocio, Noticia, Pessoa, Usuario
 from crosssell.normalize import classificar_senioridade, normalizar_nome_empresa, normalizar_nome_pessoa
 from crosssell.pipeline import carregar_usuarios, recalcular
 
-random.seed(7)
+random.seed(11)
 HOJE = date.today()
 AGORA = datetime.now()
 
-EQUIPE = {
-    "linhas_financeiras": ["victor.boldrini@innoaseguros.com.br", "pedro.acciari@innoaseguros.com.br",
-                           "pamela.silva@innoaseguros.com.br"],
-    "saude": ["pedro.acciari@innoaseguros.com.br", "pamela.silva@innoaseguros.com.br"],
-    "ramos_elementares": ["bruno.rodrigues@innoaseguros.com.br"],
-}
-PRODUTOS = {
-    "linhas_financeiras": ["D&O", "Cyber", "Seguro Garantia", "RC Profissional"],
-    "ramos_elementares": ["Empresarial", "Transportes", "Equipamentos", "Frota"],
-    "saude": ["Saúde coletivo", "Odonto coletivo", "Vida em grupo"],
-}
-OPERADORAS = ["Operadora A", "Operadora B", "Operadora C"]
+DONO = {1: "victor.boldrini@innoaseguros.com.br", 29: "bruno.rodrigues@innoaseguros.com.br",
+        23: "pamela.silva@innoaseguros.com.br", 34: "pedro.acciari@innoaseguros.com.br",
+        39: "victor.boldrini@innoaseguros.com.br", 40: "victor.boldrini@innoaseguros.com.br"}
+VERT = {1: "linhas_financeiras", 40: "linhas_financeiras", 29: "ramos_elementares", 23: "saude", 34: "saude", 39: None}
+ETAPAS = {1: ["Qualificação Lead", "Em Cotação", "Proposta Enviada"], 29: ["Contato Realizado", "Em cotação", "Aguardando fechamento"],
+          23: ["Qualificando Lead", "Em cotação / Proposta", "Proposta enviada / Negociação"],
+          34: ["Lead Recebido/Sem interação", "Reunião agendada/ligação", "Cotação"],
+          39: ["Leads Abordado", "Demonstração Agendada", "Proposta Feita"]}
 
-# (nome, setor/CNAE, porte, funcionários, capital, verticais que já é cliente, verticais em funil)
+# nome, CNAE, porte, funcionários, ganhos [(funil, produto, dias até o fim)], abertos [(funil, produto)], temperatura do contato
 EMPRESAS = [
-    ("Metalúrgica Aurora", "2511000 - Fabricação de estruturas metálicas", "DEMAIS", 420, 18e6, ["saude"], []),
-    ("Transportadora Rota Sul", "4930202 - Transporte rodoviário de carga", "DEMAIS", 260, 6e6, ["ramos_elementares"], []),
-    ("Clínica Horizonte", "8610101 - Atividades de atendimento hospitalar", "DEMAIS", 180, 3e6, ["linhas_financeiras"], ["saude"]),
-    ("Grupo Vértice Tecnologia", "6201501 - Desenvolvimento de software", "DEMAIS", 350, 12e6, ["linhas_financeiras", "saude"], []),
-    ("Alimentos Serra Azul", "1091101 - Fabricação de produtos de panificação", "DEMAIS", 610, 25e6, ["ramos_elementares", "saude"], []),
-    ("Construtora Pedra Alta", "4120400 - Construção de edifícios", "DEMAIS", 140, 9e6, ["linhas_financeiras"], []),
-    ("Laboratório Prisma", "2121101 - Fabricação de medicamentos", "DEMAIS", 230, 15e6, ["saude"], ["linhas_financeiras"]),
-    ("Varejo Bom Preço", "4711302 - Supermercados", "DEMAIS", 900, 30e6, ["ramos_elementares"], []),
-    ("Agência Lumen", "7311400 - Agências de publicidade", "EPP", 35, 4e5, ["saude"], []),
-    ("Energia Ventos do Norte", "3511501 - Geração de energia elétrica", "DEMAIS", 75, 40e6, ["linhas_financeiras", "ramos_elementares"], []),
-    ("Escola Novo Saber", "8513900 - Ensino fundamental", "DEMAIS", 120, 2e6, ["saude"], []),
-    ("Logística Ponto Certo", "5211701 - Armazéns gerais", "DEMAIS", 310, 7e6, ["saude", "ramos_elementares"], []),
-    ("Fintech Ágil Pagamentos", "6619399 - Serviços financeiros", "DEMAIS", 95, 20e6, ["linhas_financeiras"], []),
-    ("Hotel Mar Aberto", "5510801 - Hotéis", "DEMAIS", 160, 5e6, ["ramos_elementares"], ["saude"]),
-    ("Cerâmica Terra Viva", "2342702 - Fabricação de cerâmica", "EPP", 48, 9e5, ["ramos_elementares"], []),
-    ("Consultoria Ápice", "7020400 - Consultoria em gestão", "ME", 12, 1e5, ["linhas_financeiras"], []),
-    # Só em prospecção: negócio aberto, nenhum ganho
-    ("Indústria Química Delta", "2029100 - Fabricação de produtos químicos", "DEMAIS", 280, 22e6, [], ["ramos_elementares"]),
-    ("Rede Farma Vida", "4771701 - Comércio varejista de medicamentos", "DEMAIS", 500, 14e6, [], ["saude"]),
+    ("Metalúrgica Aurora", "2511000 - Estruturas metálicas", "DEMAIS", 420, [(1, "D&O", 70), (1, "Cyber", -40)], [(29, "Empresarial"), (23, "Saúde")], "muita"),
+    ("Transportadora Rota Sul", "4930202 - Transporte de carga", "DEMAIS", 260, [(29, "Transportes", 95)], [(1, "D&O")], "media"),
+    ("Clínica Horizonte", "8610101 - Atendimento hospitalar", "DEMAIS", 180, [(1, "E&O Medmal", 210)], [(34, "Saúde")], "muita"),
+    ("Grupo Vértice Tecnologia", "6201501 - Desenvolvimento de software", "DEMAIS", 350, [(1, "D&O", 300), (1, "Cyber", 120)], [(29, "Equipamentos")], "media"),
+    ("Alimentos Serra Azul", "1091101 - Panificação industrial", "DEMAIS", 610, [(29, "Empresarial", 45)], [(1, "D&O"), (23, "Vida")], "pouca"),
+    ("Construtora Pedra Alta", "4120400 - Construção de edifícios", "DEMAIS", 140, [(40, "Garantia", 160)], [(29, "Risco de Engenharia")], "media"),
+    ("Laboratório Prisma", "2121101 - Medicamentos", "DEMAIS", 230, [], [(1, "D&O"), (34, "Saúde")], "muita"),
+    ("Varejo Bom Preço", "4711302 - Supermercados", "DEMAIS", 900, [(29, "Empresarial", 250)], [(23, "Saúde")], None),
+    ("Energia Ventos do Norte", "3511501 - Geração de energia", "DEMAIS", 75, [(1, "D&O", 30), (29, "Equipamentos", 330)], [(23, "Saúde")], "muita"),
+    ("Logística Ponto Certo", "5211701 - Armazéns gerais", "DEMAIS", 310, [(29, "Transportes", -60)], [(29, "Transportes"), (1, "Cyber")], "pouca"),
+    ("Fintech Ágil Pagamentos", "6619399 - Serviços financeiros", "DEMAIS", 95, [(1, "Cyber", 180)], [(1, "D&O"), (34, "Saúde")], "media"),
+    ("Hotel Mar Aberto", "5510801 - Hotéis", "DEMAIS", 160, [], [(29, "Empresarial")], "pouca"),
+    ("Indústria Química Delta", "2029100 - Produtos químicos", "DEMAIS", 280, [], [(29, "Empresarial"), (1, "D&O")], None),
+    ("Corretora Parceira Sigma", "6622300 - Corretagem de seguros", "EPP", 25, [], [(39, "Canal Cyber")], "media"),
 ]
 NOMES = ["Ana Ribeiro", "Carlos Menezes", "Juliana Prado", "Marcos Teixeira", "Fernanda Lopes", "Rafael Duarte",
          "Patrícia Nogueira", "Eduardo Campos", "Luciana Barros", "Gustavo Pires", "Renata Moraes", "Thiago Rocha",
-         "Beatriz Carvalho", "André Fontes", "Camila Freitas", "Rodrigo Sales", "Mariana Costa", "Felipe Azevedo"]
+         "Beatriz Carvalho", "André Fontes", "Camila Freitas", "Rodrigo Sales", "Helena Martins", "Bruno Vieira",
+         "Sofia Andrade", "Lucas Ferraz", "Marina Queiroz", "Diego Almeida", "Paula Rezende", "Vinícius Prates",
+         "Larissa Couto", "Otávio Nunes", "Débora Siqueira", "Henrique Bastos"]
 CARGOS = ["CFO", "Diretora Financeira", "Gerente de RH", "Sócio-Administrador", "Diretor de Operações",
-          "Coordenadora de Benefícios", "CEO", "Analista Financeiro", "Gerente Administrativo"]
+          "Coordenadora de Benefícios", "CEO", "Gerente Administrativo"]
+MOTIVOS = {"muita": "Responde no mesmo dia, envia documentos sem precisar pedir e sugeriu uma reunião.",
+           "media": "Responde de forma cordial e objetiva, mas só ao que foi perguntado.",
+           "pouca": "Respostas curtas; disse que o tema não é prioridade neste trimestre."}
+NOTICIAS = ["{n} anuncia expansão com nova unidade no interior de SP", "{n} conclui captação para financiar crescimento",
+            "{n} troca diretoria financeira", "{n} é citada entre as empresas que mais crescem no setor"]
 
 
 def cnpj_ficticio(i: int) -> str:
@@ -75,75 +75,81 @@ def main():
     db = SessionLocal()
     s = get_settings()
     carregar_usuarios(db, s)
-    seq = 0
-    for i, (nome, cnae, porte, func, capital, clientes, funil) in enumerate(EMPRESAS):
+    master, _ = auth.convidar(db, "rodrigo.pedroni@innoaseguros.com.br", "Rodrigo Pedroni", [], papel="master")
+    for i, u in enumerate(db.query(Usuario).all(), start=1):
+        u.pipedrive_user_id = i
+        if u.senha_hash is None and u.papel != "master":
+            u.senha_hash = "demo"  # aparece como ativo na prévia
+    seq = 1000
+    for i, (nome, cnae, porte, func, ganhos, abertos, temp) in enumerate(EMPRESAS):
         dominio = normalizar_nome_empresa(nome).replace(" ", "") + ".exemplo.com.br"
         e = Empresa(razao_social=f"{nome} (exemplo)", nome_normalizado=normalizar_nome_empresa(nome), cnpj=cnpj_ficticio(i),
-                    dominio=dominio, cnae=cnae, porte=porte, funcionarios=func, capital_social=capital,
-                    cidade="São Paulo", uf="SP", enriquecido_em=AGORA)
+                    dominio=dominio, cnae=cnae, porte=porte, funcionarios=func, cidade="São Paulo", uf="SP",
+                    pipedrive_org_id=500 + i, noticias_em=AGORA)
         db.add(e)
         db.flush()
         pessoas = []
-        for j in range(random.randint(2, 4)):
-            pn = NOMES[(i * 3 + j) % len(NOMES)]
-            cargo = CARGOS[(i + j * 2) % len(CARGOS)]
+        for j in range(2):
+            pn = NOMES[(i * 2 + j) % len(NOMES)]
+            cargo = CARGOS[(i + j * 3) % len(CARGOS)]
             p = Pessoa(nome=pn, nome_normalizado=normalizar_nome_pessoa(pn), empresa_id=e.id, cargo=cargo,
-                       senioridade=classificar_senioridade(cargo), fonte=random.choice(["pipedrive", "email", "receita"]),
-                       email=f"{normalizar_nome_pessoa(pn).split()[0]}.{i}@{dominio}")
+                       senioridade=classificar_senioridade(cargo), fonte="pipedrive", pipedrive_person_id=7000 + i * 10 + j,
+                       email=f"{normalizar_nome_pessoa(pn).split()[0]}@{dominio}")
             db.add(p)
             pessoas.append(p)
         db.flush()
-
-        for v in clientes:
+        if temp:
+            pessoas[0].temperatura, pessoas[0].temperatura_motivo, pessoas[0].temperatura_em = temp, MOTIVOS[temp], AGORA
+        for funil, produto, dias in ganhos:
             seq += 1
-            fim = HOJE + timedelta(days=random.choice([45, 70, 95, 150, 210, 300]))
-            fonte = "zeca" if v == "saude" and random.random() < 0.6 else "pipedrive"
-            db.add(Negocio(empresa_id=e.id, vertical=v, fonte=fonte, id_externo=f"demo-{seq}", status="ativo" if fonte == "zeca" else "ganho",
-                           titulo=random.choice(PRODUTOS[v]), produto=random.choice(PRODUTOS[v]),
-                           seguradora=random.choice(OPERADORAS), inicio_vigencia=fim - timedelta(days=365),
-                           fim_vigencia=fim, valor=round(random.uniform(8e3, 4e5), 2),
-                           vidas=func if v == "saude" else None, responsavel_email=EQUIPE[v][0]))
-        for v in funil:
+            fim = HOJE + timedelta(days=dias)
+            db.add(Negocio(empresa=e, pessoa=pessoas[0], vertical=VERT[funil], fonte="pipedrive", id_externo=str(seq),
+                           pipeline_id=funil, status="ganho", titulo=f"{produto} {fim.year - 1}", produto=produto,
+                           inicio_vigencia=fim - timedelta(days=365), fim_vigencia=fim,
+                           valor=round(random.uniform(8e3, 2e5), 2), responsavel_email=DONO[funil]))
+        for funil, produto in abertos:
             seq += 1
-            db.add(Negocio(empresa_id=e.id, vertical=v, fonte="pipedrive", id_externo=f"demo-{seq}", status="aberto",
-                           titulo=f"{random.choice(PRODUTOS[v])} {HOJE.year}", responsavel_email=EQUIPE[v][0]))
-        if i == 5:  # ex-cliente de Saúde
-            seq += 1
-            db.add(Negocio(empresa_id=e.id, vertical="saude", fonte="zeca", id_externo=f"demo-{seq}", status="cancelado",
-                           titulo="Saúde coletivo", seguradora="Operadora B",
-                           inicio_vigencia=HOJE - timedelta(days=500), fim_vigencia=HOJE - timedelta(days=135)))
+            db.add(Negocio(empresa=e, pessoa=pessoas[0], vertical=VERT[funil], fonte="pipedrive", id_externo=str(seq),
+                           pipeline_id=funil, status="aberto", titulo=f"{produto} {HOJE.year}", produto=produto,
+                           etapa=random.choice(ETAPAS[funil]), valor=round(random.uniform(5e3, 1.5e5), 2),
+                           responsavel_email=DONO[funil]))
+        if i in (0, 7):
+            marcar_saude(db, e.id, True)
+        for k, modelo in enumerate(random.sample(NOTICIAS, k=random.choice([0, 1, 2]))):
+            db.add(Noticia(empresa_id=e.id, titulo=modelo.format(n=nome), fonte="Exemplo", url=f"exemplo-{i}-{k}",
+                           publicada_em=AGORA - timedelta(days=random.randint(2, 60))))
         db.commit()
 
-        # E-mails: quem da equipe conversa com essa empresa, com intensidade variável
-        intensidade = random.choice([0, 2, 5, 10, 18]) if clientes else random.choice([0, 3])
-        msgs, usuarios = [], {u for v in clientes for u in EQUIPE[v]} or {"bruno.rodrigues@innoaseguros.com.br"}
+        intensidade = {"muita": 14, "media": 6, "pouca": 2, None: 0}[temp]
+        dono = DONO[abertos[0][0]]
+        outro = random.choice([u for u in DONO.values() if u != dono])
+        msgs = {}
         for k in range(intensidade):
-            u = random.choice(sorted(usuarios))
-            p = random.choice(pessoas[:2])
-            t = AGORA - timedelta(days=random.randint(0, 80), hours=random.randint(0, 9))
-            msgs.append({"message_id": f"m{i}-{k}", "thread_id": f"t{i}-{k}", "data": t.isoformat(), "de": u, "para": [p.email]})
-            if random.random() < 0.7:
-                msgs.append({"message_id": f"r{i}-{k}", "thread_id": f"t{i}-{k}", "data": (t + timedelta(hours=3)).isoformat(),
-                             "de": p.email, "para": [u]})
-        por_usuario: dict[str, list] = {}
-        for m in msgs:
-            u = m["de"] if m["de"].endswith("innoaseguros.com.br") else m["para"][0]
-            por_usuario.setdefault(u, []).append(m)
-        for u, ms in por_usuario.items():
+            u = dono if k % 3 else outro
+            t = AGORA - timedelta(days=random.randint(0, 70), hours=random.randint(0, 9))
+            msgs.setdefault(u, []).append({"message_id": f"m{i}-{k}", "thread_id": f"t{i}-{k}", "data": t.isoformat(),
+                                           "de": u, "para": [pessoas[0].email]})
+            if temp != "pouca" or k % 2:
+                msgs[u].append({"message_id": f"r{i}-{k}", "thread_id": f"t{i}-{k}", "data": (t + timedelta(hours=2)).isoformat(),
+                                "de": pessoas[0].email, "para": [u]})
+        for u, ms in msgs.items():
             registrar_mensagens(db, s, u, ms)
-
-    # Um sócio que é cliente PF (Linhas Pessoais) — gera oportunidade no sentido inverso
-    socio = Pessoa(nome="Roberto Almeida Figueiredo", nome_normalizado=normalizar_nome_pessoa("Roberto Almeida Figueiredo"),
-                   fonte="quiver", cpf="52998224725")
-    db.add(socio)
-    db.flush()
-    db.add(Negocio(pessoa_id=socio.id, vertical="linhas_pessoais", fonte="quiver", id_externo="demo-pf-1", status="ativo",
-                   titulo="Auto", produto="Auto", seguradora="Operadora A", fim_vigencia=HOJE + timedelta(days=200), valor=4800))
-    alvo = db.query(Empresa).filter(Empresa.nome_normalizado == normalizar_nome_empresa("Indústria Química Delta")).one()
-    db.add(Pessoa(nome="Roberto Almeida Figueiredo", nome_normalizado=socio.nome_normalizado, empresa_id=alvo.id,
-                  cargo="Sócio-Administrador", senioridade="socio", fonte="receita"))
     db.commit()
 
+    # Atividades da semana (algumas atrasadas e uma feita)
+    seg = HOJE - timedelta(days=HOJE.weekday())
+    usuarios = {u.email: u for u in db.query(Usuario).all()}
+    abertos = db.query(Negocio).filter(Negocio.status == "aberto").order_by(Negocio.id).all()
+    planos = [(0, "Ligar para apresentar o Empresarial", "call", -2, False), (1, "Enviar proposta de D&O", "email", 1, False),
+              (2, "Reunião de implantação Saúde", "meeting", 3, False), (4, "Cotar D&O com 3 seguradoras", "task", 0, True),
+              (9, "Retomar contato sobre Transportes", "call", -4, False), (6, "Apresentar Saúde para o RH", "meeting", 4, False)]
+    for idx, assunto, tipo, desloc, feita in planos:
+        n = abertos[idx]
+        db.add(Atividade(pipedrive_id=None, negocio_id=n.id, pessoa_id=n.pessoa_id, empresa_id=n.empresa_id, assunto=assunto,
+                         tipo=tipo, vencimento=min(HOJE + timedelta(days=desloc), seg + timedelta(days=4)) if desloc > 0
+                         else HOJE + timedelta(days=desloc),
+                         responsavel_id=usuarios[n.responsavel_email].id, criada_por_id=master.id, concluida=feita))
+    db.commit()
     print(recalcular(db, s))
 
 

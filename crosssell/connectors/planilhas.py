@@ -1,4 +1,4 @@
-"""Importação periódica de apólices exportadas do Zeca (Saúde) e do Quiver (Linhas Pessoais).
+"""Importação periódica de apólices de Saúde exportadas do Zeca.
 
 Aceita CSV (; ou ,) e XLSX. Os cabeçalhos são mapeados via config/verticais.yaml,
 então mudanças de layout da exportação não exigem mudança de código.
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from crosssell.config import Settings
 from crosssell.models import Negocio
 from crosssell.normalize import normalizar_documento, parse_data, parse_numero, sem_acento
-from crosssell.resolver import resolver_empresa, resolver_pessoa
+from crosssell.resolver import resolver_empresa
 
 STATUS_INATIVO = ("cancel", "inativ", "suspens", "encerr", "rescind", "migr")
 
@@ -78,7 +78,7 @@ def importar_zeca(db: Session, settings: Settings, conteudo: bytes, nome_arquivo
         if neg is None:
             neg = Negocio(fonte="zeca", id_externo=numero, vertical="saude", status="ativo")
             db.add(neg)
-        neg.empresa_id = empresa.id
+        neg.empresa = empresa
         neg.titulo = f"Saúde {r.get('operadora', '')}".strip()
         neg.produto = r.get("produto")
         neg.seguradora = r.get("operadora")
@@ -100,42 +100,6 @@ def importar_zeca(db: Session, settings: Settings, conteudo: bytes, nome_arquivo
     return cont
 
 
-def importar_quiver(db: Session, settings: Settings, conteudo: bytes, nome_arquivo: str) -> dict:
-    mapa = settings.verticais_config()["importacao"]["quiver"]
-    cont = {"linhas": 0, "importadas": 0, "sem_cliente": 0}
-
-    for bruta in ler_linhas(conteudo, nome_arquivo):
-        cont["linhas"] += 1
-        r = mapear(bruta, mapa)
-        cnpj, cpf = normalizar_documento(r.get("documento"))
-        empresa = pessoa = None
-        if cnpj:
-            empresa = resolver_empresa(db, razao_social=r.get("nome"), cnpj=cnpj)
-        else:
-            pessoa = resolver_pessoa(db, nome=r.get("nome"), cpf=cpf, email=r.get("email"), fonte="quiver")
-        if empresa is None and pessoa is None:
-            cont["sem_cliente"] += 1
-            continue
-        numero = str(r.get("numero_apolice") or f"{cpf or cnpj}-{r.get('produto', '')}")
-        neg = db.scalar(select(Negocio).where(Negocio.fonte == "quiver", Negocio.id_externo == numero))
-        if neg is None:
-            neg = Negocio(fonte="quiver", id_externo=numero, vertical="linhas_pessoais", status="ativo")
-            db.add(neg)
-        neg.empresa_id = empresa.id if empresa else None
-        neg.pessoa_id = pessoa.id if pessoa else None
-        neg.titulo = r.get("produto")
-        neg.produto = r.get("produto")
-        neg.seguradora = r.get("seguradora")
-        neg.inicio_vigencia = parse_data(r.get("inicio_vigencia"))
-        neg.fim_vigencia = parse_data(r.get("fim_vigencia"))
-        neg.valor = parse_numero(r.get("premio"))
-        neg.status = _status(r.get("status"))
-        cont["importadas"] += 1
-
-    db.commit()
-    return cont
-
-
 def importar_arquivo(db: Session, settings: Settings, fonte: str, caminho: Path, **kw) -> dict:
-    fn = {"zeca": importar_zeca, "quiver": importar_quiver}[fonte]
+    fn = {"zeca": importar_zeca}[fonte]
     return fn(db, settings, caminho.read_bytes(), caminho.name, **kw)

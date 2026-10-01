@@ -4,9 +4,13 @@ Requer um app registration no Entra ID com permissão de *aplicativo* Mail.Read
 (com consentimento de admin). Recomenda-se restringir o app às caixas dos
 usuários das verticais com uma Application Access Policy do Exchange.
 
-Somente metadados são lidos ($select sem subject/body): remetente,
-destinatários, data e conversationId. Isso basta para medir frequência,
-recência, reciprocidade e amplitude do relacionamento.
+Ficam gravados só os metadados (remetente, destinatários, data e
+conversationId), que medem frequência, recência, reciprocidade e amplitude
+do relacionamento. Dos e-mails RECEBIDOS de contatos conhecidos lemos também
+o trecho novo da resposta (uniqueBody, sem o histórico citado). Esse texto
+vai para a classificação de temperatura e é descartado em seguida.
+
+As caixas lidas são as dos usuários ATIVOS da plataforma (convidados pelo master).
 """
 
 from collections.abc import Iterable, Iterator
@@ -22,7 +26,7 @@ from crosssell.normalize import dominio_email, normalizar_email
 from crosssell.resolver import resolver_pessoa
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-CAMPOS = "id,conversationId,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime"
+CAMPOS = "id,conversationId,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,uniqueBody"
 
 
 class GraphClient:
@@ -54,7 +58,10 @@ class GraphClient:
             "$top": 200,
         }
         while url:
-            r = self.http.get(url, params=params, headers={"Authorization": f"Bearer {self.token()}"})
+            r = self.http.get(url, params=params, headers={
+                "Authorization": f"Bearer {self.token()}",
+                "Prefer": 'outlook.body-content-type="text"',
+            })
             r.raise_for_status()
             body = r.json()
             yield from body.get("value", [])
@@ -73,14 +80,18 @@ def converter_graph(msg: dict) -> dict:
         "data": msg.get("sentDateTime") or msg.get("receivedDateTime"),
         "de": (_enderecos([msg.get("from")]) or [None])[0],
         "para": _enderecos(msg.get("toRecipients")) + _enderecos(msg.get("ccRecipients")),
+        "texto": (msg.get("uniqueBody") or {}).get("content") or "",
     }
 
 
-def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, mensagens: Iterable[dict]) -> dict:
+def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, mensagens: Iterable[dict],
+                        textos: dict[int, list[dict]] | None = None) -> dict:
     """Grava uma Interacao por (mensagem, participante externo).
 
     Participantes de domínios de empresas já conhecidas viram Pessoa
     automaticamente — assim descobrimos pontos focais que não estão no CRM.
+    Se `textos` for passado, recebe {pessoa_id: [{data, texto}]} dos e-mails
+    novos que cada contato escreveu (para a temperatura; não é gravado).
     """
     internos = settings.internal_domain_set
     usuario_email = usuario_email.lower()
@@ -119,17 +130,26 @@ def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, men
                 empresa_id=(pessoa.empresa_id if pessoa and pessoa.empresa_id else (empresa.id if empresa else None)),
             ))
             cont["interacoes"] += 1
+            if textos is not None and not enviado and pessoa is not None and m.get("texto"):
+                textos.setdefault(pessoa.id, []).append({"data": data, "texto": m["texto"]})
     db.commit()
     return cont
 
 
-def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None) -> dict:
+def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None,
+                classificador=None) -> dict:
+    from crosssell.models import Usuario
+    from crosssell import temperatura
+
     client = client or GraphClient(settings)
     desde = datetime.utcnow() - timedelta(days=dias)
-    usuarios = [u["email"] for u in settings.usuarios()]
+    usuarios = [u.email for u in db.scalars(select(Usuario).where(Usuario.ativo.is_(True)))]
     total: dict[str, int] = {}
+    textos: dict[int, list[dict]] = {}
     for u in usuarios:
-        res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)))
+        res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)), textos)
         for k, v in res.items():
             total[k] = total.get(k, 0) + v
+    if classificador is not None and textos:
+        total["temperaturas"] = temperatura.atualizar(db, classificador, textos)
     return total

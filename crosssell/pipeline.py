@@ -1,13 +1,13 @@
-"""Orquestra a atualização completa: fontes -> enriquecimento -> scores -> oportunidades."""
+"""Orquestra a atualização: fontes -> enriquecimento -> scores."""
 
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from crosssell.config import Settings, get_settings
-from crosssell.models import SyncLog, UsuarioInterno
-from crosssell.scoring import oportunidades, relacionamento
+from crosssell.config import Settings
+from crosssell.models import SyncLog, Usuario
+from crosssell.scoring import relacionamento
 
 
 def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
@@ -29,21 +29,16 @@ def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
 
 
 def carregar_usuarios(db: Session, settings: Settings) -> int:
-    """Sincroniza a tabela de usuários internos com config/verticais.yaml."""
-    for u in settings.usuarios():
-        reg = db.scalar(select(UsuarioInterno).where(UsuarioInterno.email == u["email"]))
+    """Cria os usuários da equipe inicial do config que ainda não existem (sem senha: precisam de convite)."""
+    n = 0
+    for u in settings.usuarios_iniciais():
+        reg = db.scalar(select(Usuario).where(Usuario.email == u["email"]))
         if reg is None:
-            reg = UsuarioInterno(email=u["email"])
-            db.add(reg)
-        reg.nome, reg.verticais, reg.lider = u["nome"], u["verticais"], u["lider"]
+            db.add(Usuario(email=u["email"], nome=u["nome"], verticais=u["verticais"], lider=u["lider"]))
+            n += 1
     db.commit()
-    return len(settings.usuarios())
+    return n
 
 
 def recalcular(db: Session, settings: Settings | None = None) -> dict:
-    settings = settings or get_settings()
-    carregar_usuarios(db, settings)
-    return {
-        "relacionamento": relacionamento.calcular(db),
-        "oportunidades": oportunidades.calcular(db, settings=settings),
-    }
+    return {"relacionamento": relacionamento.calcular(db)}

@@ -1,21 +1,33 @@
-# Mapeamento de fontes -> verticais.
-# Verticais: linhas_financeiras | saude | ramos_elementares | linhas_pessoais
+# Verticais da ferramenta: linhas_financeiras | saude | ramos_elementares
+# (Linhas Pessoais está fora por enquanto.)
 
 pipedrive:
-  # pipeline_id -> vertical. Deduzido pelo conteúdo dos negócios de cada funil.
-  # Pipelines ausentes daqui são ignorados.
+  # vertical: de qual vertical são os negócios GANHOS do funil (seguros vigentes).
+  # tabela: se os negócios ABERTOS do funil entram na tabela de trabalho.
   pipelines:
-    1: linhas_financeiras    # D&O, Cyber
-    23: saude                # Saúde / Vida (Pipo)
-    29: ramos_elementares    # Eventos, Transportes
-    34: saude                # "Saúde 2025", criados via API (Pipo)
-    38: saude                # Leads Flash Saúde
-    40: linhas_financeiras   # Seguro Garantia
-    # 31: linhas_financeiras # M&A (parado desde 2024) — CONFIRMAR
-    # 39: linhas_financeiras # Canais/parcerias (Cyber + outros) — CONFIRMAR
+    1:  {nome: Linhas Financeiras, vertical: linhas_financeiras, tabela: true}
+    40: {nome: Garantia,           vertical: linhas_financeiras, tabela: false}
+    29: {nome: RE,                 vertical: ramos_elementares,  tabela: true}
+    23: {nome: Saúde,              vertical: saude,              tabela: true}
+    34: {nome: Pipo Saúde,         vertical: saude,              tabela: true}
+    38: {nome: Flash Benefícios,   vertical: saude,              tabela: false}
+    39: {nome: Canais Parceria,    vertical: null,               tabela: true}
+    # 31 (M&A - Corretoras) fica de fora.
 
-# Usuários internos. "verticais" define em quais verticais a pessoa atua
-# (e cujos e-mails são lidos); "lider" é quem recebe as oportunidades da vertical.
+  # Campos customizados de negócio.
+  campos:
+    inicio_vigencia: 3ee3bdd07bab71fba84767ffb7d5d89f49b1f3d3
+    fim_vigencia: 0d4a74f324a5c95618a51042c3185da9c8846bc3
+    # Ordem de preferência para o nome do produto (ex.: D&O, Cyber, Empresarial).
+    produto:
+      - 243db2a0f48ee484d65af0c737bcea6ab509a590   # Produtos Responsabilidade
+      - 87667ea5ea62cfd03118a42581f40bc5fb33e973   # Produtos RE
+      - 74bcdb3b63321d279e6ada0de40e1ca1b36f0171   # Produto Vertical Saúde
+      - 111caded10585e6ab8d4e46d53597c930dee42cc   # Produto Foco
+    # "Se empresa, já possui o seguro saúde na Genoa?" = Sim -> sinal de cliente Saúde
+    possui_saude: dced275b9f49ad3ac158c4a961bc17920ad4de57
+
+# Equipe inicial (o usuário master convida e remove pessoas pela tela Equipe).
 usuarios:
   - email: bruno.rodrigues@innoaseguros.com.br
     nome: Bruno Rodrigues
@@ -32,8 +44,7 @@ usuarios:
     nome: Pamela Silva
     verticais: [saude, linhas_financeiras]
 
-# Mapeamento de colunas das planilhas exportadas. Os nomes à direita são os
-# cabeçalhos da planilha (comparação sem acento/maiúsculas).
+# Mapeamento de colunas da planilha do Zeca (comparação sem acento/maiúsculas).
 importacao:
   zeca:
     cnpj: [cnpj, cnpj estipulante, documento]
@@ -45,15 +56,4 @@ importacao:
     fim_vigencia: [fim vigencia, vigencia final, renovacao, aniversario]
     premio: [premio, faturamento, valor, premio mensal]
     vidas: [vidas, beneficiarios, quantidade vidas]
-    status: [status, situacao]
-  quiver:
-    documento: [cpf/cnpj, cpf, cnpj, documento]
-    nome: [cliente, nome, segurado]
-    email: [email, e-mail]
-    produto: [produto, ramo]
-    seguradora: [seguradora, cia]
-    numero_apolice: [apolice, numero apolice]
-    inicio_vigencia: [inicio vigencia, vigencia inicial]
-    fim_vigencia: [fim vigencia, vigencia final]
-    premio: [premio, premio liquido, premio total]
     status: [status, situacao]

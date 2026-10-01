@@ -47,6 +47,7 @@ def exportar(como: str | None) -> dict:
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
         "linkedin": {"configurado": True, "lote": s.linkedin_lote,
                      "pendentes": {k: sum(a["tipo"] == t for a in lk.alvos(db, s)) for k, t in (("empresas", "empresa"), ("pessoas", "pessoa"))},
+                     "semEndereco": {"empresas": 2, "pessoas": 7},
                      "disparado": {"em": hoje.isoformat() + "T06:30", "registros": 28, "erro": None},
                      "recebido": {"em": hoje.isoformat() + "T06:52", "registros": 28, "erro": None}},
     }

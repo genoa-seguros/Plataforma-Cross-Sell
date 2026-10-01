@@ -447,7 +447,9 @@ async function telaLinkedin() {
     <div class="kpi-row">
       <div class="kpi"><b class="num">${st.pendentes.empresas}</b><span>empresas na fila</span></div>
       <div class="kpi"><b class="num">${st.pendentes.pessoas}</b><span>pessoas na fila</span></div>
+      ${st.semEndereco ? `<div class="kpi"><b class="num" style="color:var(--warn)">${st.semEndereco.empresas + st.semEndereco.pessoas}</b><span>sem endereço do LinkedIn</span></div>` : ""}
     </div>
+    ${st.semEndereco && (st.semEndereco.empresas + st.semEndereco.pessoas) ? `<p class="nota">A Linked API só consulta quem tem o endereço do perfil. Cadastre o LinkedIn da organização ou da pessoa no Pipedrive; os decisores que a Linked API traz de cada empresa já vêm com endereço.</p>` : ""}
     <div class="form-linha"><button type="button" class="btn sec" id="lk-disp" ${st.configurado ? "" : "disabled"}>Disparar agora</button></div>
     <p class="nota">Último envio ao n8n: ${quando(st.disparado)} · Último retorno: ${quando(st.recebido)}</p>`;
   document.getElementById("lk-disp").onclick = async () => {

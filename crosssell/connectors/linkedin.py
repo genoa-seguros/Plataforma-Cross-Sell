@@ -51,7 +51,9 @@ def _precisa(lido_em: datetime | None, pedido_em: datetime | None, validade_dias
     return lido_em is None or lido_em < agora - timedelta(days=validade_dias)
 
 
-def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> list[dict]:
+def alvos(db: Session, settings: Settings, agora: datetime | None = None, com_endereco: bool = True) -> list[dict]:
+    """Alvos a ler no LinkedIn. A Linked API precisa do endereço do perfil, então por padrão
+    só entram os que já têm `linkedin_url` (os demais: com_endereco=False)."""
     from crosssell import tabela
 
     agora = agora or datetime.utcnow()
@@ -79,7 +81,7 @@ def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> lis
                           "empresa": p.empresa.razao_social if p.empresa else "", "cargo": p.cargo or "",
                           "email": p.email or "", "linkedin_url": p.linkedin_url or "", "site": "", "cnpj": "",
                           "motivo": pessoas[p.id]})
-    return saida
+    return [a for a in saida if bool(a["linkedin_url"]) == com_endereco]
 
 
 # --- 2. Disparo do n8n -----------------------------------------------------

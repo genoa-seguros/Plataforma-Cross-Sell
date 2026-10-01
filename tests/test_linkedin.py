@@ -30,6 +30,11 @@ class N8nFalso:
 def test_disparo_envia_lote_e_nao_reenvia_em_andamento(db, settings):
     s = config(settings)
     carregar(db, s)
+    # Sem endereço do LinkedIn ninguém é enviado (a Linked API precisa da URL)
+    assert lk.alvos(db, s) == [] and len(lk.alvos(db, s, com_endereco=False)) == 4
+    for i, obj in enumerate([*db.scalars(select(Empresa)), *db.scalars(select(Pessoa))]):
+        obj.linkedin_url = f"https://linkedin.com/x/{i}"
+    db.commit()
     n8n = N8nFalso()
     res = lk.disparar(db, s, n8n.client())
     pedido = n8n.recebidos[0]

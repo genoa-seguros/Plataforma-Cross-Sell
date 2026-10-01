@@ -288,9 +288,12 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     s = get_settings()
     pend = lk.alvos(db, s)
+    sem = lk.alvos(db, s, com_endereco=False)
     return {"configurado": lk.configurado(s), "lote": s.linkedin_lote,
             "pendentes": {"empresas": sum(a["tipo"] == "empresa" for a in pend),
                           "pessoas": sum(a["tipo"] == "pessoa" for a in pend)},
+            "semEndereco": {"empresas": sum(a["tipo"] == "empresa" for a in sem),
+                            "pessoas": sum(a["tipo"] == "pessoa" for a in sem)},
             "disparado": _ultimo(db, "linkedin-disparo"), "recebido": _ultimo(db, "linkedin-retorno")}
 
 

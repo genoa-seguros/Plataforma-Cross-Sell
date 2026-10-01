@@ -287,14 +287,22 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 @app.get("/api/linkedin")
 def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     s = get_settings()
-    pend = lk.alvos(db, s)
-    sem = lk.alvos(db, s, com_endereco=False)
-    return {"configurado": lk.configurado(s), "lote": s.linkedin_lote,
-            "pendentes": {"empresas": sum(a["tipo"] == "empresa" for a in pend),
-                          "pessoas": sum(a["tipo"] == "pessoa" for a in pend)},
-            "semEndereco": {"empresas": sum(a["tipo"] == "empresa" for a in sem),
-                            "pessoas": sum(a["tipo"] == "pessoa" for a in sem)},
+    return {"configurado": lk.configurado(s), "lote": s.linkedin_lote, **lk.situacao(db, s),
             "disparado": _ultimo(db, "linkedin-disparo"), "recebido": _ultimo(db, "linkedin-retorno")}
+
+
+class EnderecoIn(BaseModel):
+    id_alvo: str
+    url: str
+
+
+@app.post("/api/linkedin/endereco")
+def api_linkedin_endereco(dados: EnderecoIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    try:
+        lk.definir_endereco(db, dados.id_alvo, dados.url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"ok": True}
 
 
 @app.post("/api/linkedin/disparar")

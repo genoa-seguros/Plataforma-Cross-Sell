@@ -46,6 +46,9 @@ class Empresa(Base):
     noticias_em: Mapped[datetime | None]
     linkedin_em: Mapped[datetime | None]  # última leitura do LinkedIn (via n8n)
     linkedin_pedido_em: Mapped[datetime | None]  # último envio ao n8n
+    linkedin_site_em: Mapped[datetime | None]  # última procura do link do LinkedIn no site da empresa
+    linkedin_busca_em: Mapped[datetime | None]  # última busca do perfil na Linked API
+    linkedin_nao_encontrado: Mapped[bool] = mapped_column(default=False)
 
     pessoas: Mapped[list["Pessoa"]] = relationship(back_populates="empresa")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="empresa")
@@ -82,6 +85,8 @@ class Pessoa(Base):
     linkedin_empresa_atual: Mapped[str | None]
     linkedin_em: Mapped[datetime | None]
     linkedin_pedido_em: Mapped[datetime | None]
+    linkedin_busca_em: Mapped[datetime | None]
+    linkedin_nao_encontrado: Mapped[bool] = mapped_column(default=False)
 
     empresa: Mapped[Empresa | None] = relationship(back_populates="pessoas")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="pessoa")

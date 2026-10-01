@@ -47,6 +47,32 @@ return {
 """
 
 
+CANDIDATOS_JS = r"""// Resultado de Search People / Search Companies -> candidatos para a plataforma escolher.
+// A plataforma só aceita um candidato se o nome e a empresa (ou o domínio do site) conferirem.
+const alvo = $('Separar alvos').first().json;
+const b = $json.body ?? $json;
+let lista = b.data ?? b.result ?? b.results ?? b.items ?? b;
+if (!Array.isArray(lista)) lista = lista.people ?? lista.companies ?? lista.results ?? lista.items ?? [];
+
+return {
+  json: {
+    id_alvo: alvo.id_alvo,
+    tipo: alvo.tipo,
+    acao: 'buscar',
+    candidatos: lista.slice(0, 10).map(c => ({
+      nome: c.name || c.fullName || '',
+      headline: c.headline || '',
+      linkedin_url: c.publicUrl || c.url || c.profileUrl || c.companyUrl || '',
+      local: c.location || '',
+      site: c.website || '',
+      setor: c.industry || '',
+    })),
+    capturado_em: new Date().toISOString().slice(0, 19),
+  },
+};
+"""
+
+
 def no(nome, tipo, versao, pos, params, **extra):
     return {"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/" + nome)), "name": nome, "type": tipo,
             "typeVersion": versao, "position": pos, "parameters": params, **extra}
@@ -66,25 +92,50 @@ nodes = [
         "responseMode": "onReceived", "options": {}},
         webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/webhook"))),
     no("Separar alvos", "n8n-nodes-base.splitOut", 1, [220, 300], {"fieldToSplitOut": "body.alvos", "options": {}}),
-    no("É pessoa?", "n8n-nodes-base.if", 2, [440, 300], {
+    no("Buscar?", "n8n-nodes-base.if", 2, [440, 300], {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/if-buscar")), "leftValue": "={{ $json.acao }}",
+                            "rightValue": "buscar", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"},
+        "options": {}}),
+    no("Buscar pessoa?", "n8n-nodes-base.if", 2, [680, 760], {
+        "conditions": {
+            "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
+            "conditions": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/if-buscar-pessoa")), "leftValue": "={{ $json.tipo }}",
+                            "rightValue": "pessoa", "operator": {"type": "string", "operation": "equals"}}],
+            "combinator": "and"},
+        "options": {}}),
+    no("⚠ TROCAR: Linked API · Search People", "n8n-nodes-base.noOp", 1, [920, 680], {}),
+    no("⚠ TROCAR: Linked API · Search Companies", "n8n-nodes-base.noOp", 1, [920, 860], {}),
+    no("Aguardar busca pessoa", "n8n-nodes-base.wait", 1.1, [1140, 680], {
+        "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
+        "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
+        webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-busca-pessoa"))),
+    no("Aguardar busca empresa", "n8n-nodes-base.wait", 1.1, [1140, 860], {
+        "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
+        "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
+        webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-busca-empresa"))),
+    no("Candidatos", "n8n-nodes-base.code", 2, [1380, 760], {"mode": "runOnceForEachItem", "jsCode": CANDIDATOS_JS}),
+    no("É pessoa?", "n8n-nodes-base.if", 2, [680, 300], {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
             "conditions": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/if")), "leftValue": "={{ $json.tipo }}",
                             "rightValue": "pessoa", "operator": {"type": "string", "operation": "equals"}}],
             "combinator": "and"},
         "options": {}}),
-    no("⚠ TROCAR: Linked API · Fetch Person", "n8n-nodes-base.noOp", 1, [680, 200], {}),
-    no("⚠ TROCAR: Linked API · Fetch Company", "n8n-nodes-base.noOp", 1, [680, 420], {}),
-    no("Aguardar pessoa", "n8n-nodes-base.wait", 1.1, [900, 200], {
+    no("⚠ TROCAR: Linked API · Fetch Person", "n8n-nodes-base.noOp", 1, [920, 200], {}),
+    no("⚠ TROCAR: Linked API · Fetch Company", "n8n-nodes-base.noOp", 1, [920, 420], {}),
+    no("Aguardar pessoa", "n8n-nodes-base.wait", 1.1, [1140, 200], {
         "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
         "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
         webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-pessoa"))),
-    no("Aguardar empresa", "n8n-nodes-base.wait", 1.1, [900, 420], {
+    no("Aguardar empresa", "n8n-nodes-base.wait", 1.1, [1140, 420], {
         "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
         "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
         webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-empresa"))),
-    no("Mapear", "n8n-nodes-base.code", 2, [1140, 300], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
-    no("Registrar erro", "n8n-nodes-base.set", 3.4, [1140, 560], {
+    no("Mapear", "n8n-nodes-base.code", 2, [1380, 300], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
+    no("Registrar erro", "n8n-nodes-base.set", 3.4, [1380, 540], {
         "mode": "manual",
         "assignments": {"assignments": [
             atribuicao("id_alvo", "={{ $('Separar alvos').first().json.id_alvo }}"),
@@ -92,7 +143,7 @@ nodes = [
             atribuicao("erro", "={{ $json.error?.message || $json.error || 'Falha na Linked API' }}"),
         ]},
         "options": {}}),
-    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1380, 300], {
+    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1640, 420], {
         "method": "POST",
         "url": "={{ $('Webhook').first().json.body.callback_url }}",
         "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
@@ -121,7 +172,14 @@ nodes = [
 
 conexoes = {
     "Webhook": [["Separar alvos"]],
-    "Separar alvos": [["É pessoa?"]],
+    "Separar alvos": [["Buscar?"]],
+    "Buscar?": [["Buscar pessoa?"], ["É pessoa?"]],
+    "Buscar pessoa?": [["⚠ TROCAR: Linked API · Search People"], ["⚠ TROCAR: Linked API · Search Companies"]],
+    "⚠ TROCAR: Linked API · Search People": [["Aguardar busca pessoa"]],
+    "⚠ TROCAR: Linked API · Search Companies": [["Aguardar busca empresa"]],
+    "Aguardar busca pessoa": [["Candidatos"]],
+    "Aguardar busca empresa": [["Candidatos"]],
+    "Candidatos": [["Devolver à plataforma"]],
     "É pessoa?": [["⚠ TROCAR: Linked API · Fetch Person"], ["⚠ TROCAR: Linked API · Fetch Company"]],
     "⚠ TROCAR: Linked API · Fetch Person": [["Aguardar pessoa"]],
     "⚠ TROCAR: Linked API · Fetch Company": [["Aguardar empresa"]],

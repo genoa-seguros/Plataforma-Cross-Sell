@@ -34,12 +34,152 @@
       }
     },
     {
+      "id": "705815ae-bba4-524b-8a7b-9321527548c7",
+      "name": "Buscar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "923fdd1f-ccee-55f8-bd35-3ce6d5c77028",
+              "leftValue": "={{ $json.acao }}",
+              "rightValue": "buscar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f14804eb-9424-5606-8d90-fc27201a0313",
+      "name": "Buscar pessoa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "6fc2343a-0d27-519f-838e-e174ec06e713",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "pessoa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "eeb82728-f5c5-5f16-be10-a30a4bf1894b",
+      "name": "⚠ TROCAR: Linked API · Search People",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        680
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c5acb6c7-77c3-59d3-926d-b9bf28b03a25",
+      "name": "⚠ TROCAR: Linked API · Search Companies",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        860
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "0e13278b-3edd-5b67-93fe-319ec735687a",
+      "name": "Aguardar busca pessoa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        680
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "e0286439-af26-5c16-a573-8b5e4030d34d"
+    },
+    {
+      "id": "f42d8570-0e89-535e-bc0e-0045b4af462d",
+      "name": "Aguardar busca empresa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        860
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "a081a406-3e76-5a72-9a85-883cd459b521"
+    },
+    {
+      "id": "c1c31581-d0df-5f63-879d-25259aec99ae",
+      "name": "Candidatos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        760
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Resultado de Search People / Search Companies -> candidatos para a plataforma escolher.\n// A plataforma só aceita um candidato se o nome e a empresa (ou o domínio do site) conferirem.\nconst alvo = $('Separar alvos').first().json;\nconst b = $json.body ?? $json;\nlet lista = b.data ?? b.result ?? b.results ?? b.items ?? b;\nif (!Array.isArray(lista)) lista = lista.people ?? lista.companies ?? lista.results ?? lista.items ?? [];\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    acao: 'buscar',\n    candidatos: lista.slice(0, 10).map(c => ({\n      nome: c.name || c.fullName || '',\n      headline: c.headline || '',\n      linkedin_url: c.publicUrl || c.url || c.profileUrl || c.companyUrl || '',\n      local: c.location || '',\n      site: c.website || '',\n      setor: c.industry || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+      }
+    },
+    {
       "id": "187035b8-c123-5379-adc7-e25c6a277175",
       "name": "É pessoa?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        440,
+        680,
         300
       ],
       "parameters": {
@@ -71,7 +211,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        680,
+        920,
         200
       ],
       "parameters": {}
@@ -82,7 +222,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        680,
+        920,
         420
       ],
       "parameters": {}
@@ -93,7 +233,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        900,
+        1140,
         200
       ],
       "parameters": {
@@ -113,7 +253,7 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        900,
+        1140,
         420
       ],
       "parameters": {
@@ -133,7 +273,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1140,
+        1380,
         300
       ],
       "parameters": {
@@ -147,8 +287,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1140,
-        560
+        1380,
+        540
       ],
       "parameters": {
         "mode": "manual",
@@ -183,8 +323,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1380,
-        300
+        1640,
+        420
       ],
       "parameters": {
         "method": "POST",
@@ -249,7 +389,98 @@
       "main": [
         [
           {
+            "node": "Buscar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar?": {
+      "main": [
+        [
+          {
+            "node": "Buscar pessoa?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "É pessoa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pessoa?": {
+      "main": [
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Search People",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Search Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Search People": {
+      "main": [
+        [
+          {
+            "node": "Aguardar busca pessoa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Search Companies": {
+      "main": [
+        [
+          {
+            "node": "Aguardar busca empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar busca pessoa": {
+      "main": [
+        [
+          {
+            "node": "Candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar busca empresa": {
+      "main": [
+        [
+          {
+            "node": "Candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidatos": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
             "type": "main",
             "index": 0
           }

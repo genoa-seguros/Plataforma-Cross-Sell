@@ -30,8 +30,8 @@ class N8nFalso:
 def test_disparo_envia_lote_e_nao_reenvia_em_andamento(db, settings):
     s = config(settings)
     carregar(db, s)
-    # Sem endereço do LinkedIn ninguém é enviado (a Linked API precisa da URL)
-    assert lk.alvos(db, s) == [] and len(lk.alvos(db, s, com_endereco=False)) == 4
+    # Sem endereço, todos vão como busca
+    assert {a["acao"] for a in lk.alvos(db, s)} == {"buscar"} and len(lk.alvos(db, s)) == 4
     for i, obj in enumerate([*db.scalars(select(Empresa)), *db.scalars(select(Pessoa))]):
         obj.linkedin_url = f"https://linkedin.com/x/{i}"
     db.commit()
@@ -118,3 +118,56 @@ def test_formatos_aceitos():
         {"nome": "João Lima", "headline": "CEO", "linkedin_url": ""}]
     assert lk._lista('[{"nome": "A"}]') == [{"nome": "A"}]
     assert lk._num("1.200") == 1200 and lk._num("51-200") == 200 and lk._num(350) == 350 and lk._num("") is None
+
+
+def test_busca_escolhe_candidato_certo(db, settings):
+    carregar(db, settings)
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    beta = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    caio = db.scalar(select(Pessoa).where(Pessoa.email == "caio@beta.com.br"))
+    alvo_ana = next(a for a in lk.alvos(db, settings) if a["id_alvo"] == f"P{ana.id}")
+    assert alvo_ana["acao"] == "buscar" and alvo_ana["busca"] == "Ana Souza Metalúrgica Alfa Ltda"
+
+    res = lk.receber(db, [
+        # Homônima de outra empresa vem primeiro; a certa é a que cita a Metalúrgica Alfa
+        {"id_alvo": f"P{ana.id}", "acao": "buscar", "candidatos": [
+            {"nome": "Ana Souza", "headline": "Advogada na Souza & Lima", "linkedin_url": "https://linkedin.com/in/ana-adv"},
+            {"nome": "Ana Paula Souza", "headline": "CFO | Metalúrgica Alfa", "linkedin_url": "https://linkedin.com/in/ana-cfo"}]},
+        # Nenhum candidato confere: vira "não encontrado"
+        {"id_alvo": f"P{caio.id}", "acao": "buscar", "candidatos": [
+            {"nome": "Caio Lima", "headline": "Engenheiro na Gama", "linkedin_url": "https://linkedin.com/in/caio-gama"}]},
+        # Empresa: aceita pelo domínio do site
+        {"id_alvo": f"E{alfa.id}", "acao": "buscar", "candidatos": [
+            {"nome": "Alfa Metais", "site": "https://alfametais.com", "linkedin_url": "https://linkedin.com/company/x"},
+            {"nome": "Metalurgica Alfa", "site": "https://www.alfa.com.br", "linkedin_url": "https://linkedin.com/company/alfa"}]},
+        # Empresa: aceita pelo nome sem sufixo societário
+        {"id_alvo": f"E{beta.id}", "acao": "buscar", "candidatos": [
+            {"nome": "Beta Serviços", "linkedin_url": "https://linkedin.com/company/beta"}]},
+    ])
+    assert res["encontrados"] == 3 and res["nao_encontrados"] == 1
+    assert ana.linkedin_url == "https://linkedin.com/in/ana-cfo"
+    assert alfa.linkedin_url == "https://linkedin.com/company/alfa" and beta.linkedin_url == "https://linkedin.com/company/beta"
+    assert caio.linkedin_url is None and caio.linkedin_nao_encontrado
+
+    fila = {a["id_alvo"]: a["acao"] for a in lk.alvos(db, settings)}
+    assert fila[f"P{ana.id}"] == "ler" and f"P{caio.id}" not in fila  # não encontrado sai da fila por 30 dias
+    sit = lk.situacao(db, settings)
+    assert [n["nome"] for n in sit["naoEncontrados"]] == ["Caio Lima"]
+
+    lk.definir_endereco(db, f"P{caio.id}", "https://www.linkedin.com/in/caio-lima")
+    assert lk.situacao(db, settings)["naoEncontrados"] == []
+    assert {a["id_alvo"]: a["acao"] for a in lk.alvos(db, settings)}[f"P{caio.id}"] == "ler"
+
+
+def test_link_da_empresa_no_site(db, settings):
+    carregar(db, settings)
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+
+    def handler(req):
+        if req.url.host == "alfa.com.br":
+            return httpx.Response(200, text='<footer><a href="https://br.linkedin.com/company/metalurgica-alfa/">in</a></footer>')
+        return httpx.Response(404)
+    res = lk.descobrir_por_site(db, settings, httpx.Client(transport=httpx.MockTransport(handler)))
+    assert res["encontradas"] == 1 and alfa.linkedin_url == "https://br.linkedin.com/company/metalurgica-alfa"
+    assert lk.descobrir_por_site(db, settings, httpx.Client(transport=httpx.MockTransport(handler)))["verificadas"] == 0

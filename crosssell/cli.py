@@ -115,15 +115,25 @@ def linkedin():
     typer.echo(registrar(db, "linkedin-disparo", lk.disparar, db, get_settings()))
 
 
+@app.command("linkedin-sites")
+def linkedin_sites(limite: int = 50):
+    """Procura o link do LinkedIn no site de cada empresa da tabela (sem usar a Linked API)."""
+    from crosssell.connectors import linkedin as lk
+    from crosssell.pipeline import registrar
+
+    db = _db()
+    typer.echo(registrar(db, "linkedin-sites", lk.descobrir_por_site, db, get_settings(), limite=limite))
+
+
 @app.command()
 def rotina(dias: int = 2):
     """Roda tudo em sequência (para o agendador): Pipedrive, e-mails, notícias, LinkedIn e scores."""
     from crosssell.connectors import linkedin as lk
 
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("emails", lambda: emails(dias=dias, temperatura=True)),
-              ("noticias", lambda: noticias(horas=24)), ("recalcular", recalcular)]
+              ("noticias", lambda: noticias(horas=24)), ("linkedin-sites", linkedin_sites), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
-        passos.insert(3, ("linkedin", linkedin))
+        passos.insert(4, ("linkedin", linkedin))
     for nome, fn in passos:
         try:
             fn()

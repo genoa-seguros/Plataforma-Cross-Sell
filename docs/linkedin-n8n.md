@@ -111,6 +111,28 @@ return {
 };
 ```
 
+## Busca de quem não tem endereço
+
+Cada alvo chega com `acao`:
+
+- **`ler`**: tem `linkedin_url`. Vai para Fetch Person ou Fetch Company → Wait → **Mapear**.
+- **`buscar`**: não tem endereço. O IF **Buscar?** manda para **Search People** (pessoas) ou
+  **Search Companies** (empresas), com o termo `{{ $('Separar alvos').first().json.busca }}`
+  (nome + empresa, ou só o nome da empresa). Depois vem um Wait e o nó **Candidatos**, que
+  devolve até 10 resultados.
+
+A plataforma escolhe o candidato:
+- **Pessoa:** mesmo primeiro e último nome, e a empresa dela aparecendo no headline.
+- **Empresa:** mesmo domínio de site, ou mesmo nome sem "Ltda", "S.A." etc.
+
+Com um candidato aceito, o endereço é gravado e a leitura completa acontece na rotina seguinte.
+Se nenhum conferir, o alvo vai para **não encontrados** (aba Equipe). Ali dá para colar o
+endereço à mão. Sem isso, ele é procurado de novo em 30 dias.
+
+Antes de qualquer busca, a plataforma procura o link `linkedin.com/company/...` no site de cada
+empresa (`crosssell linkedin-sites`, incluído na rotina). Essa etapa não gasta ações da conta
+conectada.
+
 ## Contrato da integração
 
 **Disparo (plataforma → n8n)**: `POST N8N_LINKEDIN_WEBHOOK_URL`, cabeçalho

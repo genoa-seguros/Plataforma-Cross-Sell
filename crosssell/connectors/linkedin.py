@@ -2,7 +2,10 @@
 
 Fluxo automático:
   1. A plataforma levanta os alvos: empresas e contatos dos negócios abertos que
-     nunca foram lidos no LinkedIn ou cuja leitura passou da validade.
+     nunca foram lidos no LinkedIn ou cuja leitura passou da validade. Quem tem
+     endereço vai com acao="ler" (fetch); quem não tem vai com acao="buscar"
+     (search) e a plataforma escolhe o candidato certo no retorno. Antes disso,
+     o link da empresa é procurado no próprio site dela (descobrir_por_site).
   2. A plataforma chama o webhook do n8n (POST), um alvo por chamada, com o
      endereço de retorno. O n8n responde na hora e processa em segundo plano.
   3. O n8n consulta a Linked API (fetchPerson / fetchCompany) para cada alvo.
@@ -30,6 +33,7 @@ from crosssell.normalize import classificar_senioridade, dominio_site, normaliza
 from crosssell.resolver import resolver_pessoa
 
 PRAZO_PEDIDO = timedelta(hours=36)
+BUSCA_VALIDADE = timedelta(days=30)  # quem não foi encontrado é procurado de novo depois disso
 CAMPOS_RESULTADO = ("id_alvo", "tipo", "linkedin_url", "nome", "headline", "cargo_atual", "empresa_atual",
                     "localizacao", "setor", "funcionarios", "site", "sede", "decisores", "posts", "capturado_em", "erro")
 
@@ -51,13 +55,13 @@ def _precisa(lido_em: datetime | None, pedido_em: datetime | None, validade_dias
     return lido_em is None or lido_em < agora - timedelta(days=validade_dias)
 
 
-def alvos(db: Session, settings: Settings, agora: datetime | None = None, com_endereco: bool = True) -> list[dict]:
-    """Alvos a ler no LinkedIn. A Linked API precisa do endereço do perfil, então por padrão
-    só entram os que já têm `linkedin_url` (os demais: com_endereco=False)."""
+def _termos(nome: str | None) -> set[str]:
+    return {t for t in normalizar_nome_empresa(nome or "").split() if len(t) >= 3}
+
+
+def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], dict[int, str]]:
     from crosssell import tabela
 
-    agora = agora or datetime.utcnow()
-    validade = settings.linkedin_validade_dias
     empresas: dict[int, str] = {}
     pessoas: dict[int, str] = {}
     for linha in tabela.montar(db, settings):
@@ -67,21 +71,115 @@ def alvos(db: Session, settings: Settings, agora: datetime | None = None, com_en
             pessoas.setdefault(linha["pessoa"]["id"], "contato do negócio")
         for c in linha["contatos"]:
             pessoas.setdefault(c["id"], "contato da empresa")
+    return empresas, pessoas
 
+
+def _acao(obj, validade: int, agora: datetime) -> str | None:
+    """'ler' (tem endereço), 'buscar' (procurar o perfil) ou None (nada a fazer agora)."""
+    if obj.linkedin_url:
+        return "ler" if _precisa(obj.linkedin_em, obj.linkedin_pedido_em, validade, agora) else None
+    if obj.linkedin_nao_encontrado and obj.linkedin_busca_em and obj.linkedin_busca_em > agora - BUSCA_VALIDADE:
+        return None  # já procurado sem sucesso; aparece em "não encontrados"
+    return "buscar" if _precisa(obj.linkedin_busca_em, obj.linkedin_pedido_em, 0, agora) else None
+
+
+def _alvo_empresa(e: Empresa, acao: str, motivo: str) -> dict:
+    return {"id_alvo": f"E{e.id}", "tipo": "empresa", "acao": acao, "nome": e.nome_fantasia or e.razao_social,
+            "empresa": e.razao_social, "cargo": "", "email": "", "linkedin_url": e.linkedin_url or "",
+            "site": e.website or (f"https://{e.dominio}" if e.dominio else ""), "dominio": e.dominio or "",
+            "cnpj": e.cnpj or "", "busca": e.nome_fantasia or re.sub(r"\(.*?\)", "", e.razao_social).strip(),
+            "motivo": motivo}
+
+
+def _alvo_pessoa(p: Pessoa, acao: str, motivo: str) -> dict:
+    empresa = (p.empresa.nome_fantasia or re.sub(r"\(.*?\)", "", p.empresa.razao_social).strip()) if p.empresa else ""
+    return {"id_alvo": f"P{p.id}", "tipo": "pessoa", "acao": acao, "nome": p.nome, "empresa": empresa,
+            "cargo": p.cargo or "", "email": p.email or "", "linkedin_url": p.linkedin_url or "", "site": "",
+            "dominio": p.empresa.dominio if p.empresa and p.empresa.dominio else "", "cnpj": "",
+            "busca": f"{p.nome} {empresa}".strip(), "motivo": motivo}
+
+
+def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> list[dict]:
+    """Alvos a enviar ao n8n agora: primeiro os que só precisam ser lidos, depois as buscas."""
+    agora = agora or datetime.utcnow()
+    validade = settings.linkedin_validade_dias
+    empresas, pessoas = _candidatos_alvo(db, settings)
     saida = []
     for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresas)).order_by(Empresa.id)):
-        if _precisa(e.linkedin_em, e.linkedin_pedido_em, validade, agora):
-            saida.append({"id_alvo": f"E{e.id}", "tipo": "empresa", "nome": e.nome_fantasia or e.razao_social,
-                          "empresa": e.razao_social, "cargo": "", "email": "", "linkedin_url": e.linkedin_url or "",
-                          "site": e.website or (f"https://{e.dominio}" if e.dominio else ""), "cnpj": e.cnpj or "",
-                          "motivo": empresas[e.id]})
+        acao = _acao(e, validade, agora)
+        if acao:
+            saida.append(_alvo_empresa(e, acao, empresas[e.id]))
     for p in db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas)).order_by(Pessoa.id)):
-        if _precisa(p.linkedin_em, p.linkedin_pedido_em, validade, agora):
-            saida.append({"id_alvo": f"P{p.id}", "tipo": "pessoa", "nome": p.nome,
-                          "empresa": p.empresa.razao_social if p.empresa else "", "cargo": p.cargo or "",
-                          "email": p.email or "", "linkedin_url": p.linkedin_url or "", "site": "", "cnpj": "",
-                          "motivo": pessoas[p.id]})
-    return [a for a in saida if bool(a["linkedin_url"]) == com_endereco]
+        acao = _acao(p, validade, agora)
+        if acao:
+            saida.append(_alvo_pessoa(p, acao, pessoas[p.id]))
+    return sorted(saida, key=lambda a: a["acao"] != "ler")
+
+
+def situacao(db: Session, settings: Settings) -> dict:
+    fila = alvos(db, settings)
+    empresas, pessoas = _candidatos_alvo(db, settings)
+    nao = [*db.scalars(select(Empresa).where(Empresa.id.in_(empresas), Empresa.linkedin_nao_encontrado.is_(True),
+                                            Empresa.linkedin_url.is_(None))),
+           *db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas), Pessoa.linkedin_nao_encontrado.is_(True),
+                                           Pessoa.linkedin_url.is_(None)))]
+    conta = lambda acao, tipo: sum(a["acao"] == acao and a["tipo"] == tipo for a in fila)  # noqa: E731
+    return {
+        "ler": {"empresas": conta("ler", "empresa"), "pessoas": conta("ler", "pessoa")},
+        "buscar": {"empresas": conta("buscar", "empresa"), "pessoas": conta("buscar", "pessoa")},
+        "naoEncontrados": [{"id_alvo": f"{'E' if isinstance(o, Empresa) else 'P'}{o.id}",
+                            "tipo": "empresa" if isinstance(o, Empresa) else "pessoa",
+                            "nome": o.razao_social if isinstance(o, Empresa) else o.nome,
+                            "empresa": "" if isinstance(o, Empresa) else (o.empresa.razao_social if o.empresa else "")}
+                           for o in nao[:50]],
+    }
+
+
+def definir_endereco(db: Session, id_alvo: str, url: str) -> None:
+    """Endereço informado à mão (casos que a busca não resolveu)."""
+    url = url.strip()
+    if not re.match(r"^https?://([a-z]{2,3}\.)?linkedin\.com/(in|company|school)/", url, re.I):
+        raise ValueError("Informe um endereço do LinkedIn, como https://www.linkedin.com/in/nome-sobrenome.")
+    obj = db.get(Pessoa if id_alvo[:1] == "P" else Empresa, int(id_alvo[1:])) if id_alvo[1:].isdigit() else None
+    if obj is None:
+        raise ValueError("Alvo não encontrado.")
+    obj.linkedin_url = url
+    obj.linkedin_nao_encontrado = False
+    db.commit()
+
+
+# --- 1b. Endereço da empresa pelo próprio site (sem usar a Linked API) ------
+
+LINK_EMPRESA = re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/company/[A-Za-z0-9\-_%.]+", re.I)
+
+
+def link_no_html(html: str) -> str | None:
+    m = LINK_EMPRESA.search(html or "")
+    return m.group(0).rstrip("/.") if m else None
+
+
+def descobrir_por_site(db: Session, settings: Settings, http: httpx.Client | None = None, limite: int = 50) -> dict:
+    empresas, _ = _candidatos_alvo(db, settings)
+    http = http or httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    cont = {"verificadas": 0, "encontradas": 0}
+    pendentes = db.scalars(select(Empresa).where(Empresa.id.in_(empresas), Empresa.linkedin_url.is_(None),
+                                                Empresa.dominio.is_not(None), Empresa.linkedin_site_em.is_(None))
+                           .limit(limite)).all()
+    for e in pendentes:
+        e.linkedin_site_em = datetime.utcnow()
+        cont["verificadas"] += 1
+        for url in (f"https://{e.dominio}", f"https://www.{e.dominio}"):
+            try:
+                r = http.get(url)
+            except httpx.HTTPError:
+                continue
+            link = link_no_html(r.text) if r.status_code == 200 else None
+            if link:
+                e.linkedin_url = link
+                cont["encontradas"] += 1
+                break
+    db.commit()
+    return cont
 
 
 # --- 2. Disparo do n8n -----------------------------------------------------
@@ -116,8 +214,8 @@ def disparar(db: Session, settings: Settings, http: httpx.Client | None = None) 
     db.commit()
     if not enviados and falhas:
         raise RuntimeError("O n8n recusou todos os envios (confira a URL do webhook e o token).")
-    return {"enviados": len(enviados), "falhas": falhas, "empresas": sum(a["tipo"] == "empresa" for a in enviados),
-            "pessoas": sum(a["tipo"] == "pessoa" for a in enviados), "lote": lote_id}
+    return {"enviados": len(enviados), "falhas": falhas, "leituras": sum(a["acao"] == "ler" for a in enviados),
+            "buscas": sum(a["acao"] == "buscar" for a in enviados), "lote": lote_id}
 
 
 # --- 4. Resultados ---------------------------------------------------------
@@ -216,10 +314,47 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     return novos
 
 
+def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
+    """Mesmo nome (primeiro e último) e a empresa dele aparecendo no headline/empresa atual."""
+    nossa = _termos(p.empresa.nome_fantasia or p.empresa.razao_social) if p.empresa else set()
+    mesmos = [c for c in candidatos if mesmo_nome(p.nome, c.get("nome") or c.get("name") or "")]
+    for c in mesmos:
+        texto = " ".join(str(c.get(k) or "") for k in ("headline", "empresa_atual", "empresa"))
+        if not nossa or nossa & _termos(texto):
+            return c.get("linkedin_url") or c.get("url") or None
+    return None
+
+
+def _escolher_empresa(e: Empresa, candidatos: list[dict]) -> str | None:
+    """Mesmo domínio do site ou mesmo nome (sem sufixos societários)."""
+    nome = normalizar_nome_empresa(e.nome_fantasia or re.sub(r"\(.*?\)", "", e.razao_social))
+    for c in candidatos:
+        url = c.get("linkedin_url") or c.get("url")
+        if not url:
+            continue
+        if e.dominio and dominio_site(c.get("site") or c.get("website")) == e.dominio:
+            return url
+        if nome and normalizar_nome_empresa(c.get("nome") or c.get("name") or "") == nome:
+            return url
+    return None
+
+
+def _aplicar_busca(obj, r: dict, quando: datetime) -> str:
+    candidatos = _lista(r.get("candidatos"))
+    url = _escolher_pessoa(obj, candidatos) if isinstance(obj, Pessoa) else _escolher_empresa(obj, candidatos)
+    obj.linkedin_busca_em = quando
+    if url:
+        obj.linkedin_url = url
+        obj.linkedin_nao_encontrado = False
+        return "encontrados"
+    obj.linkedin_nao_encontrado = True
+    return "nao_encontrados"
+
+
 def receber(db: Session, resultados: list[dict]) -> dict:
     """Aplica os resultados que o n8n devolveu (um ou vários por chamada)."""
     cont = {"recebidos": 0, "pessoas": 0, "empresas": 0, "decisores_novos": 0, "nao_confirmado": 0, "erros": 0,
-            "ja_lidos": 0}
+            "ja_lidos": 0, "encontrados": 0, "nao_encontrados": 0}
     for r in resultados:
         cont["recebidos"] += 1
         alvo = _txt(r, "id_alvo")
@@ -231,6 +366,9 @@ def receber(db: Session, resultados: list[dict]) -> dict:
             cont["erros"] += 1
             continue
         quando = _data(r.get("capturado_em"))
+        if _txt(r, "acao") == "buscar" or "candidatos" in r:
+            cont[_aplicar_busca(obj, r, quando)] += 1
+            continue
         if obj.linkedin_em and obj.linkedin_em >= quando:
             cont["ja_lidos"] += 1
             continue

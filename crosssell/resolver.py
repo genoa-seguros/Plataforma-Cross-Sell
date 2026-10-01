@@ -94,6 +94,9 @@ def resolver_pessoa(
         pessoa = db.scalar(select(Pessoa).where(Pessoa.email == email))
     if pessoa is None and pipedrive_person_id:
         pessoa = db.scalar(select(Pessoa).where(Pessoa.pipedrive_person_id == pipedrive_person_id))
+    linkedin_url = extras.get("linkedin_url")
+    if pessoa is None and linkedin_url:
+        pessoa = db.scalar(select(Pessoa).where(Pessoa.linkedin_url == linkedin_url))
     if pessoa is None and nome_norm and empresa is not None and empresa.id:
         pessoa = db.scalar(
             select(Pessoa).where(Pessoa.nome_normalizado == nome_norm, Pessoa.empresa_id == empresa.id)

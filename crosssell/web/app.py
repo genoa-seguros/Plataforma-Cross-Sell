@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, tabela
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
+from crosssell.connectors import linkedin_planilha as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Atividade, Empresa, Negocio, Usuario
+from crosssell.models import Atividade, Empresa, Negocio, SyncLog, Usuario
 from crosssell.pipeline import recalcular, registrar
 
 AQUI = Path(__file__).parent
@@ -39,6 +40,13 @@ def get_db():
 
 def get_pipedrive():
     return pd.cliente(get_settings())
+
+
+def get_sheets():
+    s = get_settings()
+    if not s.google_sheets_id or not s.google_service_account_file:
+        raise HTTPException(400, "Planilha do LinkedIn não configurada (GOOGLE_SHEETS_ID e GOOGLE_SERVICE_ACCOUNT_FILE).")
+    return lk.cliente(s)
 
 
 def usuario_atual(request: Request, db: Session = Depends(get_db)) -> Usuario:
@@ -140,7 +148,10 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         "id": e.id, "nome": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
         "cidade": e.cidade, "uf": e.uf, "funcionarios": e.funcionarios, "score": e.score_relacionamento,
         "comp": e.score_componentes,
+        "linkedin": e.linkedin_url, "setor": e.setor,
         "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
+                     "fonte": p.fonte, "linkedin": p.linkedin_url, "headline": p.linkedin_headline,
+                     "empresaAtual": p.linkedin_empresa_atual if lk.mudou_de_empresa(p) else None,
                      "focal": p.ponto_focal, "temperatura": p.temperatura, "temperaturaMotivo": p.temperatura_motivo,
                      "usuarios": (p.score_componentes or {}).get("usuarios", []),
                      "i90": (p.score_componentes or {}).get("interacoes_90d", 0)}
@@ -269,5 +280,37 @@ async def api_importar(fonte: str = Form(...), arquivo: UploadFile = File(...), 
     if fonte not in fns:
         raise HTTPException(400, "Fonte inválida: use zeca ou linkedin.")
     res = registrar(db, fonte, fns[fonte], db, get_settings(), await arquivo.read(), arquivo.filename or "arquivo.csv")
+    recalcular(db)
+    return res
+
+
+# --- LinkedIn (Google Sheets <-> n8n + Linked API) -------------------------
+
+def _ultimo(db: Session, fonte: str) -> dict | None:
+    log = db.scalar(select(SyncLog).where(SyncLog.fonte == fonte).order_by(SyncLog.id.desc()))
+    return {"em": log.inicio.isoformat(timespec="minutes"), "registros": log.registros, "erro": log.erro} if log else None
+
+
+@app.get("/api/linkedin")
+def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    s = get_settings()
+    alvos = lk.alvos(db, s)
+    return {"configurado": bool(s.google_sheets_id and s.google_service_account_file),
+            "planilha": f"https://docs.google.com/spreadsheets/d/{s.google_sheets_id}" if s.google_sheets_id else None,
+            "pendentes": {"empresas": sum(a["tipo"] == "empresa" for a in alvos),
+                          "pessoas": sum(a["tipo"] == "pessoa" for a in alvos)},
+            "exportado": _ultimo(db, "linkedin-alvos"), "importado": _ultimo(db, "linkedin-resultados")}
+
+
+@app.post("/api/linkedin/exportar")
+def api_linkedin_exportar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+                          sheets: lk.SheetsClient = Depends(get_sheets)):
+    return registrar(db, "linkedin-alvos", lk.exportar, db, get_settings(), sheets)
+
+
+@app.post("/api/linkedin/importar")
+def api_linkedin_importar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+                          sheets: lk.SheetsClient = Depends(get_sheets)):
+    res = registrar(db, "linkedin-resultados", lk.importar, db, get_settings(), sheets)
     recalcular(db)
     return res

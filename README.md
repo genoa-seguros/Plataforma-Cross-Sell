@@ -49,15 +49,16 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 | Microsoft 365 | Microsoft Graph (permissão de aplicativo `Mail.Read`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
+| LinkedIn | Google Sheets ↔ n8n + Linked API | perfis, cargos, decisores, posts; aviso de contato que mudou de empresa |
 | Receita Federal (BrasilAPI) | API pública | porte, CNAE, capital social, sócios |
 
-### Sobre o LinkedIn
+### LinkedIn (planilha + n8n + Linked API)
 
-A API do LinkedIn não permite ler empresas, funcionários nem o Sales Navigator. Isso vale
-também para o nó oficial do n8n, que só publica posts. Os nós de terceiros que leem perfis
-usam a API privada (raspagem) e arriscam bloquear a conta. Caminhos legítimos: subir as
-contas-alvo como *Account List* no Sales Navigator (Advanced/Advanced Plus) e importar listas
-de pessoas ou conexões pela plataforma (`crosssell importar linkedin`).
+A plataforma escreve os alvos (empresas e contatos dos negócios abertos) na aba **Alvos**
+de uma planilha do Google. Um fluxo no n8n com a Linked API preenche a aba **Resultados**.
+A plataforma lê os resultados e atualiza perfis, headline, setor, número de funcionários,
+decisores (até 20 por empresa) e posts. O perfil só é aceito se o nome conferir.
+Passo a passo do fluxo e script do nó de mapeamento: [`docs/linkedin-n8n.md`](docs/linkedin-n8n.md).
 
 ## Instalação
 
@@ -78,6 +79,8 @@ própria senha pelo link, que vale 7 dias e só pode ser usado uma vez.
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell noticias                # diário
+crosssell linkedin-exportar       # diário, antes do fluxo do n8n
+crosssell linkedin-importar       # diário, depois do fluxo do n8n
 crosssell recalcular              # diário
 crosssell importar zeca arquivo.xlsx   # quando houver nova exportação
 ```
@@ -112,5 +115,7 @@ pytest
 - [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,
       `api.anthropic.com`, `news.google.com` e `brasilapi.com.br`.
 - [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 e chave da Claude API.
+- [ ] Planilha do LinkedIn + conta de serviço do Google, e o fluxo do n8n (`docs/linkedin-n8n.md`).
+      Liberar `sheets.googleapis.com` e `oauth2.googleapis.com` na rede.
 - [ ] Exportação real do Zeca para ajustar os cabeçalhos em `config/verticais.yaml`.
 - [ ] Hospedagem (Postgres + container com HTTPS).

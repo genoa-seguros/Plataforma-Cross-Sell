@@ -111,6 +111,7 @@ fieldset label{display:flex;gap:4px;align-items:center}
 .link-convite{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--soft);border-radius:6px;padding:8px 10px;font-size:12px}
 .link-convite code{font-family:var(--f-data);word-break:break-all;flex:1 1 260px;min-width:0}
 .ficha-head{display:grid;gap:8px}
+a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-radius:3px;background:var(--accent);color:var(--accent-ink);text-decoration:none;vertical-align:1px}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s}}
 </style>
 </head>
@@ -141,6 +142,7 @@ const iso = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-$
 const brl = v => v == null ? "" : v.toLocaleString("pt-BR", {style:"currency", currency:"BRL", maximumFractionDigits:0});
 const nomeDe = email => (USUARIOS.find(u => u.email === email) || {}).nome || email || "";
 const vchip = (v, txt, extra="") => `<span class="chip c-${v || "null"} ${extra}">${esc(txt ?? V[v] ?? "Sem vertical")}</span>`;
+const inLink = url => url ? ` <a class="in" href="${esc(url)}" target="_blank" rel="noopener" title="Perfil no LinkedIn">in</a>` : "";
 function aviso(msg){ const a = document.getElementById("aviso"); a.textContent = msg; a.hidden = false; clearTimeout(aviso.t); aviso.t = setTimeout(() => a.hidden = true, 3500); }
 
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
@@ -169,6 +171,7 @@ const previa = {
     if (path === "/api/eu") return D.eu;
     if (path === "/api/tabela") return {linhas: D.linhas, usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
     if (path === "/api/equipe") return D.equipe;
+    if (path === "/api/linkedin") return D.linkedin;
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     throw new Error("rota desconhecida");
@@ -194,6 +197,8 @@ const previa = {
       });
       return {ok:true};
     }
+    if (path === "/api/linkedin/exportar") { const p = D.linkedin.pendentes; D.linkedin.exportado = {em: new Date().toISOString(), registros: p.empresas + p.pessoas}; return {alvos: p.empresas + p.pessoas}; }
+    if (path === "/api/linkedin/importar") return {pessoas: 0, empresas: 0, decisores_novos: 0, nao_confirmado: 0};
     if (path === "/api/equipe/convidar") {
       const u = {id: ++this.seq, email: b.email.toLowerCase(), nome: b.nome, papel:"membro", ativo:true, verticais:b.verticais, lider:b.lider, pipedrive:false, pendente:true};
       D.equipe.push(u); return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id};
@@ -248,7 +253,7 @@ function linhaHTML(l) {
       <span class="comp" title="relacionamento · vínculo · momento">${Math.round((c.relacionamento||0)*100)} · ${Math.round((c.vinculo||0)*100)} · ${Math.round((c.momento||0)*100)}</span></div></td>
     <td style="min-width:180px">${l.empresa ? `<a href="#empresa-${l.empresa.id}">${esc(l.empresa.nome)}</a>` : "<span class='sub'>sem organização</span>"}
       <div>${cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}</div>
-      ${l.pessoa ? `<div class="sub">${esc(l.pessoa.nome)}${l.pessoa.cargo ? " · " + esc(l.pessoa.cargo) : ""}</div>` : ""}</td>
+      ${l.pessoa ? `<div class="sub">${esc(l.pessoa.nome)}${l.pessoa.cargo ? " · " + esc(l.pessoa.cargo) : ""}${inLink(l.pessoa.linkedin)}</div>${l.pessoa.headline ? `<div class="sub" style="max-width:220px">${esc(l.pessoa.headline)}</div>` : ""}` : ""}</td>
     <td style="min-width:130px">${celulaTemp(l.pessoa)}</td>
     <td>${celulaVigentes(l)}</td>
     <td style="min-width:170px">${vchip(l.vertical, l.funil)}<div style="margin-top:4px">${esc(l.titulo)}</div><div class="sub">${esc(l.etapa || "")}${l.valor ? " · " + brl(l.valor) : ""}</div></td>
@@ -378,6 +383,7 @@ async function telaTodos() {
 /* ---------- Equipe ---------- */
 async function telaEquipe() {
   if (EU?.papel !== "master") { location.hash = "#negocios"; return; }
+  if (!Object.keys(V).length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
   const equipe = await api.get("/api/equipe");
   const vs = Object.entries(V);
   document.getElementById("app").innerHTML = `
@@ -395,6 +401,7 @@ async function telaEquipe() {
       <p class="nota">A pessoa recebe um link para criar a senha (vale 7 dias). Enquanto o acesso estiver ativo, os e-mails dela com clientes são lidos pela IA.</p>
       <div id="c-link"></div>
     </form>
+    <div class="grupo" id="lk" style="padding:14px;display:grid;gap:10px"></div>
     <div class="tabela"><table>
       <thead><tr><th>Nome</th><th>E-mail</th><th>Verticais</th><th>Situação</th><th>Pipedrive</th><th></th></tr></thead>
       <tbody>${equipe.map(u => `<tr>
@@ -406,6 +413,7 @@ async function telaEquipe() {
           ? `${u.pendente ? `<button class="btn sec" data-reenviar="${u.id}">Novo link</button> ` : ""}<button class="btn perigo" data-remover="${u.id}">Remover acesso</button>`
           : `<button class="btn sec" data-reenviar="${u.id}">Convidar de novo</button>`}</td></tr>`).join("")}</tbody></table></div>
   </section>`;
+  telaLinkedin();
   const mostrarLink = (link, nome) => {
     document.getElementById("c-link").innerHTML = `<div class="link-convite"><span>Link de convite para ${esc(nome)}:</span><code id="c-url">${esc(link)}</code><button type="button" class="btn sec" id="c-copiar">Copiar</button></div>`;
     document.getElementById("c-copiar").onclick = () => navigator.clipboard?.writeText(link).then(() => aviso("Link copiado"), () => {
@@ -427,6 +435,30 @@ async function telaEquipe() {
   });
 }
 
+async function telaLinkedin() {
+  const el = document.getElementById("lk");
+  const st = await api.get("/api/linkedin");
+  const quando = x => x ? `${dt(x.em)} ${x.em.slice(11, 16)} · ${x.registros} registros${x.erro ? " · erro" : ""}` : "nunca";
+  el.innerHTML = `<h2 style="margin:0">LinkedIn</h2>
+    <p class="nota">A plataforma escreve os alvos na aba <b>Alvos</b> da planilha; o fluxo do n8n com a Linked API preenche a aba <b>Resultados</b>; a plataforma lê os resultados e atualiza perfis, decisores e posts. Perfis são relidos a cada 90 dias.</p>
+    ${st.configurado ? "" : '<p class="erro">Planilha não configurada: defina GOOGLE_SHEETS_ID e GOOGLE_SERVICE_ACCOUNT_FILE no servidor.</p>'}
+    <div class="kpi-row">
+      <div class="kpi"><b class="num">${st.pendentes.empresas}</b><span>empresas a ler</span></div>
+      <div class="kpi"><b class="num">${st.pendentes.pessoas}</b><span>pessoas a ler</span></div>
+    </div>
+    <div class="form-linha">
+      <button type="button" class="btn" id="lk-exp" ${st.configurado ? "" : "disabled"}>Enviar alvos para a planilha</button>
+      <button type="button" class="btn sec" id="lk-imp" ${st.configurado ? "" : "disabled"}>Ler resultados da planilha</button>
+      ${st.planilha ? `<a href="${esc(st.planilha)}" target="_blank" rel="noopener" class="small">Abrir planilha</a>` : ""}
+    </div>
+    <p class="nota">Último envio: ${quando(st.exportado)} · Última leitura: ${quando(st.importado)}</p>`;
+  const acao = async (rota, msg) => {
+    try { const r = await api.post(rota); aviso(msg(r)); telaLinkedin(); } catch (err) { aviso(err.message); }
+  };
+  document.getElementById("lk-exp").onclick = () => acao("/api/linkedin/exportar", r => `${r.alvos} alvos enviados para a planilha`);
+  document.getElementById("lk-imp").onclick = () => acao("/api/linkedin/importar", r => `${r.pessoas} pessoas e ${r.empresas} empresas atualizadas · ${r.decisores_novos} decisores novos${r.nao_confirmado ? ` · ${r.nao_confirmado} perfis não conferem com o nome` : ""}`);
+}
+
 /* ---------- Ficha da empresa ---------- */
 async function telaEmpresa(id) {
   if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
@@ -438,7 +470,7 @@ async function telaEmpresa(id) {
   <a href="#negocios" class="small">← Negócios</a>
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
-    <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.cnae, e.cidade && `${e.cidade}/${e.uf}`, e.funcionarios && `${e.funcionarios} funcionários`].filter(Boolean).map(esc).join(" · ")}</div>
+    <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.cidade && `${e.cidade}${e.uf ? "/" + e.uf : ""}`, e.funcionarios && `${e.funcionarios} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}</div>
     <div>${vig.length ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'} <span class="sub">· relacionamento ${Math.round(e.score)} de 100</span></div>
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>
     ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${saudeManual ? "checked" : ""}> Cliente Saúde (fora da planilha do Zeca)</label>`}
@@ -448,7 +480,7 @@ async function telaEmpresa(id) {
     <tbody>${abertos.length ? abertos.map(linhaHTML).join("") : '<tr><td colspan="9" class="vazio">Nenhum negócio aberto nos funis acompanhados.</td></tr>'}</tbody></table></div></section>
   <section><h2>Pessoas</h2><div class="tabela"><table>
     <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>Relação</th><th>Temperatura</th><th>Fala com</th></tr></thead>
-    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}</td><td>${esc(p.cargo)}</td><td class="small">${esc(p.email)}</td>
+    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.email || "")}</td>
       <td><b class="num">${Math.round(p.score)}</b>${p.i90 ? `<div class="sub">${p.i90} e-mails em 90 dias</div>` : ""}</td><td>${celulaTemp(p)}</td>
       <td class="small">${esc((p.usuarios || []).map(nomeDe).join(", "))}</td></tr>`).join("") || '<tr><td colspan="6" class="vazio">Nenhuma pessoa cadastrada.</td></tr>'}</tbody></table></div></section>
   <section><h2>Histórico de produtos</h2><div class="tabela"><table>

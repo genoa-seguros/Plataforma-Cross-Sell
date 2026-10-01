@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from crosssell.config import VERTICAL_LABEL, Settings
+from crosssell.connectors.linkedin_planilha import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Usuario
 
 PESO_REL, PESO_VINC, PESO_MOM = 0.45, 0.30, 0.25
@@ -91,6 +92,13 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     if e is not None and e.score_componentes.get("acesso_decisor"):
         motivos.append("relação ativa com decisor")
 
+    if p is not None and mudou_de_empresa(p):
+        motivos.append(f"LinkedIn indica que {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual} — confirmar o contato")
+    sem_relacao = [x for x in (e.pessoas if e else []) if x.fonte == "linkedin" and x.senioridade in DECISORES
+                   and not x.score_relacionamento]
+    for x in sem_relacao[:2]:
+        motivos.append(f"decisor no LinkedIn sem relação ainda: {x.nome} ({x.linkedin_headline or x.cargo})")
+
     ponte = _ponte(db, p.id if p else None, e.id if e else None)
     if ponte and n.responsavel_email and ponte != n.responsavel_email:
         motivos.append(f"{nomes.get(ponte, ponte)} tem relação com o contato — pode apresentar")
@@ -108,7 +116,8 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
         "comp": {"relacionamento": round(rel, 3), "vinculo": round(vinc, 3), "momento": mom},
         "empresa": {"id": e.id, "nome": e.razao_social} if e else None,
         "pessoa": {"id": p.id, "nome": p.nome, "cargo": p.cargo, "temperatura": temp,
-                   "temperaturaMotivo": p.temperatura_motivo} if p else None,
+                   "temperaturaMotivo": p.temperatura_motivo, "linkedin": p.linkedin_url,
+                   "headline": p.linkedin_headline} if p else None,
         "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo} for c in contatos],
         "vigentes": [{"vertical": v.vertical, "produto": v.produto or v.titulo, "fim": v.fim_vigencia.isoformat() if v.fim_vigencia else None,
                       "fonte": v.fonte} for v in vigentes],

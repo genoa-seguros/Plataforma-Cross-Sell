@@ -105,6 +105,28 @@ def noticias(horas: int = typer.Option(24, help="Não rebuscar empresas atualiza
     typer.echo(registrar(db, "noticias", nt.atualizar, db, ids, horas=horas))
 
 
+@app.command("linkedin-exportar")
+def linkedin_exportar():
+    """Escreve na aba Alvos da planilha as pessoas e empresas a ler no LinkedIn."""
+    from crosssell.connectors import linkedin_planilha as lk
+    from crosssell.pipeline import registrar
+
+    db, s = _db(), get_settings()
+    typer.echo(registrar(db, "linkedin-alvos", lk.exportar, db, s, lk.cliente(s)))
+
+
+@app.command("linkedin-importar")
+def linkedin_importar():
+    """Lê a aba Resultados (preenchida pelo n8n) e atualiza perfis, decisores e posts."""
+    from crosssell.connectors import linkedin_planilha as lk
+    from crosssell.pipeline import recalcular as rc
+    from crosssell.pipeline import registrar
+
+    db, s = _db(), get_settings()
+    typer.echo(registrar(db, "linkedin-resultados", lk.importar, db, s, lk.cliente(s)))
+    rc(db)
+
+
 @app.command()
 def enriquecer(limite: int = 200):
     """Enriquece empresas com dados da Receita (porte, CNAE, sócios)."""

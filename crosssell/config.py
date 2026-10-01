@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-opus-5-5"
     temperatura_max_emails: int = 5
 
+    # LinkedIn via Google Sheets + n8n (Linked API). A planilha é compartilhada com a conta de serviço.
+    google_sheets_id: str = ""
+    google_service_account_file: str = ""
+    linkedin_aba_alvos: str = "Alvos"
+    linkedin_aba_resultados: str = "Resultados"
+    linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
+
     # Login: o master é criado pelo comando `crosssell criar-master`.
     sessao_dias: int = 14
     cookie_seguro: bool = True  # exige HTTPS em produção; desligue só em ambiente local

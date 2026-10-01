@@ -78,7 +78,7 @@ def main():
     master, _ = auth.convidar(db, "rodrigo.pedroni@innoaseguros.com.br", "Rodrigo Pedroni", [], papel="master")
     for i, u in enumerate(db.query(Usuario).all(), start=1):
         u.pipedrive_user_id = i
-        if u.senha_hash is None and u.papel != "master":
+        if u.senha_hash is None:
             u.senha_hash = "demo"  # aparece como ativo na prévia
     seq = 1000
     for i, (nome, cnae, porte, func, ganhos, abertos, temp) in enumerate(EMPRESAS):
@@ -134,6 +134,27 @@ def main():
                                 "de": pessoas[0].email, "para": [u]})
         for u, ms in msgs.items():
             registrar_mensagens(db, s, u, ms)
+    db.commit()
+
+    # LinkedIn (o que viria da planilha preenchida pelo n8n)
+    empresas = db.query(Empresa).order_by(Empresa.id).all()
+    for i, e in enumerate(empresas):
+        if i % 3 == 2:
+            continue  # parte das empresas ainda não foi lida
+        e.linkedin_url = f"https://www.linkedin.com/company/exemplo-{i}"
+        e.linkedin_em = AGORA
+        for p in e.pessoas:
+            p.linkedin_url = f"https://www.linkedin.com/in/exemplo-{p.id}"
+            p.linkedin_headline = f"{p.cargo} na {e.razao_social.replace(' (exemplo)', '')}"
+            p.linkedin_em = AGORA
+    for i, (nome, cargo) in [(0, ("Marta Reis", "Diretora Jurídica")), (3, ("Fábio Monteiro", "CEO")),
+                              (6, ("Cláudia Tavares", "Diretora de Pessoas"))]:
+        e = empresas[i]
+        db.add(Pessoa(nome=nome, nome_normalizado=normalizar_nome_pessoa(nome), empresa_id=e.id, cargo=cargo,
+                      senioridade=classificar_senioridade(cargo), fonte="linkedin", linkedin_url=f"https://www.linkedin.com/in/exemplo-dm-{i}",
+                      linkedin_headline=f"{cargo} | {e.razao_social.replace(' (exemplo)', '')}", linkedin_em=AGORA))
+    mudou = empresas[4].pessoas[0]
+    mudou.linkedin_empresa_atual, mudou.linkedin_headline = "Grupo Andorinha", "CFO no Grupo Andorinha"
     db.commit()
 
     # Atividades da semana (algumas atrasadas e uma feita)

@@ -3,8 +3,8 @@
 Fluxo automático:
   1. A plataforma levanta os alvos: empresas e contatos dos negócios abertos que
      nunca foram lidos no LinkedIn ou cuja leitura passou da validade.
-  2. A plataforma chama o webhook do n8n (POST) com o lote de alvos e o endereço
-     de retorno. O n8n responde na hora e processa em segundo plano.
+  2. A plataforma chama o webhook do n8n (POST), um alvo por chamada, com o
+     endereço de retorno. O n8n responde na hora e processa em segundo plano.
   3. O n8n consulta a Linked API (fetchPerson / fetchCompany) para cada alvo.
   4. O n8n devolve cada resultado em POST /api/integracoes/linkedin/resultados,
      com o mesmo token no cabeçalho Authorization. A plataforma atualiza pessoas,
@@ -85,7 +85,11 @@ def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> lis
 # --- 2. Disparo do n8n -----------------------------------------------------
 
 def disparar(db: Session, settings: Settings, http: httpx.Client | None = None) -> dict:
-    """Envia ao webhook do n8n até `linkedin_lote` alvos e marca-os como pedidos."""
+    """Envia ao webhook do n8n até `linkedin_lote` alvos, UM POR CHAMADA, e marca-os como pedidos.
+
+    Um alvo por execução porque a Linked API responde de forma assíncrona: o n8n
+    fica parado num nó Wait até o resultado daquele alvo chegar.
+    """
     if not configurado(settings):
         raise RuntimeError("Integração com o n8n não configurada (N8N_LINKEDIN_WEBHOOK_URL, N8N_TOKEN, PLATAFORMA_URL).")
     lote = alvos(db, settings)[: settings.linkedin_lote]
@@ -93,20 +97,25 @@ def disparar(db: Session, settings: Settings, http: httpx.Client | None = None) 
         return {"enviados": 0}
     http = http or httpx.Client(timeout=30)
     agora = datetime.utcnow()
-    corpo = {
-        "lote_id": f"{agora:%Y%m%d%H%M%S}-{secrets.token_hex(3)}",
-        "callback_url": settings.plataforma_url.rstrip("/") + "/api/integracoes/linkedin/resultados",
-        "alvos": lote,
-    }
-    r = http.post(settings.n8n_linkedin_webhook_url, json=corpo,
-                  headers={"Authorization": f"Bearer {settings.n8n_token}"})
-    r.raise_for_status()
+    lote_id = f"{agora:%Y%m%d%H%M%S}-{secrets.token_hex(3)}"
+    callback = settings.plataforma_url.rstrip("/") + "/api/integracoes/linkedin/resultados"
+    enviados, falhas = [], 0
     for a in lote:
+        try:
+            r = http.post(settings.n8n_linkedin_webhook_url, json={"lote_id": lote_id, "callback_url": callback, "alvos": [a]},
+                          headers={"Authorization": f"Bearer {settings.n8n_token}"})
+            r.raise_for_status()
+        except httpx.HTTPError:
+            falhas += 1
+            continue
         obj = db.get(Pessoa if a["tipo"] == "pessoa" else Empresa, int(a["id_alvo"][1:]))
         obj.linkedin_pedido_em = agora
+        enviados.append(a)
     db.commit()
-    return {"enviados": len(lote), "empresas": sum(a["tipo"] == "empresa" for a in lote),
-            "pessoas": sum(a["tipo"] == "pessoa" for a in lote), "lote": corpo["lote_id"]}
+    if not enviados and falhas:
+        raise RuntimeError("O n8n recusou todos os envios (confira a URL do webhook e o token).")
+    return {"enviados": len(enviados), "falhas": falhas, "empresas": sum(a["tipo"] == "empresa" for a in enviados),
+            "pessoas": sum(a["tipo"] == "pessoa" for a in enviados), "lote": lote_id}
 
 
 # --- 4. Resultados ---------------------------------------------------------

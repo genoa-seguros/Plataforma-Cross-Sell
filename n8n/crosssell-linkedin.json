@@ -88,17 +88,57 @@
       "parameters": {}
     },
     {
+      "id": "eb462dc3-8fcb-5f82-9902-c4b9d5dfbff9",
+      "name": "Aguardar pessoa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "e4a84e57-8a47-51bc-b6d4-39c6b03fd5c6"
+    },
+    {
+      "id": "3836f1fa-4738-524f-9bef-611bc0795f15",
+      "name": "Aguardar empresa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        420
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "c77e7b42-34c6-5c8d-8e8d-24dceca3bc8c"
+    },
+    {
       "id": "dc9c1313-250a-5d69-b7e0-3049f961b8f5",
       "name": "Mapear",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        920,
+        1140,
         300
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Separar alvos').item.json;\nconst r = $json.data ?? $json;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: exp0.position || exp0.title || '',\n    empresa_atual: exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Separar alvos').first().json;  // a plataforma envia um alvo por execução\n// Depois do Wait, o retorno da Linked API vem em body (às vezes dentro de data/result).\nconst b = $json.body ?? $json;\nconst r = b.data ?? b.result ?? b;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: exp0.position || exp0.title || '',\n    empresa_atual: exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
       }
     },
     {
@@ -107,7 +147,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        920,
+        1140,
         560
       ],
       "parameters": {
@@ -117,13 +157,13 @@
             {
               "id": "262bcaba-2399-5108-b930-fb55f7c20b1f",
               "name": "id_alvo",
-              "value": "={{ $('Separar alvos').item.json.id_alvo }}",
+              "value": "={{ $('Separar alvos').first().json.id_alvo }}",
               "type": "string"
             },
             {
               "id": "b7280a22-6175-5612-b1d7-3499ad08f334",
               "name": "tipo",
-              "value": "={{ $('Separar alvos').item.json.tipo }}",
+              "value": "={{ $('Separar alvos').first().json.tipo }}",
               "type": "string"
             },
             {
@@ -143,7 +183,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1160,
+        1380,
         300
       ],
       "parameters": {
@@ -186,7 +226,7 @@
         -160
       ],
       "parameters": {
-        "content": "## ⚠ Trocar os 2 nós marcados\nSubstitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n**Fetch Person**: URL `{{ $json.linkedin_url }}`. Se vazia, use antes *Search People* com `{{ $json.nome }}` + `{{ $json.empresa }}` e pegue o 1º resultado. Ative *experience*.\n\n**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. Ative *decision makers* e *posts*.\n\nEm ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro ao nó **Registrar erro**.",
+        "content": "## ⚠ Trocar os 2 nós marcados\nSubstitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n**Fetch Person**: Person URL `{{ $json.linkedin_url }}`; *Additional Data*: Experience.\n\n**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. Ative *decision makers* e *posts*.\n\nA Linked API responde de forma assíncrona: os nós **Aguardar** (Wait, *On Webhook Call*, limite de 15 min) recebem o resultado.\n\nEm ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro ao nó **Registrar erro**.",
         "width": 520,
         "height": 420,
         "color": 3
@@ -238,7 +278,7 @@
       "main": [
         [
           {
-            "node": "Mapear",
+            "node": "Aguardar pessoa",
             "type": "main",
             "index": 0
           }
@@ -246,6 +286,28 @@
       ]
     },
     "⚠ TROCAR: Linked API · Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Aguardar empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar pessoa": {
+      "main": [
+        [
+          {
+            "node": "Mapear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar empresa": {
       "main": [
         [
           {

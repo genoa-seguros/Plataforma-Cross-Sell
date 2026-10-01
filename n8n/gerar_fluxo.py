@@ -7,8 +7,10 @@ from pathlib import Path
 MAPEAR_JS = r"""// Converte a resposta da Linked API no formato que a plataforma espera.
 // Os nomes dos campos variam entre versões: o pick() tenta alternativas.
 // Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.
-const alvo = $('Separar alvos').item.json;
-const r = $json.data ?? $json;
+const alvo = $('Separar alvos').first().json;  // a plataforma envia um alvo por execução
+// Depois do Wait, o retorno da Linked API vem em body (às vezes dentro de data/result).
+const b = $json.body ?? $json;
+const r = b.data ?? b.result ?? b;
 const pick = (...caminhos) => {
   for (const c of caminhos) {
     const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);
@@ -73,16 +75,24 @@ nodes = [
         "options": {}}),
     no("⚠ TROCAR: Linked API · Fetch Person", "n8n-nodes-base.noOp", 1, [680, 200], {}),
     no("⚠ TROCAR: Linked API · Fetch Company", "n8n-nodes-base.noOp", 1, [680, 420], {}),
-    no("Mapear", "n8n-nodes-base.code", 2, [920, 300], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
-    no("Registrar erro", "n8n-nodes-base.set", 3.4, [920, 560], {
+    no("Aguardar pessoa", "n8n-nodes-base.wait", 1.1, [900, 200], {
+        "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
+        "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
+        webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-pessoa"))),
+    no("Aguardar empresa", "n8n-nodes-base.wait", 1.1, [900, 420], {
+        "resume": "webhook", "httpMethod": "POST", "limitWaitTime": True, "limitType": "afterTimeInterval",
+        "resumeAmount": 15, "resumeUnit": "minutes", "options": {}},
+        webhookId=str(uuid.uuid5(uuid.NAMESPACE_URL, "crosssell/wait-empresa"))),
+    no("Mapear", "n8n-nodes-base.code", 2, [1140, 300], {"mode": "runOnceForEachItem", "jsCode": MAPEAR_JS}),
+    no("Registrar erro", "n8n-nodes-base.set", 3.4, [1140, 560], {
         "mode": "manual",
         "assignments": {"assignments": [
-            atribuicao("id_alvo", "={{ $('Separar alvos').item.json.id_alvo }}"),
-            atribuicao("tipo", "={{ $('Separar alvos').item.json.tipo }}"),
+            atribuicao("id_alvo", "={{ $('Separar alvos').first().json.id_alvo }}"),
+            atribuicao("tipo", "={{ $('Separar alvos').first().json.tipo }}"),
             atribuicao("erro", "={{ $json.error?.message || $json.error || 'Falha na Linked API' }}"),
         ]},
         "options": {}}),
-    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1160, 300], {
+    no("Devolver à plataforma", "n8n-nodes-base.httpRequest", 4.2, [1380, 300], {
         "method": "POST",
         "url": "={{ $('Webhook').first().json.body.callback_url }}",
         "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
@@ -99,10 +109,11 @@ nodes = [
     nota("Trocar nós da Linked API", [600, -160], (
         "## ⚠ Trocar os 2 nós marcados\n"
         "Substitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n"
-        "**Fetch Person**: URL `{{ $json.linkedin_url }}`. Se vazia, use antes *Search People* com "
-        "`{{ $json.nome }}` + `{{ $json.empresa }}` e pegue o 1º resultado. Ative *experience*.\n\n"
+        "**Fetch Person**: Person URL `{{ $json.linkedin_url }}`; *Additional Data*: Experience.\n\n"
         "**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. "
         "Ative *decision makers* e *posts*.\n\n"
+        "A Linked API responde de forma assíncrona: os nós **Aguardar** (Wait, *On Webhook Call*, "
+        "limite de 15 min) recebem o resultado.\n\n"
         "Em ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro "
         "ao nó **Registrar erro**."),
         w=520, h=420, cor=3),
@@ -112,8 +123,10 @@ conexoes = {
     "Webhook": [["Separar alvos"]],
     "Separar alvos": [["É pessoa?"]],
     "É pessoa?": [["⚠ TROCAR: Linked API · Fetch Person"], ["⚠ TROCAR: Linked API · Fetch Company"]],
-    "⚠ TROCAR: Linked API · Fetch Person": [["Mapear"]],
-    "⚠ TROCAR: Linked API · Fetch Company": [["Mapear"]],
+    "⚠ TROCAR: Linked API · Fetch Person": [["Aguardar pessoa"]],
+    "⚠ TROCAR: Linked API · Fetch Company": [["Aguardar empresa"]],
+    "Aguardar pessoa": [["Mapear"]],
+    "Aguardar empresa": [["Mapear"]],
     "Mapear": [["Devolver à plataforma"]],
     "Registrar erro": [["Devolver à plataforma"]],
 }

@@ -35,12 +35,13 @@ def test_disparo_envia_lote_e_nao_reenvia_em_andamento(db, settings):
     pedido = n8n.recebidos[0]
     assert pedido["auth"] == "Bearer segredo-compartilhado"
     assert pedido["corpo"]["callback_url"] == "https://plataforma.exemplo/api/integracoes/linkedin/resultados"
-    assert res["enviados"] == 3 and len(pedido["corpo"]["alvos"]) == 3  # respeita o lote
-    enviados = {a["id_alvo"] for a in pedido["corpo"]["alvos"]}
+    assert res["enviados"] == 3 and len(n8n.recebidos) == 3  # respeita o lote
+    assert all(len(p["corpo"]["alvos"]) == 1 for p in n8n.recebidos)  # um alvo por chamada
+    enviados = {p["corpo"]["alvos"][0]["id_alvo"] for p in n8n.recebidos}
 
     # Segundo disparo manda só o que sobrou; os já pedidos ficam aguardando o retorno
     lk.disparar(db, s, n8n.client())
-    segundo = {a["id_alvo"] for a in n8n.recebidos[1]["corpo"]["alvos"]}
+    segundo = {p["corpo"]["alvos"][0]["id_alvo"] for p in n8n.recebidos[3:]}
     assert segundo and not (segundo & enviados)
     assert lk.disparar(db, s, n8n.client()) == {"enviados": 0}
 

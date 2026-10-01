@@ -75,7 +75,9 @@ a plataforma sabe que aquele alvo falhou.
 // Os nomes dos campos variam entre versões: o pick() tenta alternativas.
 // Confira a saída dos nós 6a/6b na primeira execução e ajuste se precisar.
 const alvo = $('Separar alvos').item.json;
-const r = $json.data ?? $json;
+// Depois do Wait, o retorno da Linked API vem em body (às vezes dentro de data/result).
+const b = $json.body ?? $json;
+const r = b.data ?? b.result ?? b;
 const pick = (...caminhos) => {
   for (const c of caminhos) {
     const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);

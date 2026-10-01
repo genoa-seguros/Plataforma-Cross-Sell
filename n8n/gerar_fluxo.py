@@ -160,7 +160,7 @@ nodes = [
     nota("Trocar nós da Linked API", [600, -160], (
         "## ⚠ Trocar os 2 nós marcados\n"
         "Substitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n"
-        "**Fetch Person**: Person URL `{{ $json.linkedin_url }}`; *Additional Data*: Experience.\n\n"
+        "**Fetch Person**: Person URL `{{ $('Separar alvos').first().json.linkedin_url }}`; *Additional Data*: só Experience.\n\n"
         "**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. "
         "Ative *decision makers* e *posts*.\n\n"
         "A Linked API responde de forma assíncrona: os nós **Aguardar** (Wait, *On Webhook Call*, "

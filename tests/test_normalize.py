@@ -1,6 +1,7 @@
 from datetime import date
 
 from crosssell.normalize import (
+    nome_para_busca,
     classificar_senioridade, dominio_email, dominio_site, normalizar_cnpj, normalizar_cpf,
     normalizar_nome_empresa, parse_data, parse_numero,
 )
@@ -37,3 +38,12 @@ def test_senioridade():
 def test_parse():
     assert parse_data("31/12/2026") == date(2026, 12, 31)
     assert parse_numero("R$ 1.234,56") == 1234.56
+
+
+def test_nome_para_busca():
+    assert nome_para_busca("Metalúrgica Alfa Ltda") == "Metalúrgica Alfa"
+    assert nome_para_busca("Ambev S.A.") == "Ambev"
+    assert nome_para_busca("Beta Serviços S/A") == "Beta Serviços"
+    assert nome_para_busca("Clínica Horizonte (exemplo)") == "Clínica Horizonte"
+    assert nome_para_busca("Home Agent Teleserviços, Processos de Atendimento e Negócios S.A.") == \
+        "Home Agent Teleserviços, Processos de Atendimento e Negócios"

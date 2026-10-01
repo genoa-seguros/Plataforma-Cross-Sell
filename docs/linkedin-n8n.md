@@ -56,8 +56,8 @@ Ela é usada na entrada (nó 1) e na saída (nó 7). Pré-requisito: o nó da co
 | 1 | **Webhook** | POST, path `crosssell-linkedin`, *Authentication: Header Auth* (credencial acima), *Respond: Immediately* |
 | 2 | **Split Out** | campo `body.alvos` |
 | 3 | **IF** ("É pessoa?") | `tipo` igual a `pessoa`: verdadeiro vai para Fetch Person, falso para Fetch Company |
-| 6a | **Linked API: Fetch Person** | URL = `linkedin_url`; se vier vazia, antes use *Search People* com `nome` + `empresa` e pegue o 1º resultado; ative *retrieve experience* |
-| 6b | **Linked API: Fetch Company** | URL = `linkedin_url` ou *Search Companies* com `nome`; ative *retrieve decision makers* e *retrieve posts* (até 5) |
+| 6a | **Linked API: Fetch Person** | Person URL = `{{ $('Separar alvos').first().json.linkedin_url }}`; *Additional Data*: só **Experience** |
+| 6b | **Linked API: Fetch Company** | Company URL = `{{ $('Separar alvos').first().json.linkedin_url }}`; *Additional Data*: **Decision Makers** e **Posts** (sem Employees) |
 | 6c | **Code** ("Mapear") | script abaixo, depois de 6a e 6b |
 | 7 | **HTTP Request** | POST para `{{ $('Webhook').first().json.body.callback_url }}`, *Authentication: Header Auth* (mesma credencial), *Body: JSON* = `{{ $json }}` |
 
@@ -117,8 +117,13 @@ Cada alvo chega com `acao`:
 
 - **`ler`**: tem `linkedin_url`. Vai para Fetch Person ou Fetch Company → Wait → **Mapear**.
 - **`buscar`**: não tem endereço. O IF **Buscar?** manda para **Search People** (pessoas) ou
-  **Search Companies** (empresas), com o termo `{{ $('Separar alvos').first().json.busca }}`
-  (nome + empresa, ou só o nome da empresa). Depois vem um Wait e o nó **Candidatos**, que
+  **Search Companies** (empresas).
+  - Search People: *Search Term* = `{{ $('Separar alvos').first().json.nome }}`, *Advanced Filter →
+    Current Companies* = `{{ $('Separar alvos').first().json.empresa_busca }}` (nome da empresa sem
+    "Ltda"/"S.A."), *Limit* 5. Se o filtro de empresa não trouxer ninguém, use *Search Term* =
+    `{{ $('Separar alvos').first().json.busca }}` (nome + empresa) sem filtro.
+  - Search Companies: *Search Term* = `{{ $('Separar alvos').first().json.busca }}`, *Limit* 5.
+  - Os filtros servem para achar o perfil; os dados completos vêm depois, no Fetch. Depois vem um Wait e o nó **Candidatos**, que
   devolve até 10 resultados.
 
 A plataforma escolhe o candidato:

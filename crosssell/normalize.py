@@ -73,6 +73,21 @@ def normalizar_nome_empresa(nome: str) -> str:
     return " ".join(tokens)
 
 
+_SUFIXO_FINAL = re.compile(r"[\s,.-]+(ltda|s\.?\s?/?a\.?|me|epp|eireli|limitada|cia\.?)\.?$", re.I)
+
+
+def nome_para_busca(nome: str | None) -> str:
+    """Nome legível para buscar no LinkedIn: sem parênteses e sem sufixo societário no fim.
+
+    "Metalúrgica Alfa Ltda" -> "Metalúrgica Alfa"; "Ambev S.A." -> "Ambev".
+    """
+    t = re.sub(r"\(.*?\)", "", nome or "").strip()
+    anterior = None
+    while anterior != t:
+        anterior, t = t, _SUFIXO_FINAL.sub("", t).strip()
+    return t
+
+
 def normalizar_nome_pessoa(nome: str) -> str:
     t = sem_acento(nome or "").lower()
     t = re.sub(r"[^a-z ]", " ", t)

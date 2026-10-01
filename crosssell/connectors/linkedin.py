@@ -29,7 +29,9 @@ from sqlalchemy.orm import Session
 
 from crosssell.config import Settings
 from crosssell.models import Empresa, Noticia, Pessoa
-from crosssell.normalize import classificar_senioridade, dominio_site, normalizar_nome_empresa, normalizar_nome_pessoa
+from crosssell.normalize import (
+    classificar_senioridade, dominio_site, nome_para_busca, normalizar_nome_empresa, normalizar_nome_pessoa,
+)
 from crosssell.resolver import resolver_pessoa
 
 PRAZO_PEDIDO = timedelta(hours=36)
@@ -87,13 +89,14 @@ def _alvo_empresa(e: Empresa, acao: str, motivo: str) -> dict:
     return {"id_alvo": f"E{e.id}", "tipo": "empresa", "acao": acao, "nome": e.nome_fantasia or e.razao_social,
             "empresa": e.razao_social, "cargo": "", "email": "", "linkedin_url": e.linkedin_url or "",
             "site": e.website or (f"https://{e.dominio}" if e.dominio else ""), "dominio": e.dominio or "",
-            "cnpj": e.cnpj or "", "busca": e.nome_fantasia or re.sub(r"\(.*?\)", "", e.razao_social).strip(),
+            "cnpj": e.cnpj or "", "busca": nome_para_busca(e.nome_fantasia or e.razao_social),
             "motivo": motivo}
 
 
 def _alvo_pessoa(p: Pessoa, acao: str, motivo: str) -> dict:
-    empresa = (p.empresa.nome_fantasia or re.sub(r"\(.*?\)", "", p.empresa.razao_social).strip()) if p.empresa else ""
+    empresa = nome_para_busca(p.empresa.nome_fantasia or p.empresa.razao_social) if p.empresa else ""
     return {"id_alvo": f"P{p.id}", "tipo": "pessoa", "acao": acao, "nome": p.nome, "empresa": empresa,
+            "empresa_busca": empresa,
             "cargo": p.cargo or "", "email": p.email or "", "linkedin_url": p.linkedin_url or "", "site": "",
             "dominio": p.empresa.dominio if p.empresa and p.empresa.dominio else "", "cnpj": "",
             "busca": f"{p.nome} {empresa}".strip(), "motivo": motivo}

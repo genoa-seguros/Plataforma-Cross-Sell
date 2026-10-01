@@ -127,7 +127,8 @@ def test_busca_escolhe_candidato_certo(db, settings):
     ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
     caio = db.scalar(select(Pessoa).where(Pessoa.email == "caio@beta.com.br"))
     alvo_ana = next(a for a in lk.alvos(db, settings) if a["id_alvo"] == f"P{ana.id}")
-    assert alvo_ana["acao"] == "buscar" and alvo_ana["busca"] == "Ana Souza Metalúrgica Alfa Ltda"
+    assert alvo_ana["acao"] == "buscar" and alvo_ana["busca"] == "Ana Souza Metalúrgica Alfa"
+    assert alvo_ana["empresa_busca"] == "Metalúrgica Alfa" and alvo_ana["nome"] == "Ana Souza"
 
     res = lk.receber(db, [
         # Homônima de outra empresa vem primeiro; a certa é a que cita a Metalúrgica Alfa

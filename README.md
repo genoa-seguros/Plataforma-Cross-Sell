@@ -126,6 +126,16 @@ Só metadados de e-mail são armazenados, sem assunto nem corpo. A base legal su
 é o legítimo interesse na gestão do relacionamento com clientes; vale formalizar isso
 com o DPO e informar os usuários das verticais.
 
+## Prévia com dados de exemplo
+
+```bash
+DATABASE_URL=sqlite:///demo.db python scripts/demo.py               # empresas fictícias
+DATABASE_URL=sqlite:///demo.db python scripts/exportar_preview.py preview.html --exemplo
+```
+
+`scripts/exportar_preview.py` gera um HTML único, sem servidor, a partir de qualquer
+banco. Rodado sobre o banco real, sem `--exemplo`, produz um retrato navegável da base.
+
 ## Desenvolvimento
 
 ```bash

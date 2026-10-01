@@ -30,6 +30,8 @@ def test_senioridade():
     assert classificar_senioridade("CFO") == "c_level"
     assert classificar_senioridade("Sócio-Administrador") == "socio"
     assert classificar_senioridade("Analista de RH") == "outro"
+    assert classificar_senioridade("Coordenadora de Benefícios") == "gerente"  # "coo" não é COO
+    assert classificar_senioridade("Head de Finanças") == "diretor"
 
 
 def test_parse():

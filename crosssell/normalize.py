@@ -103,8 +103,8 @@ def dominio_site(url: str | None) -> str | None:
 
 _CARGO_REGRAS = [
     ("socio", r"\b(socio|socia|fundador|founder|owner|proprietari|administrador)"),
-    ("c_level", r"\b(ceo|cfo|cto|coo|cio|chro|cmo|presidente|chief|diretor geral|diretor presidente)"),
-    ("diretor", r"\b(diretor|diretora|director|vp|vice[- ]presidente|head)"),
+    ("c_level", r"\b(ceo|cfo|cto|coo|cio|chro|cmo)\b|\b(presidente|chief|diretor geral|diretor presidente)"),
+    ("diretor", r"\b(diretor|diretora|director|vice[- ]presidente)|\b(vp|head)\b"),
     ("gerente", r"\b(gerente|manager|coordenador|coordenadora|superintendente)"),
 ]
 

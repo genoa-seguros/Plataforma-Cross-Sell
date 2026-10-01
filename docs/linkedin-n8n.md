@@ -34,6 +34,19 @@ Para gerar um token: `python -c "import secrets; print(secrets.token_urlsafe(32)
 
 ### n8n
 
+**Atalho:** importe `n8n/crosssell-linkedin.json`. No n8n: *Workflows → Import from File*, ou
+cole o conteúdo do arquivo no editor. O fluxo vem montado. Falta só:
+
+1. Criar a credencial *Header Auth* (abaixo) e selecioná-la nos nós **Webhook** e
+   **Devolver à plataforma**.
+2. Trocar os dois nós **⚠ TROCAR** pelos nós da Linked API e ligar a saída de erro deles ao nó
+   **Registrar erro**. As notas amarelas do fluxo explicam como.
+3. Ativar o fluxo e copiar a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL`.
+
+Para alterar o fluxo pelo repositório, edite `n8n/gerar_fluxo.py` e rode `python n8n/gerar_fluxo.py`.
+
+A tabela abaixo descreve o mesmo fluxo nó a nó.
+
 Crie uma credencial **Header Auth** com nome `Authorization` e valor `Bearer <N8N_TOKEN>`.
 Ela é usada na entrada (nó 1) e na saída (nó 7). Pré-requisito: o nó da comunidade
 `n8n-nodes-linked-api` instalado e uma credencial da Linked API.

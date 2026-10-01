@@ -1,0 +1,350 @@
+{
+  "name": "CrossSell · LinkedIn (Linked API)",
+  "nodes": [
+    {
+      "id": "f440313f-d10f-5c73-9a7c-6431a07c99c4",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crosssell-linkedin",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "34ede0ee-62e2-510b-9078-f9a69c93b1ef"
+    },
+    {
+      "id": "1a8bedd3-bd96-59ec-bea2-1d5bff32e308",
+      "name": "Separar alvos",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "body.alvos",
+        "options": {}
+      }
+    },
+    {
+      "id": "187ffe96-6504-515a-92b6-e7e0a30b0ddf",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "1e2a4a78-7c9c-56c3-a7b7-940ca5c12cdb",
+      "name": "Pausa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        380
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "webhookId": "cd80ec22-c860-562a-a858-fef097c46695"
+    },
+    {
+      "id": "187035b8-c123-5379-adc7-e25c6a277175",
+      "name": "É pessoa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        380
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "02f3032a-50aa-5693-a3d3-250873cf5dd3",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "pessoa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b5e7931e-1fc7-5cd9-a547-e20953a584df",
+      "name": "⚠ TROCAR: Linked API · Fetch Person",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        280
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "9b7b13ec-243f-5ba4-a0af-642668230362",
+      "name": "⚠ TROCAR: Linked API · Fetch Company",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        480
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "dc9c1313-250a-5d69-b7e0-3049f961b8f5",
+      "name": "Mapear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        380
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Loop Over Items').item.json;\nconst r = $json.data ?? $json;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: exp0.position || exp0.title || '',\n    empresa_atual: exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+      }
+    },
+    {
+      "id": "6bcf6b5f-bff7-5532-915e-cf9b945d6761",
+      "name": "Registrar erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        640
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "262bcaba-2399-5108-b930-fb55f7c20b1f",
+              "name": "id_alvo",
+              "value": "={{ $('Loop Over Items').item.json.id_alvo }}",
+              "type": "string"
+            },
+            {
+              "id": "b7280a22-6175-5612-b1d7-3499ad08f334",
+              "name": "tipo",
+              "value": "={{ $('Loop Over Items').item.json.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "295a6a47-b2ca-537d-8449-27d353a61df5",
+              "name": "erro",
+              "value": "={{ $json.error?.message || $json.error || 'Falha na Linked API' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "083320b5-fcb6-5707-bdef-5adcbc09422b",
+      "name": "Devolver à plataforma",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        380
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').first().json.body.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "865c89f6-753f-581f-ae07-84404d7f3d8e",
+      "name": "Leia antes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -60
+      ],
+      "parameters": {
+        "content": "## CrossSell · LinkedIn\nA plataforma chama este **Webhook** com um lote de alvos; cada alvo é consultado na Linked API e o resultado volta para a plataforma.\n\n**Credencial** (*Header Auth*): nome `Authorization`, valor `Bearer <N8N_TOKEN>`. Selecione-a no **Webhook** e no **Devolver à plataforma**.\n\nAtive o fluxo e copie a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL` na plataforma.",
+        "width": 620,
+        "height": 300,
+        "color": 5
+      }
+    },
+    {
+      "id": "f7df010e-bb16-5964-95d5-5ced32660ac6",
+      "name": "Trocar nós da Linked API",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        60
+      ],
+      "parameters": {
+        "content": "## ⚠ Trocar os 2 nós marcados\nSubstitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n**Fetch Person**: URL `{{ $json.linkedin_url }}`. Se vazia, use antes *Search People* com `{{ $json.nome }}` + `{{ $json.empresa }}` e pegue o 1º resultado. Ative *experience*.\n\n**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. Ative *decision makers* e *posts*.\n\nEm ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro ao nó **Registrar erro**.",
+        "width": 520,
+        "height": 420,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Separar alvos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar alvos": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Pausa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa": {
+      "main": [
+        [
+          {
+            "node": "É pessoa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É pessoa?": {
+      "main": [
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Fetch Person",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Fetch Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Fetch Person": {
+      "main": [
+        [
+          {
+            "node": "Mapear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Mapear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar erro": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Devolver à plataforma": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

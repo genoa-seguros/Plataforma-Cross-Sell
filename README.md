@@ -34,11 +34,15 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
   "Produto Foco", nessa ordem. Sem nenhum deles, usa o título sem o ano.
 - **Saúde**: é cliente quem tem apólice ativa no Zeca, quem foi marcado na caixa da tabela ou
   quem tem "Já possui o seguro saúde na Genoa?" = Sim em algum negócio.
-- **Score** = 45% relacionamento + 30% vínculo + 25% momento.
+- **Score** = relacionamento + vínculo + momento + porte. Em Saúde os pesos são 35/25/15/25;
+  nas demais verticais, 40/30/20/10.
   - *Relacionamento*: frequência, recência, reciprocidade e amplitude dos e-mails com o
     contato, ajustados pela temperatura.
   - *Vínculo*: seguros vigentes em outras verticais (cross sell) e/ou na mesma.
   - *Momento*: renovação de algum seguro vigente em 30–120 dias.
+  - *Porte*: em negócios de Saúde, as vidas informadas no negócio ("Quantidade de Vidas" ou
+    "Faixa de Vidas"). Nos demais, o número de funcionários, e o do LinkedIn prevalece sobre o
+    do Pipedrive. A escala é logarítmica: 10 → 0,33, 100 → 0,67, 1.000 ou mais → 1.
 
 ## Integrações
 

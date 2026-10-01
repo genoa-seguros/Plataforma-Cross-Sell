@@ -172,3 +172,20 @@ def test_link_da_empresa_no_site(db, settings):
     res = lk.descobrir_por_site(db, settings, httpx.Client(transport=httpx.MockTransport(handler)))
     assert res["encontradas"] == 1 and alfa.linkedin_url == "https://br.linkedin.com/company/metalurgica-alfa"
     assert lk.descobrir_por_site(db, settings, httpx.Client(transport=httpx.MockTransport(handler)))["verificadas"] == 0
+
+
+def test_funcionarios_do_linkedin_entram_no_porte(db, settings):
+    carregar(db, settings)
+    beta = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
+    beta.funcionarios, beta.funcionarios_fonte = 8, "pipedrive"
+    db.commit()
+    saude = lambda: next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "5")  # noqa: E731
+    antes = saude()
+    assert any("porte pequeno para saúde" in m for m in antes["motivos"])
+    lk.receber(db, [{"id_alvo": f"E{beta.id}", "tipo": "empresa", "funcionarios": "1.240",
+                     "capturado_em": "2026-09-30T10:00:00"}])
+    assert beta.funcionarios == 1240 and beta.funcionarios_fonte == "linkedin"  # LinkedIn prevalece
+    depois = saude()
+    assert depois["empresa"]["funcionarios"] == 1240
+    assert any("1.240 funcionários no LinkedIn: porte para plano coletivo" in m for m in depois["motivos"])
+    assert depois["comp"]["porte"] == 1.0 and depois["score"] > antes["score"]

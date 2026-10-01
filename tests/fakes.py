@@ -44,6 +44,9 @@ DADOS = {
         deal(4, 29, "open", 10, 100, "Empresarial 2026", owner=2, **{PROD_RE: {"id": 1, "label": "Empresarial"}}),
         # Beta: lead com negócio aberto em Saúde e "já possui saúde" = Sim em outro negócio
         deal(5, 23, "open", 20, 200, "Saúde 2026", owner=1),
+        # Saúde com faixa de vidas informada
+        deal(11, 34, "open", 10, 100, "Saúde Pipo", owner=1,
+             **{"0b51bac054685ca49b31360b65782bab350a150b": {"id": 3, "label": "100 - 500"}}),
         deal(6, 1, "lost", 20, 200, "D&O 2025", **{POSSUI_SAUDE: {"id": 452, "label": "Sim"}}),
         # Fora da tabela: Garantia (40), Flash (38), M&A (31, nem configurado)
         deal(7, 40, "open", 20, 200, "Garantia nova"),

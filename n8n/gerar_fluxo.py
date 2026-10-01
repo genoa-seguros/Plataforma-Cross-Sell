@@ -32,7 +32,7 @@ return {
     empresa_atual: exp0.companyName || exp0.company || '',
     localizacao: pick('location'),
     setor: pick('industry'),
-    funcionarios: pick('employeesCount', 'employeeCount', 'size'),
+    funcionarios: pick('employeesCount', 'employeeCount', 'staffCount', 'employeesOnLinkedIn', 'size'),
     site: pick('website'),
     sede: pick('headquarters', 'location'),
     decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({

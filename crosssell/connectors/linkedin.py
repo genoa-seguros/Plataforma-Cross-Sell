@@ -286,7 +286,9 @@ def _aplicar_pessoa(p: Pessoa, r: dict, quando: datetime) -> str:
 def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     e.linkedin_url = _txt(r, "linkedin_url") or e.linkedin_url
     e.setor = _txt(r, "setor") or e.setor
-    e.funcionarios = _num(r.get("funcionarios")) or e.funcionarios
+    func = _num(r.get("funcionarios"))
+    if func:  # o número do LinkedIn é o mais exato; prevalece sobre Pipedrive/planilha
+        e.funcionarios, e.funcionarios_fonte = func, "linkedin"
     if _txt(r, "site"):
         e.website = e.website or _txt(r, "site")
         e.dominio = e.dominio or dominio_site(_txt(r, "site"))

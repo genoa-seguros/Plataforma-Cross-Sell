@@ -85,7 +85,8 @@ def main():
         dominio = normalizar_nome_empresa(nome).replace(" ", "") + ".exemplo.com.br"
         e = Empresa(razao_social=f"{nome} (exemplo)", nome_normalizado=normalizar_nome_empresa(nome), cnpj=cnpj_ficticio(i),
                     dominio=dominio, cnae=cnae, porte=porte, funcionarios=func, cidade="São Paulo", uf="SP",
-                    pipedrive_org_id=500 + i, noticias_em=AGORA)
+                    pipedrive_org_id=500 + i, noticias_em=AGORA,
+                    funcionarios_fonte="linkedin" if i % 3 != 2 else "pipedrive")
         db.add(e)
         db.flush()
         pessoas = []

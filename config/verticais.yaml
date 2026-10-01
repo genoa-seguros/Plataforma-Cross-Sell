@@ -24,6 +24,9 @@ pipedrive:
       - 87667ea5ea62cfd03118a42581f40bc5fb33e973   # Produtos RE
       - 74bcdb3b63321d279e6ada0de40e1ca1b36f0171   # Produto Vertical Saúde
       - 111caded10585e6ab8d4e46d53597c930dee42cc   # Produto Foco
+    # Porte para Saúde: quantidade de vidas informada no negócio
+    vidas: 3b47081b57efbf488b9f8872569826aade33057d        # Quantidade de Vidas
+    faixa_vidas: 0b51bac054685ca49b31360b65782bab350a150b  # Faixa de Vidas
     # "Se empresa, já possui o seguro saúde na Genoa?" = Sim -> sinal de cliente Saúde
     possui_saude: dced275b9f49ad3ac158c4a961bc17920ad4de57
 

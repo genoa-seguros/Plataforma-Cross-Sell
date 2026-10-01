@@ -90,6 +90,12 @@ def _rotulo(valor) -> str | None:
     return None
 
 
+def _limite_faixa(rotulo: str | None) -> int | None:
+    """'51 -100' -> 100; '1000 +' -> 1000; '1-10' -> 10."""
+    numeros = re.findall(r"\d+", rotulo or "")
+    return int(numeros[-1]) if numeros else None
+
+
 def produto_do_negocio(d: dict, chaves_produto: list[str]) -> str | None:
     campos = d.get("custom_fields") or {}
     for chave in chaves_produto:
@@ -131,7 +137,7 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
 
     for org in client.paginar("organizations", **filtro):
         campos = org.get("custom_fields") or {}
-        resolver_empresa(
+        emp = resolver_empresa(
             db,
             razao_social=org.get("name"),
             cnpj=campos.get(settings.pipedrive_cnpj_field),
@@ -141,6 +147,8 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
             setor=org.get("industry"),
             funcionarios=org.get("employee_count"),
         )
+        if emp is not None and emp.funcionarios and not emp.funcionarios_fonte:
+            emp.funcionarios_fonte = "pipedrive"
         contagem["organizacoes"] += 1
 
     for p in client.paginar("persons", **filtro):
@@ -184,6 +192,10 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
         neg.inicio_vigencia = parse_data(campos.get(campos_cfg.get("inicio_vigencia")))
         neg.fim_vigencia = parse_data(campos.get(campos_cfg.get("fim_vigencia")))
         neg.pipedrive_owner_id = d.get("owner_id")
+        # Saúde: "Quantidade de Vidas" (número) ou "Faixa de Vidas" (limite superior da faixa)
+        qtd = campos.get(campos_cfg.get("vidas")) if campos_cfg.get("vidas") else None
+        faixa = _rotulo(campos.get(campos_cfg.get("faixa_vidas"))) if campos_cfg.get("faixa_vidas") else None
+        neg.vidas = int(qtd) if isinstance(qtd, (int, float)) and qtd > 0 else _limite_faixa(faixa)
         neg.responsavel_email = donos.get(d.get("owner_id"))
         # "Já possui o seguro saúde na Genoa?" = Sim -> registra a empresa como cliente Saúde.
         if empresa is not None and _rotulo(campos.get(campos_cfg.get("possui_saude"))) == "Sim":

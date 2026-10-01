@@ -5,10 +5,16 @@ o cliente/lead e o contato, os seguros vigentes que ele já tem conosco (por
 produto), a temperatura dos e-mails, notícias, quem tem relação e a próxima
 atividade.
 
-score = 100 × (45% relacionamento + 30% vínculo + 25% momento)
+score = 100 × (relacionamento + vínculo + momento + porte), com pesos por vertical:
+                  relacionamento  vínculo  momento  porte
+  Saúde                35%          25%      15%     25%
+  demais               40%          30%      20%     10%
+
   relacionamento  score de e-mail do contato (ou da empresa), ajustado pela temperatura
   vínculo         já é cliente em outras verticais (cross sell) e/ou na mesma
   momento         renovação próxima de algum seguro vigente
+  porte           nº de funcionários (LinkedIn > Pipedrive) ou de vidas do negócio de Saúde,
+                  em escala log: 10 -> 0,33 · 100 -> 0,67 · 1.000+ -> 1
 """
 
 from collections import Counter
@@ -21,7 +27,9 @@ from crosssell.config import VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Usuario
 
-PESO_REL, PESO_VINC, PESO_MOM = 0.45, 0.30, 0.25
+PESOS = {"saude": (0.35, 0.25, 0.15, 0.25), None: (0.40, 0.30, 0.20, 0.10)}  # rel, vínculo, momento, porte
+PORTE_DESCONHECIDO = 0.3
+FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha"}
 AJUSTE_TEMPERATURA = {"muita": 0.15, "media": 0.0, "pouca": -0.15}
 DECISORES = {"socio", "c_level", "diretor"}
 
@@ -48,6 +56,27 @@ def _momento(vigentes: list[Negocio], hoje: date) -> tuple[float, list[str]]:
         elif nivel == melhor:
             motivos.append(texto)
     return melhor, motivos
+
+
+def _porte(n: Negocio, e: Empresa | None) -> tuple[float, int | None, str, list[str]]:
+    """Valor do porte (0–1), número usado, de onde veio e o motivo para o "Por quê"."""
+    import math
+
+    if n.vertical == "saude" and n.vidas:
+        numero, origem = n.vidas, "vidas no negócio"
+    elif e is not None and e.funcionarios:
+        numero, origem = e.funcionarios, f"funcionários {FONTE_FUNC.get(e.funcionarios_fonte or '', '')}".strip()
+    else:
+        return PORTE_DESCONHECIDO, None, "", []
+    valor = max(0.0, min(1.0, math.log10(max(numero, 1)) / 3))
+    texto = f"{numero:,}".replace(",", ".") + f" {origem}"
+    if n.vertical == "saude":
+        if numero >= 30:
+            return valor, numero, origem, [f"{texto}: porte para plano coletivo"]
+        if numero < 10:
+            return valor, numero, origem, [f"{texto}: porte pequeno para saúde coletivo"]
+        return valor, numero, origem, []
+    return valor, numero, origem, ([f"{texto}: empresa de grande porte"] if numero >= 200 else [])
 
 
 def _ponte(db: Session, pessoa_id: int | None, empresa_id: int | None) -> str | None:
@@ -78,6 +107,8 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     rel = max(0.0, min(1.0, base + AJUSTE_TEMPERATURA.get(temp or "", 0)))
     vinc = min(1.0, (0.7 if len(outras) == 1 else 1.0 if len(outras) > 1 else 0) + (0.3 if n.vertical in verticais_cli else 0))
     mom, mot_mom = _momento(vigentes, hoje)
+    porte, func, func_origem, mot_porte = _porte(n, e)
+    w_rel, w_vinc, w_mom, w_porte = PESOS.get(n.vertical if n.vertical == "saude" else None)
 
     motivos = []
     if outras:
@@ -88,7 +119,7 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     if ex and n.vertical not in verticais_cli:
         fim = max(x.fim_vigencia for x in ex)
         motivos.append(f"já teve {VERTICAL_LABEL[n.vertical]} conosco até {fim:%m/%Y} — reconquista")
-    motivos += mot_mom
+    motivos += mot_mom + mot_porte
     if e is not None and e.score_componentes.get("acesso_decisor"):
         motivos.append("relação ativa com decisor")
 
@@ -112,9 +143,10 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     return {
         "id": n.id, "pipedriveId": n.id_externo, "titulo": n.titulo, "produto": n.produto, "etapa": n.etapa,
         "funil": funil.get("nome"), "vertical": n.vertical, "valor": n.valor,
-        "score": round(100 * (PESO_REL * rel + PESO_VINC * vinc + PESO_MOM * mom), 1),
-        "comp": {"relacionamento": round(rel, 3), "vinculo": round(vinc, 3), "momento": mom},
-        "empresa": {"id": e.id, "nome": e.razao_social} if e else None,
+        "score": round(100 * (w_rel * rel + w_vinc * vinc + w_mom * mom + w_porte * porte), 1),
+        "comp": {"relacionamento": round(rel, 3), "vinculo": round(vinc, 3), "momento": mom, "porte": round(porte, 3)},
+        "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem}
+        if e else None,
         "pessoa": {"id": p.id, "nome": p.nome, "cargo": p.cargo, "temperatura": temp,
                    "temperaturaMotivo": p.temperatura_motivo, "linkedin": p.linkedin_url,
                    "headline": p.linkedin_headline} if p else None,

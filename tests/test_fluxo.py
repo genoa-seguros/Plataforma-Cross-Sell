@@ -39,7 +39,10 @@ def test_regra_de_vigencia(db, settings):
 def test_tabela_so_negocios_abertos_dos_funis_escolhidos(db, settings):
     carregar(db, settings)
     linhas = tabela.montar(db, settings)
-    assert {x["pipedriveId"] for x in linhas} == {"4", "5"}  # 40, 38 e 31 ficam de fora
+    assert {x["pipedriveId"] for x in linhas} == {"4", "5", "11"}  # 40, 38 e 31 ficam de fora
+    pipo = next(x for x in linhas if x["pipedriveId"] == "11")
+    assert pipo["empresa"]["funcionarios"] == 500 and pipo["empresa"]["funcionariosOrigem"] == "vidas no negócio"
+    assert any("500 vidas no negócio: porte para plano coletivo" in m for m in pipo["motivos"])
     alfa = next(x for x in linhas if x["pipedriveId"] == "4")
     assert [(v["vertical"], v["produto"]) for v in alfa["vigentes"]] == [("linhas_financeiras", "D&O")]
     assert alfa["funil"] == "RE" and alfa["dono"] == "bruno.rodrigues@innoaseguros.com.br"

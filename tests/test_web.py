@@ -40,7 +40,7 @@ def test_login_obrigatorio_e_senha_errada(cenario):
     assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "errada").status_code == 401
     assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123").status_code == 303
     assert c.get("/").status_code == 200
-    assert len(c.get("/api/tabela").json()["linhas"]) == 2
+    assert len(c.get("/api/tabela").json()["linhas"]) == 3
 
 
 def test_convite_desconvite_e_permissoes(cenario, db):

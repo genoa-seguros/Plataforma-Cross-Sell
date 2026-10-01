@@ -253,9 +253,9 @@ function linhaHTML(l) {
   const prox = l.proximaAtividade;
   return `<tr>
     <td><div class="score"><b>${l.score.toFixed(0)}</b><div class="bar"><i style="width:${l.score}%"></i></div>
-      <span class="comp" title="relacionamento · vínculo · momento">${Math.round((c.relacionamento||0)*100)} · ${Math.round((c.vinculo||0)*100)} · ${Math.round((c.momento||0)*100)}</span></div></td>
+      <span class="comp" title="relacionamento · vínculo · momento · porte">${Math.round((c.relacionamento||0)*100)} · ${Math.round((c.vinculo||0)*100)} · ${Math.round((c.momento||0)*100)} · ${Math.round((c.porte||0)*100)}</span></div></td>
     <td style="min-width:180px">${l.empresa ? `<a href="#empresa-${l.empresa.id}">${esc(l.empresa.nome)}</a>` : "<span class='sub'>sem organização</span>"}
-      <div>${cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}</div>
+      <div>${cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}${l.empresa?.funcionarios ? ` <span class="sub" title="${esc(l.empresa.funcionariosOrigem)}">· ${l.empresa.funcionarios.toLocaleString("pt-BR")} ${l.empresa.funcionariosOrigem.startsWith("vidas") ? "vidas" : "func."}</span>` : ""}</div>
       ${l.pessoa ? `<div class="sub">${esc(l.pessoa.nome)}${l.pessoa.cargo ? " · " + esc(l.pessoa.cargo) : ""}${inLink(l.pessoa.linkedin)}</div>${l.pessoa.headline ? `<div class="sub" style="max-width:220px">${esc(l.pessoa.headline)}</div>` : ""}` : ""}</td>
     <td style="min-width:130px">${celulaTemp(l.pessoa)}</td>
     <td>${celulaVigentes(l)}</td>
@@ -299,7 +299,7 @@ async function telaNegocios() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Score</th><th>Cliente/Lead</th><th>Temperatura</th><th>Seguros vigentes</th><th>Negócio aberto</th><th>Por quê</th><th>Notícias</th><th>Relação</th><th>Próximo passo</th></tr></thead>
       <tbody id="linhas"></tbody></table></div>
-    <p class="nota">Score = 45% relacionamento (e-mails e temperatura) + 30% vínculo (seguros vigentes em outras verticais) + 25% momento (renovação próxima). Seguro vigente = negócio ganho com fim de vigência depois de hoje.</p>
+    <p class="nota">Score = relacionamento (e-mails e temperatura) + vínculo (seguros vigentes em outras verticais) + momento (renovação próxima) + porte (funcionários no LinkedIn ou vidas do negócio). Em Saúde, o porte pesa 25%; nas demais, 10%. Seguro vigente = negócio ganho com fim de vigência depois de hoje.</p>
   </section>`;
   filtrar();
   document.querySelectorAll("[data-funil]").forEach(b => b.onclick = () => { filtro.funil = b.dataset.funil; telaNegociosRender(); });

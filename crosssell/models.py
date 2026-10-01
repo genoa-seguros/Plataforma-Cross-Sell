@@ -34,6 +34,7 @@ class Empresa(Base):
     cnae: Mapped[str | None]
     porte: Mapped[str | None]
     funcionarios: Mapped[int | None]
+    funcionarios_fonte: Mapped[str | None]  # linkedin | pipedrive | planilha
     capital_social: Mapped[float | None]
     cidade: Mapped[str | None]
     uf: Mapped[str | None]

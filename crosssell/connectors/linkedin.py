@@ -333,18 +333,32 @@ def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
     return None
 
 
+_UFS = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
+        "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
+
+
+def _no_brasil(local: str) -> bool:
+    local = (local or "").strip()
+    return bool(re.search(r"\b(brasil|brazil)\b", local, re.I)) or local[-2:].upper() in _UFS and \
+        bool(re.search(r",\s*[A-Za-z]{2}$", local))
+
+
 def _escolher_empresa(e: Empresa, candidatos: list[dict]) -> str | None:
-    """Mesmo domínio do site ou mesmo nome (sem sufixos societários)."""
+    """Mesmo domínio do site; ou mesmo nome (sem sufixos societários) com um único candidato no Brasil.
+    A busca de empresas não traz o site, então homônimos de outros países saem pelo local."""
     nome = normalizar_nome_empresa(e.nome_fantasia or re.sub(r"\(.*?\)", "", e.razao_social))
-    for c in candidatos:
-        url = c.get("linkedin_url") or c.get("url")
-        if not url:
-            continue
-        if e.dominio and dominio_site(c.get("site") or c.get("website")) == e.dominio:
-            return url
-        if nome and normalizar_nome_empresa(c.get("nome") or c.get("name") or "") == nome:
-            return url
-    return None
+    validos = [c for c in candidatos if c.get("linkedin_url") or c.get("url")]
+    url = lambda c: c.get("linkedin_url") or c.get("url")  # noqa: E731
+    if e.dominio:
+        for c in validos:
+            if dominio_site(c.get("site") or c.get("website")) == e.dominio:
+                return url(c)
+    mesmos = [c for c in validos if nome and normalizar_nome_empresa(c.get("nome") or c.get("name") or "") == nome]
+    if len(mesmos) > 1:
+        mesmos = [c for c in mesmos if _no_brasil(c.get("local") or c.get("location") or "")]
+    if len(mesmos) > 1 and e.uf:
+        mesmos = [c for c in mesmos if (c.get("local") or c.get("location") or "").strip()[-2:].upper() == e.uf.upper()]
+    return url(mesmos[0]) if len(mesmos) == 1 else None
 
 
 def _aplicar_busca(obj, r: dict, quando: datetime) -> str:

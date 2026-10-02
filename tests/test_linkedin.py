@@ -207,3 +207,21 @@ def test_busca_real_mariana_lazaro():
     assert lk._escolher_pessoa(Pessoa(nome="Mariana Lazaro"), candidatos) is None  # sem empresa: homônimos
     outra = Empresa(razao_social="Gama Ltda", nome_normalizado="gama")
     assert lk._escolher_pessoa(Pessoa(nome="Mariana Lazaro", empresa=outra), candidatos) is None
+
+
+def test_busca_real_salvy():
+    """Resposta real do Search Companies (termo "Salvy"): três homônimas; só uma no Brasil."""
+    candidatos = [
+        {"nome": "Salvy", "local": "Curitiba, PR", "linkedin_url": "https://www.linkedin.com/company/use-salvy"},
+        {"nome": "SALVY", "local": "Caraman, Occitanie", "linkedin_url": "https://www.linkedin.com/company/sarl-salvy-cuisine"},
+        {"nome": "Salvy", "local": "London", "linkedin_url": "https://www.linkedin.com/company/salvyreport"},
+        {"nome": "Salvy VentureCorp", "local": "", "linkedin_url": "https://www.linkedin.com/company/salvy-venturecorp"},
+        {"nome": "SALVY Enterprises, LLC", "local": "", "linkedin_url": "https://www.linkedin.com/company/salvy-enterprises-llc"},
+    ]
+    salvy = Empresa(razao_social="Salvy Tecnologia Ltda", nome_fantasia="Salvy", nome_normalizado="salvy")
+    assert lk._escolher_empresa(salvy, candidatos) == "https://www.linkedin.com/company/use-salvy"
+    # Duas no Brasil: desempata pela UF; sem UF, não escolhe
+    dupla = candidatos + [{"nome": "Salvy", "local": "São Paulo, SP", "linkedin_url": "https://x/salvy-sp"}]
+    assert lk._escolher_empresa(salvy, dupla) is None
+    salvy.uf = "PR"
+    assert lk._escolher_empresa(salvy, dupla) == "https://www.linkedin.com/company/use-salvy"

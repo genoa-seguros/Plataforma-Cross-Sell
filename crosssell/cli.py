@@ -107,12 +107,16 @@ def noticias(horas: int = typer.Option(24, help="Não rebuscar empresas atualiza
 
 @app.command("linkedin")
 def linkedin():
-    """Dispara o n8n com o próximo lote de pessoas e empresas a ler no LinkedIn."""
+    """LinkedIn: aplica os resultados prontos e inicia as próximas consultas (Linked API direto;
+    sem os tokens dela, dispara o n8n)."""
     from crosssell.connectors import linkedin as lk
     from crosssell.pipeline import registrar
 
-    db = _db()
-    typer.echo(registrar(db, "linkedin-disparo", lk.disparar, db, get_settings()))
+    db, s = _db(), get_settings()
+    if lk.direto(s):
+        typer.echo(registrar(db, "linkedin", lk.executar, db, s))
+    else:
+        typer.echo(registrar(db, "linkedin-disparo", lk.disparar, db, s))
 
 
 @app.command("linkedin-sites")

@@ -84,6 +84,9 @@ ul.lista{margin:0;padding-left:16px;display:grid;gap:2px;font-size:13px}
 .not .sub{margin-bottom:6px}
 .rel{font-size:12px;display:grid;gap:2px;min-width:140px}
 .prox{font-size:12px;display:grid;gap:6px;min-width:160px}
+.decide{font-size:12px;display:grid;gap:3px;margin-top:8px;padding-top:6px;border-top:1px dashed var(--line, #ddd)}
+.decide .ponte{margin-top:2px}
+.decide.solo{margin-top:0;padding-top:0;border-top:0}
 .vazio{padding:24px;text-align:center;color:var(--mute)}
 .nota{font-size:12px;color:var(--mute);margin:0}
 .kpi-row{display:flex;gap:12px;flex-wrap:wrap}
@@ -130,8 +133,9 @@ const D = /*__DADOS__*/null;
 const PREVIA = !!D;
 const TIPOS = {task:"Tarefa", call:"Ligação", meeting:"Reunião", email:"E-mail"};
 const TEMP = {muita:"Muita abertura", media:"Média abertura", pouca:"Pouca abertura"};
-let V = {}, EU = null, USUARIOS = [], LINHAS = [];
+let V = {}, EU = null, USUARIOS = [], LINHAS = [], OPS = [];
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
+const filtroOp = {vertical:"", q:""};
 let refSemana = new Date();
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -172,6 +176,7 @@ const previa = {
     if (path === "/api/tabela") return {linhas: D.linhas, usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
     if (path === "/api/equipe") return D.equipe;
     if (path === "/api/linkedin") return D.linkedin;
+    if (path === "/api/oportunidades") return {itens: D.oportunidades || []};
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     throw new Error("rota desconhecida");
@@ -179,11 +184,12 @@ const previa = {
   post(path, b) {
     let m;
     if (path === "/api/atividades") {
-      const l = D.linhas.find(x => x.id === b.negocio_id), resp = D.equipe.find(u => u.id === b.responsavel_id);
+      const l = b.negocio_id ? D.linhas.find(x => x.id === b.negocio_id) : (D.oportunidades || []).find(o => o.empresa.id === b.empresa_id);
+      const resp = D.equipe.find(u => u.id === b.responsavel_id);
       const p = l.contatos.find(c => c.id === b.pessoa_id);
       const at = {id: ++this.seq, assunto: b.assunto, tipo: b.tipo, vencimento: b.vencimento, concluida: false,
         responsavel: resp.email, responsavelNome: resp.nome, empresa: l.empresa?.nome, empresaId: l.empresa?.id,
-        pessoa: p?.nome, negocio: l.titulo, negocioId: l.id};
+        pessoa: p?.nome, negocio: b.negocio_id ? l.titulo : null, negocioId: b.negocio_id || null};
       D.atividades.push(at);
       if (!l.proximaAtividade || b.vencimento < l.proximaAtividade.vencimento) l.proximaAtividade = {assunto: b.assunto, vencimento: b.vencimento, responsavel: resp.email};
       return {id: at.id};
@@ -198,8 +204,9 @@ const previa = {
       return {ok:true};
     }
     if (path === "/api/linkedin/disparar") {
-      const L = D.linkedin, n = Math.min(L.lote, L.ler.empresas + L.ler.pessoas + L.buscar.empresas + L.buscar.pessoas);
-      L.disparado = {em: new Date().toISOString(), registros: n}; L.ler = {empresas: 0, pessoas: 0}; L.buscar = {empresas: 0, pessoas: 0}; return {enviados: n};
+      const L = D.linkedin, n = Math.min(L.lote, L.ler.empresas + L.ler.pessoas + L.buscar.empresas + L.buscar.pessoas + (L.areas || 0));
+      L.disparado = {em: new Date().toISOString(), registros: n}; L.ultimas24h = (L.ultimas24h || 0) + n;
+      L.ler = {empresas: 0, pessoas: 0}; L.buscar = {empresas: 0, pessoas: 0}; L.areas = 0; return {iniciados: n, aplicados: 0};
     }
     if (path === "/api/linkedin/endereco") { D.linkedin.naoEncontrados = D.linkedin.naoEncontrados.filter(x => x.id_alvo !== b.id_alvo); return {ok: true}; }
     if (path === "/api/equipe/convidar") {
@@ -228,7 +235,7 @@ function todosLocal(refIso) {
 
 /* ---------- Abas ---------- */
 function abas(ativa) {
-  const itens = [["negocios","Negócios"],["todos","To-dos da semana"]];
+  const itens = [["negocios","Negócios"],["oportunidades","Oportunidades"],["todos","To-dos da semana"]];
   if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
 }
@@ -247,6 +254,16 @@ function celulaTemp(p) {
   if (!p.temperatura) return `<span class="sub">sem e-mails do contato</span>`;
   return `<span class="chip t-${p.temperatura}" title="${esc(p.temperaturaMotivo)}">${TEMP[p.temperatura]}</span>${p.temperaturaMotivo ? `<div class="sub" style="margin-top:4px;max-width:200px">${esc(p.temperaturaMotivo)}</div>` : ""}`;
 }
+function celulaDecide(d, vertical, solo = false) {
+  if (!d) return "";
+  const cls = solo ? "decide solo" : "decide";
+  const nomeV = V[vertical] || "";
+  if (!d.daArea && !d.pessoas.length) return `<div class="${cls}"><span class="mute">Quem decide ${esc(nomeV)}:</span> <span class="sub">ainda não sabemos (${esc(d.areas.join(" / "))})</span></div>`;
+  const pessoa = x => `<div>${esc(x.nome)}${inLink(x.linkedin)}<div class="sub">${esc(x.cargo || "")}${x.relacao >= 20 ? ` · fala com ${esc(x.quemFala || "a equipe")}` : " · sem relação"}</div></div>`;
+  return `<div class="${cls}"><span class="mute">Quem decide ${esc(nomeV)}${d.daArea ? "" : " (executivo; área não mapeada)"}:</span>
+    ${d.pessoas.slice(0, 2).map(pessoa).join("")}
+    ${d.ponte ? `<div class="ponte"><span class="mute">Ponte:</span> ${esc(d.ponte.nome)}<div class="sub">${esc(d.ponte.cargo || "")}${d.ponte.quemFala ? " · fala com " + esc(d.ponte.quemFala) : ""}</div></div>` : ""}</div>`;
+}
 function linhaHTML(l) {
   const c = l.comp || {};
   const cliente = l.vigentes.length > 0;
@@ -262,7 +279,7 @@ function linhaHTML(l) {
     <td style="min-width:170px">${vchip(l.vertical, l.funil)}<div style="margin-top:4px">${esc(l.titulo)}</div><div class="sub">${esc(l.etapa || "")}${l.valor ? " · " + brl(l.valor) : ""}</div></td>
     <td style="min-width:220px"><ul class="lista">${l.motivos.map(m => `<li>${esc(m)}</li>`).join("")}</ul></td>
     <td class="not" style="min-width:200px;max-width:260px">${l.noticias.length ? l.noticias.slice(0,2).map(n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
-    <td><div class="rel"><span><span class="mute">Apresenta:</span> ${esc(nomeDe(l.ponte)) || '<span class="mute">sem e-mails</span>'}</span><span><span class="mute">Atende:</span> ${esc(nomeDe(l.dono)) || '<span class="mute">sem dono</span>'}</span></div></td>
+    <td style="min-width:190px"><div class="rel"><span><span class="mute">Apresenta:</span> ${esc(nomeDe(l.ponte)) || '<span class="mute">sem e-mails</span>'}</span><span><span class="mute">Atende:</span> ${esc(nomeDe(l.dono)) || '<span class="mute">sem dono</span>'}</span></div>${celulaDecide(l.quemDecide, l.vertical)}</td>
     <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
       <button class="btn sec" data-ativ="${l.id}" ${l.contatos.length ? "" : 'disabled title="Nenhum contato desta empresa está no Pipedrive"'}>Criar atividade</button></div></td>
   </tr>`;
@@ -314,13 +331,27 @@ function telaNegociosRender() { document.querySelectorAll("[data-funil]").forEac
 function proximaSexta() { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7)); return iso(d); }
 function abrirAtividade(id) {
   const l = LINHAS.find(x => x.id == id);
-  const dono = USUARIOS.find(u => u.email === l.dono) || USUARIOS.find(u => u.email === EU.email) || USUARIOS[0];
-  const pessoaPadrao = l.contatos.find(c => c.id === l.pessoa?.id) || l.contatos[0];
+  modalAtividade({titulo: `${l.empresa?.nome || ""} · ${l.titulo}`, contatos: l.contatos, pessoaId: l.pessoa?.id,
+    donoEmail: l.dono, assunto: (l.produto || l.titulo) + ": próximo passo", corpo: {negocio_id: l.id}, semPessoa: false});
+}
+function abrirAtividadeOp(id) {
+  const o = OPS.find(x => x.id === id);
+  const ponte = o.quemDecide?.ponte, alvo = o.quemDecide?.pessoas?.[0];
+  const pref = [ponte, alvo].find(x => x && x.noPipedrive);
+  const quem = alvo ? ` (${alvo.nome})` : "";
+  modalAtividade({titulo: `${o.empresa.nome} · oportunidade de ${o.verticalNome}`, contatos: o.contatos, pessoaId: pref?.id,
+    donoEmail: EU.email, assunto: ponte && alvo ? `Pedir a ${ponte.nome.split(" ")[0]} apresentação a quem decide ${o.verticalNome}${quem}` : `${o.verticalNome}: abrir conversa${quem}`,
+    corpo: {empresa_id: o.empresa.id}, semPessoa: true});
+}
+function modalAtividade(ctx) {
+  const l = {contatos: ctx.contatos};
+  const dono = USUARIOS.find(u => u.email === ctx.donoEmail) || USUARIOS.find(u => u.email === EU.email) || USUARIOS[0];
+  const pessoaPadrao = l.contatos.find(c => c.id === ctx.pessoaId) || l.contatos[0];
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-ativ" aria-labelledby="t-ativ">
     <h2 id="t-ativ" style="margin:0">Nova atividade no Pipedrive</h2>
-    <div class="sub">${esc(l.empresa?.nome || "")} · ${esc(l.titulo)}</div>
-    <label>Contato (a atividade fica dentro da pessoa)<select id="a-pessoa">${l.contatos.map(c => `<option value="${c.id}" ${c.id === pessoaPadrao?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
-    <label>Assunto<input id="a-assunto" required value="${esc((l.produto || l.titulo) + ": próximo passo")}"></label>
+    <div class="sub">${esc(ctx.titulo)}</div>
+    <label>Contato (a atividade fica dentro da pessoa)<select id="a-pessoa">${ctx.semPessoa ? `<option value="">Só na organização</option>` : ""}${l.contatos.map(c => `<option value="${c.id}" ${c.id === pessoaPadrao?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
+    <label>Assunto<input id="a-assunto" required value="${esc(ctx.assunto)}"></label>
     <div class="form-linha">
       <label>Tipo<select id="a-tipo">${Object.entries(TIPOS).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
       <label>Vencimento<input type="date" id="a-venc" required value="${proximaSexta()}"></label>
@@ -337,14 +368,56 @@ function abrirAtividade(id) {
     e.preventDefault();
     const btn = document.getElementById("a-salvar"); btn.disabled = true;
     try {
-      await api.post("/api/atividades", {negocio_id: l.id, pessoa_id: +document.getElementById("a-pessoa").value,
+      await api.post("/api/atividades", {...ctx.corpo, pessoa_id: +document.getElementById("a-pessoa").value || null,
         assunto: document.getElementById("a-assunto").value, tipo: document.getElementById("a-tipo").value,
         vencimento: document.getElementById("a-venc").value, responsavel_id: +document.getElementById("a-resp").value,
         nota: document.getElementById("a-nota").value || null});
       fechar(); aviso(PREVIA ? "Atividade criada na prévia (não foi enviada ao Pipedrive)" : "Atividade criada no Pipedrive");
-      if (location.hash.startsWith("#empresa")) render(); else { if (!PREVIA) LINHAS = (await api.get("/api/tabela")).linhas; filtrar(); }
+      if (location.hash.startsWith("#empresa") || location.hash === "#oportunidades") render(); else { if (!PREVIA) LINHAS = (await api.get("/api/tabela")).linhas; filtrar(); }
     } catch (err) { const el = document.getElementById("a-erro"); el.textContent = err.message; el.hidden = false; btn.disabled = false; }
   };
+}
+
+/* ---------- Oportunidades ---------- */
+function opHTML(o) {
+  const prox = o.proximaAtividade;
+  return `<tr>
+    <td><div class="score"><b>${o.score.toFixed(0)}</b><div class="bar"><i style="width:${o.score}%"></i></div></div></td>
+    <td style="min-width:170px"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><div><span class="tag-cli">Cliente</span>${o.empresa.funcionarios ? ` <span class="sub">· ${o.empresa.funcionarios.toLocaleString("pt-BR")} func.</span>` : ""}</div></td>
+    <td><div class="chips">${o.vigentes.map(v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}` : ""))).join("")}</div></td>
+    <td>${vchip(o.vertical, o.verticalNome)}</td>
+    <td style="min-width:220px"><ul class="lista">${o.motivos.map(m => `<li>${esc(m)}</li>`).join("")}</ul></td>
+    <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
+    <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
+      <button class="btn sec" data-ativ-op="${esc(o.id)}" ${o.empresa.noPipedrive || o.contatos.length ? "" : 'disabled title="A empresa não está no Pipedrive"'}>Criar atividade</button></div></td>
+  </tr>`;
+}
+function filtrarOps() {
+  const q = filtroOp.q.toLowerCase();
+  const ls = OPS.filter(o => (!filtroOp.vertical || o.vertical === filtroOp.vertical) && (!q || o.empresa.nome.toLowerCase().includes(q)));
+  document.getElementById("ops").innerHTML = ls.length ? ls.map(opHTML).join("") : `<tr><td colspan="7" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
+  document.getElementById("contagem-op").textContent = `${ls.length} de ${OPS.length} oportunidades`;
+}
+async function telaOportunidades() {
+  if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
+  OPS = (await api.get("/api/oportunidades")).itens;
+  document.getElementById("app").innerHTML = `
+  <section style="display:grid;gap:10px">
+    <div class="filtros" role="group" aria-label="Vertical">
+      <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
+      ${Object.entries(V).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
+      <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
+      <span class="sub" id="contagem-op"></span>
+    </div>
+    <div class="tabela"><table class="larga">
+      <thead><tr><th>Score</th><th>Cliente</th><th>Já tem conosco</th><th>Oportunidade</th><th>Por quê</th><th>Quem decide · ponte</th><th>Próximo passo</th></tr></thead>
+      <tbody id="ops"></tbody></table></div>
+    <p class="nota">Clientes com seguro vigente numa vertical e sem seguro nem negócio aberto em outra. Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte. Score = relação com a empresa (40%) + porte (25%) + verticais que já tem (20%) + quem decide já mapeado (15%).</p>
+  </section>`;
+  filtrarOps();
+  document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop;
+    document.querySelectorAll("[data-vop]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.vop === filtroOp.vertical))); filtrarOps(); });
+  document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtrarOps(); };
 }
 
 /* ---------- To-dos da semana ---------- */
@@ -444,15 +517,17 @@ async function telaLinkedin() {
   const quando = x => x ? `${dt(x.em)} ${x.em.slice(11, 16)} · ${x.registros} itens${x.erro ? " · com erro" : ""}` : "nunca";
   const nao = st.naoEncontrados || [];
   el.innerHTML = `<h2 style="margin:0">LinkedIn</h2>
-    <p class="nota">Automático. A cada rotina, a plataforma procura o LinkedIn das empresas no próprio site delas e envia ao n8n até ${st.lote} alvos: quem já tem endereço é <b>lido</b> (perfil, decisores e posts); quem não tem é <b>buscado</b> pelo nome, e a plataforma só aceita o perfil se o nome e a empresa conferirem.</p>
-    ${st.configurado ? "" : '<p class="erro">Integração não configurada: defina N8N_LINKEDIN_WEBHOOK_URL, N8N_TOKEN e PLATAFORMA_URL no servidor.</p>'}
+    <p class="nota">Automático, pela Linked API. A cada hora a plataforma aplica as consultas que ficaram prontas e inicia até ${st.lote} novas, sem passar de ${st.limiteDia ?? 50} em 24 horas, na ordem da tabela (maior score primeiro) e depois das Oportunidades. Quem já tem endereço é <b>lido</b> (página da empresa com decisores e posts); quem não tem é <b>buscado</b> pelo nome, e a plataforma só aceita se o nome e a empresa conferirem. Quando falta alguém da área que decide (RH para Saúde, por exemplo), ela procura os <b>funcionários dessa área</b> na página da empresa.</p>
+    ${st.configurado ? "" : '<p class="erro">Integração não configurada: defina LINKED_API_TOKEN e LINKED_API_IDENTIFICATION_TOKEN no servidor.</p>'}
     <div class="kpi-row">
       <div class="kpi"><b class="num">${st.ler.empresas + st.ler.pessoas}</b><span>para ler (${st.ler.empresas} empresas · ${st.ler.pessoas} pessoas)</span></div>
       <div class="kpi"><b class="num">${st.buscar.empresas + st.buscar.pessoas}</b><span>para buscar (${st.buscar.empresas} empresas · ${st.buscar.pessoas} pessoas)</span></div>
+      <div class="kpi"><b class="num">${st.areas ?? 0}</b><span>áreas a procurar (quem decide)</span></div>
       <div class="kpi"><b class="num" style="color:${nao.length ? "var(--warn)" : "inherit"}">${nao.length}</b><span>não encontrados</span></div>
+      <div class="kpi"><b class="num">${st.ultimas24h ?? 0}<span class="sub"> / ${st.limiteDia ?? 50}</span></b><span>consultas nas últimas 24 h</span></div>
     </div>
-    <div class="form-linha"><button type="button" class="btn sec" id="lk-disp" ${st.configurado ? "" : "disabled"}>Disparar agora</button></div>
-    <p class="nota">Último envio ao n8n: ${quando(st.disparado)} · Último retorno: ${quando(st.recebido)}</p>
+    <div class="form-linha"><button type="button" class="btn sec" id="lk-disp" ${st.configurado ? "" : "disabled"}>Rodar agora</button></div>
+    <p class="nota">Última rodada: ${quando(st.disparado)}</p>
     ${nao.length ? `<details><summary class="small" style="cursor:pointer">Ver não encontrados e informar o endereço à mão</summary>
       <div class="tabela" style="margin-top:8px"><table><thead><tr><th>Quem</th><th>Empresa</th><th>Endereço do LinkedIn</th><th></th></tr></thead><tbody>
       ${nao.map(n => `<tr><td>${esc(n.nome)} <span class="sub">· ${n.tipo}</span></td><td class="small">${esc(n.empresa)}</td>
@@ -460,7 +535,9 @@ async function telaLinkedin() {
         <td><button type="button" class="btn sec" data-url="${n.id_alvo}">Salvar</button></td></tr>`).join("")}
       </tbody></table></div></details>` : ""}`;
   document.getElementById("lk-disp").onclick = async () => {
-    try { const r = await api.post("/api/linkedin/disparar"); aviso(r.enviados ? `${r.enviados} alvos enviados ao n8n` : "Nada na fila"); telaLinkedin(); }
+    try { const r = await api.post("/api/linkedin/disparar");
+      const n = r.iniciados ?? r.enviados ?? 0;
+      aviso(r.limite ? "Limite de 24 h atingido; continua na próxima rodada" : n || r.aplicados ? `${n} consultas iniciadas · ${r.aplicados || 0} resultados aplicados` : "Nada na fila"); telaLinkedin(); }
     catch (err) { aviso(err.message); }
   };
   el.querySelectorAll("[data-url]").forEach(b => b.onclick = async () => {
@@ -489,10 +566,10 @@ async function telaEmpresa(id) {
     <thead><tr><th>Score</th><th>Cliente/Lead</th><th>Temperatura</th><th>Seguros vigentes</th><th>Negócio aberto</th><th>Por quê</th><th>Notícias</th><th>Relação</th><th>Próximo passo</th></tr></thead>
     <tbody>${abertos.length ? abertos.map(linhaHTML).join("") : '<tr><td colspan="9" class="vazio">Nenhum negócio aberto nos funis acompanhados.</td></tr>'}</tbody></table></div></section>
   <section><h2>Pessoas</h2><div class="tabela"><table>
-    <thead><tr><th>Nome</th><th>Cargo</th><th>E-mail</th><th>Relação</th><th>Temperatura</th><th>Fala com</th></tr></thead>
-    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.email || "")}</td>
+    <thead><tr><th>Nome</th><th>Cargo</th><th>Área</th><th>E-mail</th><th>Relação</th><th>Temperatura</th><th>Fala com</th></tr></thead>
+    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.area || "")}</td><td class="small">${esc(p.email || "")}</td>
       <td><b class="num">${Math.round(p.score)}</b>${p.i90 ? `<div class="sub">${p.i90} e-mails em 90 dias</div>` : ""}</td><td>${celulaTemp(p)}</td>
-      <td class="small">${esc((p.usuarios || []).map(nomeDe).join(", "))}</td></tr>`).join("") || '<tr><td colspan="6" class="vazio">Nenhuma pessoa cadastrada.</td></tr>'}</tbody></table></div></section>
+      <td class="small">${esc((p.usuarios || []).map(nomeDe).join(", "))}</td></tr>`).join("") || '<tr><td colspan="7" class="vazio">Nenhuma pessoa cadastrada.</td></tr>'}</tbody></table></div></section>
   <section><h2>Histórico de produtos</h2><div class="tabela"><table>
     <thead><tr><th>Vertical</th><th>Produto</th><th>Situação</th><th>Vigência</th><th>Valor</th><th>Origem</th></tr></thead>
     <tbody>${e.negocios.filter(n => n.vertical).map(n => `<tr><td>${vchip(n.vertical)}</td><td>${esc(n.produto)}</td><td>${situacao(n)}</td>
@@ -501,7 +578,10 @@ async function telaEmpresa(id) {
 }
 
 /* ---------- Eventos globais ---------- */
-document.addEventListener("click", ev => { const b = ev.target.closest("[data-ativ]"); if (b && !b.disabled) abrirAtividade(b.dataset.ativ); });
+document.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-ativ]"); if (b && !b.disabled) abrirAtividade(b.dataset.ativ);
+  const o = ev.target.closest("[data-ativ-op]"); if (o && !o.disabled) abrirAtividadeOp(o.dataset.ativOp);
+});
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
   try {
@@ -518,6 +598,7 @@ async function render() {
   try {
     if (m) await telaEmpresa(m[1]);
     else if (h === "#todos") await telaTodos();
+    else if (h === "#oportunidades") await telaOportunidades();
     else if (h === "#equipe") await telaEquipe();
     else await telaNegocios();
   } catch (err) { if (err.message !== "login") document.getElementById("app").innerHTML = `<p class="vazio">${esc(err.message)}</p>`; }

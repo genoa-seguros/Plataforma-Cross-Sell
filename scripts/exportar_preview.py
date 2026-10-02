@@ -29,7 +29,7 @@ def exportar(como: str | None) -> dict:
     db = SessionLocal()
     s = get_settings()
     linhas = tabela.montar(db, s)
-    ids = {x["empresa"]["id"] for x in linhas if x["empresa"]}
+    ids = {x["empresa"]["id"] for x in linhas if x["empresa"]} | {o["empresa"]["id"] for o in tabela.oportunidades(db, s)}
     empresas = {i: webapp.api_empresa(i, db=db, _u=None) for i in ids}
     for e in [*empresas.values(), *linhas]:
         for n in e["noticias"]:
@@ -45,7 +45,8 @@ def exportar(como: str | None) -> dict:
         "empresas": empresas,
         "equipe": [webapp._usuario_json(u) for u in usuarios],
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
-        "linkedin": {"configurado": True, "lote": s.linkedin_lote, **lk.situacao(db, s),
+        "oportunidades": tabela.oportunidades(db, s),
+        "linkedin": {"configurado": True, "lote": s.linkedin_lote, **lk.situacao(db, s), "ultimas24h": 18,
                      "disparado": {"em": hoje.isoformat() + "T06:30", "registros": 10, "erro": None},
                      "recebido": {"em": hoje.isoformat() + "T06:52", "registros": 10, "erro": None}},
     }

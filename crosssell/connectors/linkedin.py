@@ -1,6 +1,18 @@
-"""LinkedIn via n8n + Linked API, sem planilha intermediária.
+"""LinkedIn pela Linked API, sem planilha intermediária.
 
-Fluxo automático:
+Caminho principal (executar): a plataforma chama a Linked API direto. A cada rodada
+(a rotina roda de hora em hora) ela confere os pedidos em andamento, aplica os que
+terminaram e inicia até `linkedin_lote` novos, sem passar de `linkedin_limite_dia`
+em 24 h. A ordem segue a tabela (maior score primeiro) e depois as Oportunidades.
+
+Tipos de pedido:
+  ler     perfil ou página da empresa (com decisores e posts) de quem já tem endereço
+  buscar  procurar o perfil/página pelo nome; a plataforma escolhe o candidato certo.
+          Pessoa encontrada já fica com título e endereço, sem gastar uma leitura.
+  area    funcionários da empresa com cargo da área que decide a vertical (ex.: RH
+          para Saúde), quando ainda não conhecemos ninguém dessa área.
+
+Alternativa antiga, via n8n (disparar/receber pelo webhook):
   1. A plataforma levanta os alvos: empresas e contatos dos negócios abertos que
      nunca foram lidos no LinkedIn ou cuja leitura passou da validade. Quem tem
      endereço vai com acao="ler" (fetch); quem não tem vai com acao="buscar"
@@ -28,9 +40,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from crosssell.config import Settings
-from crosssell.models import Empresa, Noticia, Pessoa
+from crosssell.config import AREAS_VERTICAL
+from crosssell.models import Empresa, LinkedinPedido, Noticia, Pessoa
 from crosssell.normalize import (
-    classificar_senioridade, dominio_site, nome_para_busca, normalizar_nome_empresa, normalizar_nome_pessoa,
+    classificar_area, classificar_senioridade, dominio_site, nome_para_busca, normalizar_nome_empresa, normalizar_nome_pessoa,
 )
 from crosssell.resolver import resolver_pessoa
 
@@ -40,8 +53,16 @@ CAMPOS_RESULTADO = ("id_alvo", "tipo", "linkedin_url", "nome", "headline", "carg
                     "localizacao", "setor", "funcionarios", "site", "sede", "decisores", "posts", "capturado_em", "erro")
 
 
-def configurado(settings: Settings) -> bool:
+def direto(settings: Settings) -> bool:
+    return bool(settings.linked_api_token and settings.linked_api_identification_token)
+
+
+def via_n8n(settings: Settings) -> bool:
     return bool(settings.n8n_linkedin_webhook_url and settings.n8n_token and settings.plataforma_url)
+
+
+def configurado(settings: Settings) -> bool:
+    return direto(settings) or via_n8n(settings)
 
 
 def token_valido(settings: Settings, cabecalho: str | None) -> bool:
@@ -61,19 +82,28 @@ def _termos(nome: str | None) -> set[str]:
     return {t for t in normalizar_nome_empresa(nome or "").split() if len(t) >= 3}
 
 
-def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], dict[int, str]]:
+def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], dict[int, str], dict[int, set]]:
+    """Empresas e pessoas a manter atualizadas, em ordem de prioridade (tabela por score,
+    depois Oportunidades), e as verticais em jogo em cada empresa."""
     from crosssell import tabela
 
     empresas: dict[int, str] = {}
     pessoas: dict[int, str] = {}
+    verticais: dict[int, set] = {}
     for linha in tabela.montar(db, settings):
         if linha["empresa"]:
             empresas.setdefault(linha["empresa"]["id"], f"{linha['funil']}: {linha['titulo']}")
+            if linha["vertical"]:
+                verticais.setdefault(linha["empresa"]["id"], set()).add(linha["vertical"])
         if linha["pessoa"]:
             pessoas.setdefault(linha["pessoa"]["id"], "contato do negócio")
         for c in linha["contatos"]:
             pessoas.setdefault(c["id"], "contato da empresa")
-    return empresas, pessoas
+    for op in tabela.oportunidades(db, settings):
+        eid = op["empresa"]["id"]
+        empresas.setdefault(eid, f"oportunidade: {op['verticalNome']}")
+        verticais.setdefault(eid, set()).add(op["vertical"])
+    return empresas, pessoas, verticais
 
 
 def _acao(obj, validade: int, agora: datetime) -> str | None:
@@ -102,26 +132,52 @@ def _alvo_pessoa(p: Pessoa, acao: str, motivo: str) -> dict:
             "busca": f"{p.nome} {empresa}".strip(), "motivo": motivo}
 
 
+def _area_de(p: Pessoa) -> str | None:
+    return classificar_area(p.cargo) or classificar_area(p.linkedin_headline)
+
+
+def _alvos_area(e: Empresa, verticais: set, validade: int, agora: datetime, motivo: str) -> list[dict]:
+    """Procurar a área que decide cada vertical quando ainda não há ninguém dela na empresa.
+    Só depois da página da empresa lida (os decisores podem já resolver)."""
+    if not e.linkedin_url or not e.linkedin_em:
+        return []
+    conhecidas = {_area_de(p) for p in e.pessoas}
+    saida = []
+    for v in sorted(verticais):
+        areas = AREAS_VERTICAL.get(v, ())
+        if not areas or conhecidas & set(areas):
+            continue
+        area = areas[0]
+        feita = (e.linkedin_areas or {}).get(area)
+        if feita and datetime.fromisoformat(feita) > agora - timedelta(days=validade):
+            continue
+        saida.append({**_alvo_empresa(e, "area", motivo), "area": area})
+    return saida
+
+
 def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> list[dict]:
-    """Alvos a enviar ao n8n agora: primeiro os que só precisam ser lidos, depois as buscas."""
+    """Alvos pendentes, na ordem de prioridade: a empresa e os contatos de cada negócio juntos."""
     agora = agora or datetime.utcnow()
     validade = settings.linkedin_validade_dias
-    empresas, pessoas = _candidatos_alvo(db, settings)
+    empresas, pessoas, verticais = _candidatos_alvo(db, settings)
+    ordem_e = {eid: i for i, eid in enumerate(empresas)}
     saida = []
-    for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresas)).order_by(Empresa.id)):
+    for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresas))):
         acao = _acao(e, validade, agora)
         if acao:
-            saida.append(_alvo_empresa(e, acao, empresas[e.id]))
-    for p in db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas)).order_by(Pessoa.id)):
+            saida.append((ordem_e[e.id], 0, _alvo_empresa(e, acao, empresas[e.id])))
+        saida += [(ordem_e[e.id], 2, a) for a in _alvos_area(e, verticais.get(e.id, set()), validade, agora,
+                                                              empresas[e.id])]
+    for p in db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas))):
         acao = _acao(p, validade, agora)
         if acao:
-            saida.append(_alvo_pessoa(p, acao, pessoas[p.id]))
-    return sorted(saida, key=lambda a: a["acao"] != "ler")
+            saida.append((ordem_e.get(p.empresa_id, len(ordem_e)), 1, _alvo_pessoa(p, acao, pessoas[p.id])))
+    return [a for *_, a in sorted(saida, key=lambda x: (x[0], x[1]))]
 
 
 def situacao(db: Session, settings: Settings) -> dict:
     fila = alvos(db, settings)
-    empresas, pessoas = _candidatos_alvo(db, settings)
+    empresas, pessoas, _ = _candidatos_alvo(db, settings)
     nao = [*db.scalars(select(Empresa).where(Empresa.id.in_(empresas), Empresa.linkedin_nao_encontrado.is_(True),
                                             Empresa.linkedin_url.is_(None))),
            *db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas), Pessoa.linkedin_nao_encontrado.is_(True),
@@ -130,6 +186,9 @@ def situacao(db: Session, settings: Settings) -> dict:
     return {
         "ler": {"empresas": conta("ler", "empresa"), "pessoas": conta("ler", "pessoa")},
         "buscar": {"empresas": conta("buscar", "empresa"), "pessoas": conta("buscar", "pessoa")},
+        "areas": sum(a["acao"] == "area" for a in fila),
+        "direto": direto(settings), "limiteDia": settings.linkedin_limite_dia,
+        "ultimas24h": _pedidos_24h(db, datetime.utcnow()),
         "naoEncontrados": [{"id_alvo": f"{'E' if isinstance(o, Empresa) else 'P'}{o.id}",
                             "tipo": "empresa" if isinstance(o, Empresa) else "pessoa",
                             "nome": o.razao_social if isinstance(o, Empresa) else o.nome,
@@ -162,7 +221,7 @@ def link_no_html(html: str) -> str | None:
 
 
 def descobrir_por_site(db: Session, settings: Settings, http: httpx.Client | None = None, limite: int = 50) -> dict:
-    empresas, _ = _candidatos_alvo(db, settings)
+    empresas, _, _ = _candidatos_alvo(db, settings)
     http = http or httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
     cont = {"verificadas": 0, "encontradas": 0}
     pendentes = db.scalars(select(Empresa).where(Empresa.id.in_(empresas), Empresa.linkedin_url.is_(None),
@@ -319,7 +378,7 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     return novos
 
 
-def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
+def _candidato_pessoa(p: Pessoa, candidatos: list[dict]) -> dict | None:
     """Mesmo nome (primeiro e último) e a empresa dele aparecendo no headline/empresa atual.
     Sem empresa conhecida não há como separar homônimos: não escolhe."""
     nossa = _termos(p.empresa.nome_fantasia or p.empresa.razao_social) if p.empresa else set()
@@ -328,9 +387,14 @@ def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
     mesmos = [c for c in candidatos if mesmo_nome(p.nome, c.get("nome") or c.get("name") or "")]
     for c in mesmos:
         texto = " ".join(str(c.get(k) or "") for k in ("headline", "empresa_atual", "empresa"))
-        if nossa & _termos(texto):
-            return c.get("linkedin_url") or c.get("url") or None
+        if nossa & _termos(texto) and (c.get("linkedin_url") or c.get("url")):
+            return c
     return None
+
+
+def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
+    c = _candidato_pessoa(p, candidatos)
+    return (c.get("linkedin_url") or c.get("url")) if c else None
 
 
 _UFS = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
@@ -363,8 +427,18 @@ def _escolher_empresa(e: Empresa, candidatos: list[dict]) -> str | None:
 
 def _aplicar_busca(obj, r: dict, quando: datetime) -> str:
     candidatos = _lista(r.get("candidatos"))
-    url = _escolher_pessoa(obj, candidatos) if isinstance(obj, Pessoa) else _escolher_empresa(obj, candidatos)
     obj.linkedin_busca_em = quando
+    obj.linkedin_pedido_em = None  # a busca terminou: a leitura (se precisar) pode ser pedida já
+    if isinstance(obj, Pessoa):
+        c = _candidato_pessoa(obj, candidatos)
+        if c:  # a busca já traz título e endereço: conta como leitura (a próxima só na validade)
+            _aplicar_pessoa(obj, {"nome": c.get("nome") or c.get("name"), "headline": c.get("headline"),
+                                  "linkedin_url": c.get("linkedin_url") or c.get("url")}, quando)
+            obj.linkedin_nao_encontrado = False
+            return "encontrados"
+        url = None
+    else:
+        url = _escolher_empresa(obj, candidatos)
     if url:
         obj.linkedin_url = url
         obj.linkedin_nao_encontrado = False
@@ -373,10 +447,30 @@ def _aplicar_busca(obj, r: dict, quando: datetime) -> str:
     return "nao_encontrados"
 
 
+def _aplicar_area(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
+    """Funcionários com cargo da área: entram como contatos do LinkedIn se o cargo confirmar a área."""
+    area, novos = _txt(r, "area"), 0
+    for f in _lista(r.get("funcionarios_area"))[:10]:
+        nome, headline = f.get("nome") or f.get("name"), f.get("headline") or ""
+        if not nome or classificar_area(headline) != area:
+            continue
+        ja = db.scalar(select(Pessoa).where(Pessoa.empresa_id == e.id,
+                                            Pessoa.nome_normalizado == normalizar_nome_pessoa(nome)))
+        url = f.get("linkedin_url") or f.get("url") or None
+        p = ja or resolver_pessoa(db, nome=nome, empresa=e, cargo=headline or None, linkedin_url=url, fonte="linkedin")
+        p.linkedin_url = p.linkedin_url or url
+        p.linkedin_headline = headline or p.linkedin_headline
+        p.senioridade = p.senioridade or classificar_senioridade(headline)
+        p.linkedin_em = quando
+        novos += ja is None
+    e.linkedin_areas = {**(e.linkedin_areas or {}), area: quando.isoformat(timespec="seconds")}
+    return novos
+
+
 def receber(db: Session, resultados: list[dict]) -> dict:
-    """Aplica os resultados que o n8n devolveu (um ou vários por chamada)."""
+    """Aplica resultados da Linked API (diretos ou devolvidos pelo n8n)."""
     cont = {"recebidos": 0, "pessoas": 0, "empresas": 0, "decisores_novos": 0, "nao_confirmado": 0, "erros": 0,
-            "ja_lidos": 0, "encontrados": 0, "nao_encontrados": 0}
+            "ja_lidos": 0, "encontrados": 0, "nao_encontrados": 0, "areas": 0, "contatos_area": 0}
     for r in resultados:
         cont["recebidos"] += 1
         alvo = _txt(r, "id_alvo")
@@ -390,6 +484,10 @@ def receber(db: Session, resultados: list[dict]) -> dict:
         quando = _data(r.get("capturado_em"))
         if _txt(r, "acao") == "buscar" or "candidatos" in r:
             cont[_aplicar_busca(obj, r, quando)] += 1
+            continue
+        if _txt(r, "acao") == "area" and isinstance(obj, Empresa):
+            cont["contatos_area"] += _aplicar_area(db, obj, r, quando)
+            cont["areas"] += 1
             continue
         if obj.linkedin_em and obj.linkedin_em >= quando:
             cont["ja_lidos"] += 1
@@ -409,3 +507,92 @@ def mudou_de_empresa(p: Pessoa) -> bool:
     atual = set(normalizar_nome_empresa(p.linkedin_empresa_atual).split())
     nossa = set(normalizar_nome_empresa(p.empresa.nome_fantasia or p.empresa.razao_social).split())
     return bool(atual) and bool(nossa) and not (atual & nossa)
+
+
+# --- Chamada direta da Linked API ------------------------------------------
+
+PEDIDO_EXPIRA = timedelta(hours=24)
+
+
+def _pedidos_24h(db: Session, agora: datetime) -> int:
+    return len(db.scalars(select(LinkedinPedido.id).where(LinkedinPedido.criado_em > agora - timedelta(hours=24))).all())
+
+
+def _cliente(settings: Settings):
+    from crosssell.connectors.linkedapi import LinkedApiClient
+
+    return LinkedApiClient(settings.linked_api_token, settings.linked_api_identification_token)
+
+
+def coletar(db: Session, client, agora: datetime | None = None) -> dict:
+    """Confere os pedidos em andamento e aplica os que terminaram."""
+    from crosssell.connectors.linkedapi import LinkedApiErro, resultado
+
+    agora = agora or datetime.utcnow()
+    cont = {"aplicados": 0, "andamento": 0, "erros": 0, "expirados": 0}
+    for ped in db.scalars(select(LinkedinPedido).where(LinkedinPedido.situacao == "pendente")).all():
+        try:
+            st = client.consultar(ped.workflow_id)
+        except LinkedApiErro as exc:
+            st = {"workflowStatus": "failed", "failure": {"message": str(exc)}}
+        status = st.get("workflowStatus")
+        if status in ("pending", "running"):
+            if ped.criado_em < agora - PEDIDO_EXPIRA:
+                ped.situacao, ped.concluido_em = "expirado", agora
+                cont["expirados"] += 1
+            else:
+                cont["andamento"] += 1
+            continue
+        tipo = "pessoa" if ped.id_alvo[:1] == "P" else "empresa"
+        r = resultado(ped.id_alvo, tipo, ped.acao, ped.area, st.get("completion")) if status == "completed" else \
+            {"id_alvo": ped.id_alvo, "erro": (st.get("failure") or {}).get("message") or "falhou"}
+        r["capturado_em"] = agora.isoformat(timespec="seconds")
+        ped.concluido_em = agora
+        if r.get("erro"):
+            ped.situacao, ped.erro = "erro", str(r["erro"])[:500]
+            cont["erros"] += 1
+            continue
+        receber(db, [r])
+        ped.situacao = "aplicado"
+        cont["aplicados"] += 1
+    db.commit()
+    return cont
+
+
+def iniciar(db: Session, settings: Settings, client, agora: datetime | None = None) -> dict:
+    """Inicia os próximos pedidos, respeitando o lote por rodada e o limite de 24 h."""
+    from crosssell.connectors.linkedapi import LinkedApiErro, definicao
+
+    agora = agora or datetime.utcnow()
+    vagas = min(settings.linkedin_lote, settings.linkedin_limite_dia - _pedidos_24h(db, agora))
+    cont = {"iniciados": 0, "falhas": 0, "limite": vagas <= 0}
+    if vagas <= 0:
+        return cont
+    for a in alvos(db, settings, agora):
+        if cont["iniciados"] >= vagas:
+            break
+        try:
+            wid = client.iniciar(definicao(a))
+        except LinkedApiErro as exc:
+            cont["falhas"] += 1
+            cont["erro"] = str(exc)
+            if "limit" in exc.tipo.lower() or cont["falhas"] >= 3:
+                break  # limite da conta ou falha repetida: tenta na próxima rodada
+            continue
+        db.add(LinkedinPedido(workflow_id=wid, id_alvo=a["id_alvo"], acao=a["acao"], area=a.get("area"), criado_em=agora))
+        obj = db.get(Pessoa if a["tipo"] == "pessoa" else Empresa, int(a["id_alvo"][1:]))
+        if a["acao"] == "area":
+            obj.linkedin_areas = {**(obj.linkedin_areas or {}), a["area"]: agora.isoformat(timespec="seconds")}
+        else:
+            obj.linkedin_pedido_em = agora
+        cont["iniciados"] += 1
+    db.commit()
+    return cont
+
+
+def executar(db: Session, settings: Settings, client=None, agora: datetime | None = None) -> dict:
+    """Uma rodada: aplica o que terminou e inicia os próximos."""
+    if not direto(settings):
+        raise RuntimeError("Linked API não configurada (LINKED_API_TOKEN e LINKED_API_IDENTIFICATION_TOKEN).")
+    client = client or _cliente(settings)
+    return {**coletar(db, client, agora), **iniciar(db, settings, client, agora)}

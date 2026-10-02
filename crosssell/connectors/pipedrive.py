@@ -223,30 +223,35 @@ def marcar_saude(db: Session, empresa_id: int, cliente: bool, origem: str = "man
     return neg
 
 
-def criar_atividade(db: Session, client: PipedriveClient, *, negocio: Negocio, pessoa_id: int, assunto: str,
-                    vencimento: date, responsavel: Usuario, criada_por: Usuario, tipo: str = "task",
-                    nota: str | None = None) -> Atividade:
+def criar_atividade(db: Session, client: PipedriveClient, *, negocio: Negocio | None = None, pessoa_id: int | None,
+                    assunto: str, vencimento: date, responsavel: Usuario, criada_por: Usuario, tipo: str = "task",
+                    nota: str | None = None, empresa=None) -> Atividade:
+    """Atividade no Pipedrive dentro da pessoa (e do negócio/organização, quando houver).
+    Sem negócio (aba Oportunidades) basta a organização; a pessoa é opcional nesse caso."""
     from crosssell.models import Pessoa
 
-    pessoa = db.get(Pessoa, pessoa_id)
-    if pessoa is None or not pessoa.pipedrive_person_id:
+    empresa = negocio.empresa if negocio is not None else empresa
+    pessoa = db.get(Pessoa, pessoa_id) if pessoa_id else None
+    if pessoa_id and (pessoa is None or not pessoa.pipedrive_person_id):
+        raise ValueError("A atividade precisa de uma pessoa que exista no Pipedrive.")
+    if pessoa is None and (negocio is not None or empresa is None or not empresa.pipedrive_org_id):
         raise ValueError("A atividade precisa de uma pessoa que exista no Pipedrive.")
     if not responsavel.pipedrive_user_id:
         raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
-    empresa = negocio.empresa
     dados = {
         "subject": assunto, "type": tipo, "due_date": vencimento.isoformat(),
         "owner_id": responsavel.pipedrive_user_id,
-        "participants": [{"person_id": pessoa.pipedrive_person_id, "primary": True}],
+        "participants": [{"person_id": pessoa.pipedrive_person_id, "primary": True}] if pessoa else None,
         "note": nota or None,
     }
-    if negocio.fonte == "pipedrive":
+    if negocio is not None and negocio.fonte == "pipedrive":
         dados["deal_id"] = int(negocio.id_externo)
     if empresa is not None and empresa.pipedrive_org_id:
         dados["org_id"] = empresa.pipedrive_org_id
     criada = client.criar_atividade({k: v for k, v in dados.items() if v is not None})
-    at = Atividade(pipedrive_id=criada["id"], negocio_id=negocio.id, pessoa_id=pessoa.id,
-                   empresa_id=negocio.empresa_id, assunto=assunto, tipo=tipo, vencimento=vencimento,
+    at = Atividade(pipedrive_id=criada["id"], negocio_id=negocio.id if negocio else None,
+                   pessoa_id=pessoa.id if pessoa else None, empresa_id=empresa.id if empresa else None,
+                   assunto=assunto, tipo=tipo, vencimento=vencimento,
                    responsavel_id=responsavel.id, criada_por_id=criada_por.id, nota=nota)
     db.add(at)
     db.commit()

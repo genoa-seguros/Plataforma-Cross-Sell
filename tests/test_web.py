@@ -85,3 +85,21 @@ def test_criar_atividade_e_marcar_saude_pela_api(cenario):
     assert c.post(f"/api/empresas/{eid}/saude", headers=H, json={"cliente": True}).status_code == 200
     linha = next(x for x in c.get("/api/tabela").json()["linhas"] if x["pipedriveId"] == "4")
     assert linha["saude"]["manual"] is True
+
+
+def test_oportunidades_e_atividade_na_organizacao(cenario):
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    ops = c.get("/api/oportunidades").json()["itens"]
+    # Beta já tem Saúde (marcado no Pipedrive) e negócios abertos em Saúde e LF (Garantia): falta RE.
+    # Alfa tem LF vigente e negócios abertos de RE e Saúde: nenhuma oportunidade.
+    assert [(o["empresa"]["nome"], o["vertical"]) for o in ops] == [("Beta Serviços SA", "ramos_elementares")]
+    beta = ops[0]
+    assert beta["quemDecide"]["areas"] == ["Operações", "Riscos", "Financeiro"]
+    victor = next(u for u in c.get("/api/tabela").json()["usuarios"] if u["email"].startswith("victor"))
+    r = c.post("/api/atividades", headers=H, json={"empresa_id": beta["empresa"]["id"], "assunto": "Abrir conversa de RE",
+                                                    "tipo": "task", "vencimento": "2030-01-04", "responsavel_id": victor["id"]})
+    assert r.status_code == 200
+    enviada = fake.criadas[-1]
+    assert enviada["org_id"] == 20 and "deal_id" not in enviada and "participants" not in enviada
+    assert c.get("/api/oportunidades").json()["itens"][0]["proximaAtividade"]["assunto"] == "Abrir conversa de RE"

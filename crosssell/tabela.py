@@ -23,15 +23,67 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from crosssell.config import VERTICAL_LABEL, Settings
+from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
-from crosssell.models import Atividade, Empresa, Interacao, Negocio, Usuario
+from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
+from crosssell.normalize import AREA_LABEL, classificar_area
 
 PESOS = {"saude": (0.35, 0.25, 0.15, 0.25), None: (0.40, 0.30, 0.20, 0.10)}  # rel, vínculo, momento, porte
 PORTE_DESCONHECIDO = 0.3
 FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha"}
 AJUSTE_TEMPERATURA = {"muita": 0.15, "media": 0.0, "pouca": -0.15}
 DECISORES = {"socio", "c_level", "diretor"}
+NIVEL = {"socio": 0, "c_level": 0, "diretor": 1, "gerente": 2}
+
+
+def area_pessoa(p: Pessoa) -> str | None:
+    return classificar_area(p.cargo) or classificar_area(p.linkedin_headline)
+
+
+def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str]) -> dict:
+    proximo = _ponte(db, p.id, None)
+    area = area_pessoa(p)
+    return {"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline, "area": area,
+            "areaNome": AREA_LABEL.get(area or ""), "linkedin": p.linkedin_url, "fonte": p.fonte,
+            "noPipedrive": bool(p.pipedrive_person_id), "relacao": round(p.score_relacionamento or 0),
+            "temperatura": p.temperatura, "quemFala": nomes.get(proximo, proximo) if proximo else None}
+
+
+def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str]) -> dict | None:
+    """Pessoas da área que costuma decidir a vertical e, se ninguém dela tem relação, a ponte:
+    o contato da empresa com relação mais forte com alguém da equipe."""
+    if e is None or vertical not in AREAS_VERTICAL:
+        return None
+    areas = AREAS_VERTICAL[vertical]
+    chave = lambda p: (-(p.score_relacionamento or 0), NIVEL.get(p.senioridade or "", 3), p.nome)  # noqa: E731
+    da_area = sorted((p for p in e.pessoas if area_pessoa(p) in areas), key=chave)
+    executivos = sorted((p for p in e.pessoas if area_pessoa(p) == "executivo"), key=chave)
+    pessoas = da_area[:3] or executivos[:1]
+    ponte = None
+    if not any((p.score_relacionamento or 0) >= 20 for p in pessoas):
+        rel = sorted((p for p in e.pessoas if (p.score_relacionamento or 0) >= 20 and p not in pessoas), key=chave)
+        ponte = _pessoa_json(db, rel[0], nomes) if rel else None
+    return {"areas": [AREA_LABEL[a] for a in areas], "pessoas": [_pessoa_json(db, p, nomes) for p in pessoas],
+            "daArea": bool(da_area), "ponte": ponte}
+
+
+def _motivo_decide(dec: dict | None, vertical: str) -> list[str]:
+    if dec is None:
+        return []
+    rotulo = VERTICAL_LABEL[vertical]
+    if not dec["daArea"]:
+        texto = f"ainda não sabemos quem decide {rotulo} ({' / '.join(dec['areas'])})"
+        if dec["ponte"]:
+            texto += f" — {dec['ponte']['nome']} pode indicar"
+        return [texto]
+    alvo = dec["pessoas"][0]
+    if alvo["relacao"] >= 20:
+        return []
+    texto = f"quem decide {rotulo}: {alvo['nome']} ({alvo['cargo']}) — sem relação ainda"
+    if dec["ponte"]:
+        pt = dec["ponte"]
+        texto += f"; ponte: {pt['nome']}" + (f" (fala com {pt['quemFala']})" if pt["quemFala"] else "")
+    return [texto]
 
 
 def seguros_vigentes(e: Empresa | None) -> list[Negocio]:
@@ -125,10 +177,14 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
 
     if p is not None and mudou_de_empresa(p):
         motivos.append(f"LinkedIn indica que {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual} — confirmar o contato")
+    relevantes = set(AREAS_VERTICAL.get(n.vertical, ())) | {"executivo", None}  # áreas que importam para o negócio
     sem_relacao = [x for x in (e.pessoas if e else []) if x.fonte == "linkedin" and x.senioridade in DECISORES
-                   and not x.score_relacionamento]
+                   and not x.score_relacionamento and area_pessoa(x) in relevantes]
     for x in sem_relacao[:2]:
         motivos.append(f"decisor no LinkedIn sem relação ainda: {x.nome} ({x.linkedin_headline or x.cargo})")
+
+    decide = quem_decide(db, e, n.vertical, nomes)
+    motivos += _motivo_decide(decide, n.vertical) if n.vertical else []
 
     ponte = _ponte(db, p.id if p else None, e.id if e else None)
     if ponte and n.responsavel_email and ponte != n.responsavel_email:
@@ -150,7 +206,8 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
         "pessoa": {"id": p.id, "nome": p.nome, "cargo": p.cargo, "temperatura": temp,
                    "temperaturaMotivo": p.temperatura_motivo, "linkedin": p.linkedin_url,
                    "headline": p.linkedin_headline} if p else None,
-        "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo} for c in contatos],
+        "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
+        "quemDecide": decide,
         "vigentes": [{"vertical": v.vertical, "produto": v.produto or v.titulo, "fim": v.fim_vigencia.isoformat() if v.fim_vigencia else None,
                       "fonte": v.fonte} for v in vigentes],
         "saude": {"zeca": any(v.vertical == "saude" and v.fonte == "zeca" for v in vigentes),
@@ -172,6 +229,58 @@ def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[di
                                                 Negocio.pipeline_id.in_(ids))).all()
     linhas = [linha(db, n, funis, nomes, hoje) for n in negocios]
     return sorted(linhas, key=lambda x: x["score"], reverse=True)
+
+
+def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
+    """Clientes (seguro vigente em alguma vertical) sem seguro nem negócio aberto em outra vertical.
+
+    score = 100 × (40% relação com a empresa + 25% porte + 20% vínculo + 15% sabemos quem decide)
+    """
+    import math
+
+    hoje = hoje or date.today()
+    nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
+    ids = set(db.scalars(select(Negocio.empresa_id).where(Negocio.empresa_id.is_not(None))))
+    saida = []
+    for e in db.scalars(select(Empresa).where(Empresa.id.in_(ids))):
+        vigentes = seguros_vigentes(e)
+        if not vigentes:
+            continue
+        tem = {v.vertical for v in vigentes}
+        abertos = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
+        porte = math.log10(max(e.funcionarios, 1)) / 3 if e.funcionarios else PORTE_DESCONHECIDO
+        porte = max(0.0, min(1.0, porte))
+        for v in VERTICAIS:
+            if v in tem or v in abertos:
+                continue
+            decide = quem_decide(db, e, v, nomes)
+            motivos = ["já é cliente de " + ", ".join(VERTICAL_LABEL[x] for x in sorted(tem))]
+            ex = [x for x in e.negocios if x.vertical == v and x.ex_cliente and x.fim_vigencia]
+            if ex:
+                motivos.append(f"já teve {VERTICAL_LABEL[v]} conosco até {max(x.fim_vigencia for x in ex):%m/%Y} — reconquista")
+            if e.funcionarios:
+                origem = FONTE_FUNC.get(e.funcionarios_fonte or "", "")
+                motivos.append(f"{e.funcionarios:,}".replace(",", ".") + f" funcionários {origem}".rstrip())
+            motivos += _motivo_decide(decide, v)
+            rel = (e.score_relacionamento or 0) / 100
+            vinc = min(1.0, len(tem) / 2)
+            conhece = 1.0 if decide and decide["daArea"] else 0.0
+            prox = db.scalar(select(Atividade).where(Atividade.empresa_id == e.id, Atividade.negocio_id.is_(None),
+                                                     Atividade.concluida.is_(False)).order_by(Atividade.vencimento))
+            contatos = [c for c in e.pessoas if c.pipedrive_person_id]
+            saida.append({
+                "id": f"{e.id}-{v}", "vertical": v, "verticalNome": VERTICAL_LABEL[v],
+                "score": round(100 * (0.40 * rel + 0.25 * porte + 0.20 * vinc + 0.15 * conhece), 1),
+                "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": e.funcionarios,
+                            "noPipedrive": bool(e.pipedrive_org_id)},
+                "vigentes": [{"vertical": x.vertical, "produto": x.produto or x.titulo,
+                              "fim": x.fim_vigencia.isoformat() if x.fim_vigencia else None} for x in vigentes],
+                "quemDecide": decide, "motivos": motivos,
+                "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
+                "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
+                                     "responsavel": prox.responsavel.email} if prox else None,
+            })
+    return sorted(saida, key=lambda x: x["score"], reverse=True)
 
 
 def semana(ref: date) -> tuple[date, date]:

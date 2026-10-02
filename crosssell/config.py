@@ -10,6 +10,15 @@ VERTICAL_LABEL = {
     "saude": "Saúde",
     "ramos_elementares": "Ramos Elementares",
 }
+# Quem costuma decidir cada vertical (áreas de normalize.classificar_area). O executivo vale para todas.
+AREAS_VERTICAL = {
+    "saude": ("rh",),
+    "linhas_financeiras": ("financeiro", "juridico", "riscos"),
+    "ramos_elementares": ("operacoes", "riscos", "financeiro"),
+}
+# Palavra do cargo usada para procurar funcionários da área na página da empresa (Linked API).
+AREA_BUSCA = {"rh": "RH", "financeiro": "Financeiro", "juridico": "Jurídico", "riscos": "Riscos",
+              "operacoes": "Operações"}
 
 
 class Settings(BaseSettings):
@@ -32,11 +41,16 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-opus-5-5"
     temperatura_max_emails: int = 5
 
-    # LinkedIn via n8n (Linked API). O mesmo token autentica o disparo e o retorno.
+    # LinkedIn pela Linked API, chamada direto (painel da Linked API: linked-api-token e identification-token).
+    linked_api_token: str = ""
+    linked_api_identification_token: str = ""
+    linkedin_limite_dia: int = 50  # consultas por 24 h (protege a conta do LinkedIn)
+
+    # Alternativa: LinkedIn via n8n. O mesmo token autentica o disparo e o retorno.
     n8n_linkedin_webhook_url: str = ""
     n8n_token: str = ""
     plataforma_url: str = ""  # endereço público da plataforma, para o n8n devolver os resultados
-    linkedin_lote: int = 10  # alvos por disparo (ritmo da conta conectada à Linked API)
+    linkedin_lote: int = 10  # consultas iniciadas por rodada (a rotina roda de hora em hora)
     linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
 
     # Login: o master é criado pelo comando `crosssell criar-master`.

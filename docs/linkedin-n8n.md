@@ -1,3 +1,6 @@
+> **Alternativa.** O caminho principal agora é a plataforma chamar a Linked API direto (veja o README,
+> seção LinkedIn). Este fluxo pelo n8n só é usado se `LINKED_API_TOKEN` não estiver definido.
+
 # LinkedIn: plataforma ⇄ n8n ⇄ Linked API
 
 Automático, sem planilha e sem ação manual:

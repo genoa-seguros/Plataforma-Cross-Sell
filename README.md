@@ -17,8 +17,13 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
   - **Negócio aberto**: funil, título, etapa e valor.
   - **Por quê**: cross sell, renovação próxima, reconquista e acesso a decisor.
   - **Notícias**: principais manchetes recentes.
-  - **Relação**: quem apresenta (tem mais e-mails com o contato) e quem atende (dono do negócio).
+  - **Relação**: quem apresenta (tem mais e-mails com o contato), quem atende (dono do negócio) e
+    **quem decide** a vertical do negócio (pela área do cargo) com a **ponte**, quando ninguém
+    dessa área tem relação com a equipe.
   - **Próximo passo**: a próxima atividade e o botão *Criar atividade*.
+- **Oportunidades**: clientes com seguro vigente numa vertical e sem seguro nem negócio aberto
+  em outra (ex.: tem D&O, não tem Saúde). Mostra quem decide, a ponte e o porte; *Criar
+  atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
@@ -34,6 +39,10 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
   "Produto Foco", nessa ordem. Sem nenhum deles, usa o título sem o ano.
 - **Saúde**: é cliente quem tem apólice ativa no Zeca, quem foi marcado na caixa da tabela ou
   quem tem "Já possui o seguro saúde na Genoa?" = Sim em algum negócio.
+- **Quem decide**: a área sai do cargo (Pipedrive) ou do título do LinkedIn. Saúde → RH/Pessoas/
+  Benefícios; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos,
+  Financeiro. Sem ninguém da área, vale o executivo (CEO, sócio). A ponte é o contato da empresa
+  com relação mais forte com alguém da equipe.
 - **Score** = relacionamento + vínculo + momento + porte. Em Saúde os pesos são 35/25/15/25;
   nas demais verticais, 40/30/20/10.
   - *Relacionamento*: frequência, recência, reciprocidade e amplitude dos e-mails com o
@@ -53,17 +62,27 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 | Microsoft 365 | Microsoft Graph (permissão de aplicativo `Mail.Read`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
-| LinkedIn | webhook do n8n + Linked API, retorno por API | perfis, cargos, decisores, posts; aviso de contato que mudou de empresa |
+| LinkedIn | Linked API, chamada direto (`api.linkedapi.io`) | perfis, cargos, decisores, funcionários da área que decide, posts, nº de funcionários; aviso de contato que mudou de empresa |
 | Receita Federal (BrasilAPI) | API pública | porte, CNAE, capital social, sócios |
 
-### LinkedIn (n8n + Linked API)
+### LinkedIn (Linked API)
 
-É automático, sem planilha. A cada rotina, a plataforma envia ao webhook do n8n um lote com as
-empresas e os contatos dos negócios abertos que ainda não foram lidos no LinkedIn. O n8n
-consulta a Linked API e devolve cada resultado em `POST /api/integracoes/linkedin/resultados`,
-autenticado por token. A plataforma atualiza perfis, headline, setor, número de funcionários,
-decisores e posts. O perfil só é aceito se o nome conferir.
-Fluxo do n8n, contrato da API e script de mapeamento: [`docs/linkedin-n8n.md`](docs/linkedin-n8n.md).
+É automático, sem planilha e sem n8n. A rotina de hora em hora chama `crosssell linkedin`, que:
+
+1. confere as consultas em andamento na Linked API e aplica as que terminaram;
+2. inicia até `LINKEDIN_LOTE` novas (10), sem passar de `LINKEDIN_LIMITE_DIA` (50) em 24 h,
+   na ordem da tabela (maior score primeiro) e depois das Oportunidades.
+
+Tipos de consulta: **ler** (perfil, ou página da empresa com decisores e posts), **buscar**
+(procura pelo nome; a pessoa só é aceita se o nome e a empresa conferirem no título, e a empresa
+pelo domínio ou pelo nome com local no Brasil) e **área** (funcionários com cargo da área que
+decide, quando ainda não conhecemos ninguém dela). Releitura a cada 90 dias; quem não foi
+encontrado volta a ser procurado depois de 30 dias e pode receber o endereço à mão na tela
+Equipe. O link da empresa também é procurado de graça no site dela.
+
+Tokens: `LINKED_API_TOKEN` e `LINKED_API_IDENTIFICATION_TOKEN` (painel da Linked API). O caminho
+antigo pelo n8n continua disponível se esses tokens não forem definidos
+([`docs/linkedin-n8n.md`](docs/linkedin-n8n.md)).
 
 ## Instalação
 
@@ -86,7 +105,7 @@ Uma entrada só faz tudo, sem ação manual: `crosssell rotina`, de hora em hora
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell noticias                # diário
-crosssell linkedin                # diário: envia o próximo lote ao n8n
+crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário
 crosssell importar zeca arquivo.xlsx   # quando houver nova exportação
 ```
@@ -119,9 +138,8 @@ pytest
 ## Pendências para produção
 
 - [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,
-      `api.anthropic.com`, `news.google.com` e `brasilapi.com.br`.
+      `api.anthropic.com`, `api.linkedapi.io`, `news.google.com` e `brasilapi.com.br`.
 - [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 e chave da Claude API.
-- [ ] Fluxo do n8n (`docs/linkedin-n8n.md`), token compartilhado e endereço público da plataforma
-      (o n8n precisa alcançá-la para devolver os resultados).
+- [ ] Tokens da Linked API (gerar novos antes de produção; os de teste foram expostos).
 - [ ] Exportação real do Zeca para ajustar os cabeçalhos em `config/verticais.yaml`.
 - [ ] Hospedagem (Postgres + container com HTTPS).

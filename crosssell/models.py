@@ -50,6 +50,7 @@ class Empresa(Base):
     linkedin_site_em: Mapped[datetime | None]  # última procura do link do LinkedIn no site da empresa
     linkedin_busca_em: Mapped[datetime | None]  # última busca do perfil na Linked API
     linkedin_nao_encontrado: Mapped[bool] = mapped_column(default=False)
+    linkedin_areas: Mapped[dict] = mapped_column(JSON, default=dict)  # área -> data da última busca de funcionários
 
     pessoas: Mapped[list["Pessoa"]] = relationship(back_populates="empresa")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="empresa")
@@ -245,4 +246,20 @@ class SyncLog(Base):
     inicio: Mapped[datetime] = mapped_column(default=_now)
     fim: Mapped[datetime | None]
     registros: Mapped[int] = mapped_column(Integer, default=0)
+    erro: Mapped[str | None]
+
+
+class LinkedinPedido(Base):
+    """Pedido feito à Linked API e ainda não aplicado (a resposta é assíncrona)."""
+
+    __tablename__ = "linkedin_pedidos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(unique=True)
+    id_alvo: Mapped[str] = mapped_column(index=True)  # P123 | E45
+    acao: Mapped[str]  # ler | buscar | area
+    area: Mapped[str | None]
+    criado_em: Mapped[datetime] = mapped_column(default=_now, index=True)
+    concluido_em: Mapped[datetime | None] = mapped_column(index=True)
+    situacao: Mapped[str] = mapped_column(default="pendente")  # pendente | aplicado | erro | expirado
     erro: Mapped[str | None]

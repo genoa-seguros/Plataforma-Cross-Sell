@@ -47,6 +47,9 @@ EMPRESAS = [
     ("Hotel Mar Aberto", "5510801 - Hotéis", "DEMAIS", 160, [], [(29, "Empresarial")], "pouca"),
     ("Indústria Química Delta", "2029100 - Produtos químicos", "DEMAIS", 280, [], [(29, "Empresarial"), (1, "D&O")], None),
     ("Corretora Parceira Sigma", "6622300 - Corretagem de seguros", "EPP", 25, [], [(39, "Canal Cyber")], "media"),
+    # Clientes sem negócio aberto: aparecem na aba Oportunidades
+    ("Rede Farmácias Vida Plena", "4771701 - Farmácias", "DEMAIS", 1300, [(1, "D&O", 150), (29, "Empresarial", 200)], [], "muita"),
+    ("Têxtil Fio Nobre", "1321900 - Tecelagem", "DEMAIS", 520, [(1, "D&O", 90)], [], "media"),
 ]
 NOMES = ["Ana Ribeiro", "Carlos Menezes", "Juliana Prado", "Marcos Teixeira", "Fernanda Lopes", "Rafael Duarte",
          "Patrícia Nogueira", "Eduardo Campos", "Luciana Barros", "Gustavo Pires", "Renata Moraes", "Thiago Rocha",
@@ -122,7 +125,7 @@ def main():
         db.commit()
 
         intensidade = {"muita": 14, "media": 6, "pouca": 2, None: 0}[temp]
-        dono = DONO[abertos[0][0]]
+        dono = DONO[(abertos or ganhos)[0][0]]
         outro = random.choice([u for u in DONO.values() if u != dono])
         msgs = {}
         for k in range(intensidade):
@@ -137,7 +140,7 @@ def main():
             registrar_mensagens(db, s, u, ms)
     db.commit()
 
-    # LinkedIn (o que viria da planilha preenchida pelo n8n)
+    # LinkedIn (o que viria da Linked API)
     empresas = db.query(Empresa).order_by(Empresa.id).all()
     for i, e in enumerate(empresas):
         if i % 3 == 2:
@@ -149,7 +152,8 @@ def main():
             p.linkedin_headline = f"{p.cargo} na {e.razao_social.replace(' (exemplo)', '')}"
             p.linkedin_em = AGORA
     for i, (nome, cargo) in [(0, ("Marta Reis", "Diretora Jurídica")), (3, ("Fábio Monteiro", "CEO")),
-                              (6, ("Cláudia Tavares", "Diretora de Pessoas"))]:
+                              (6, ("Cláudia Tavares", "Diretora de Pessoas")),
+                              (14, ("Simone Arruda", "Head de Pessoas e Benefícios"))]:
         e = empresas[i]
         db.add(Pessoa(nome=nome, nome_normalizado=normalizar_nome_pessoa(nome), empresa_id=e.id, cargo=cargo,
                       senioridade=classificar_senioridade(cargo), fonte="linkedin", linkedin_url=f"https://www.linkedin.com/in/exemplo-dm-{i}",

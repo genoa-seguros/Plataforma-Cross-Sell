@@ -134,6 +134,34 @@ def classificar_senioridade(cargo: str | None) -> str | None:
     return "outro"
 
 
+# Área de atuação (quem decide cada vertical). A primeira regra que casar vale.
+_AREA_REGRAS = [
+    ("rh", r"\b(chro|rh|hr|dho|people|pessoas|gente|talentos?|talent|beneficios|benefits|cultura)\b|"
+           r"recursos humanos|human resources|departamento pessoal|gestao de pessoas"),
+    ("financeiro", r"\b(cfo|financ\w*|finance|tesour\w*|treasury|controller|controladoria|contab\w*|accounting|"
+                   r"fiscal|tribut\w*|fp&a)\b"),
+    ("juridico", r"\b(juridic\w*|legal|advogad\w*|lawyer|counsel|compliance|clo)\b"),
+    ("riscos", r"\b(riscos?|risk|seguros|insurance|auditoria|audit)\b"),
+    ("operacoes", r"\b(coo|chief operating|operac\w*|operations|facilities|manutencao|logistic\w*|supply|industrial|planta|"
+                  r"producao|patrimonio|infraestrutura predial)\b"),
+    ("ti", r"\b(cto|cio|ciso|ti|it|tecnologia|technology|sistemas)\b"),
+    ("executivo", r"\b(ceo|chief executive|managing director|presidente|president|fundador|founder|cofundador|co-founder|socio|socia|owner|"
+                  r"diretor geral|country manager|general manager)\b"),
+]
+AREA_LABEL = {"rh": "RH / Pessoas", "financeiro": "Financeiro", "juridico": "Jurídico", "riscos": "Riscos",
+              "operacoes": "Operações", "ti": "TI", "executivo": "Executivo"}
+
+
+def classificar_area(texto: str | None) -> str | None:
+    if not texto:
+        return None
+    t = sem_acento(texto).lower()
+    for area, padrao in _AREA_REGRAS:
+        if re.search(padrao, t):
+            return area
+    return None
+
+
 def parse_data(valor) -> date | None:
     if valor in (None, ""):
         return None

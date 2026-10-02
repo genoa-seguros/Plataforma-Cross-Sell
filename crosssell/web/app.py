@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from crosssell import auth, tabela
+from crosssell.normalize import AREA_LABEL
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -143,6 +144,7 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         "comp": e.score_componentes,
         "linkedin": e.linkedin_url, "setor": e.setor,
         "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
+                     "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""),
                      "fonte": p.fonte, "linkedin": p.linkedin_url, "headline": p.linkedin_headline,
                      "empresaAtual": p.linkedin_empresa_atual if lk.mudou_de_empresa(p) else None,
                      "focal": p.ponto_focal, "temperatura": p.temperatura, "temperaturaMotivo": p.temperatura_motivo,
@@ -173,8 +175,9 @@ def api_saude(empresa_id: int, dados: SaudeIn, db: Session = Depends(get_db), _u
 
 
 class AtividadeIn(BaseModel):
-    negocio_id: int
-    pessoa_id: int
+    negocio_id: int | None = None
+    empresa_id: int | None = None  # sem negócio (aba Oportunidades)
+    pessoa_id: int | None = None
     assunto: str
     tipo: str = "task"
     vencimento: date
@@ -185,14 +188,15 @@ class AtividadeIn(BaseModel):
 @app.post("/api/atividades")
 def api_criar_atividade(dados: AtividadeIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual),
                         client: pd.PipedriveClient = Depends(get_pipedrive)):
-    neg = db.get(Negocio, dados.negocio_id)
+    neg = db.get(Negocio, dados.negocio_id) if dados.negocio_id else None
+    emp = db.get(Empresa, dados.empresa_id) if dados.empresa_id else None
     resp = db.get(Usuario, dados.responsavel_id)
-    if neg is None or resp is None or not resp.ativo:
-        raise HTTPException(400, "Negócio ou responsável inválido.")
+    if (neg is None and emp is None) or resp is None or not resp.ativo:
+        raise HTTPException(400, "Negócio/empresa ou responsável inválido.")
     try:
-        at = pd.criar_atividade(db, client, negocio=neg, pessoa_id=dados.pessoa_id, assunto=dados.assunto.strip(),
-                                vencimento=dados.vencimento, responsavel=resp, criada_por=u, tipo=dados.tipo,
-                                nota=dados.nota)
+        at = pd.criar_atividade(db, client, negocio=neg, empresa=emp, pessoa_id=dados.pessoa_id,
+                                assunto=dados.assunto.strip(), vencimento=dados.vencimento, responsavel=resp,
+                                criada_por=u, tipo=dados.tipo, nota=dados.nota)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"id": at.id, "pipedriveId": at.pipedrive_id}
@@ -284,11 +288,18 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
     return {"em": log.inicio.isoformat(timespec="minutes"), "registros": log.registros, "erro": log.erro} if log else None
 
 
+@app.get("/api/oportunidades")
+def api_oportunidades(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    return {"itens": tabela.oportunidades(db, get_settings())}
+
+
 @app.get("/api/linkedin")
 def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     s = get_settings()
+    direto = lk.direto(s)
     return {"configurado": lk.configurado(s), "lote": s.linkedin_lote, **lk.situacao(db, s),
-            "disparado": _ultimo(db, "linkedin-disparo"), "recebido": _ultimo(db, "linkedin-retorno")}
+            "disparado": _ultimo(db, "linkedin" if direto else "linkedin-disparo"),
+            "recebido": _ultimo(db, "linkedin" if direto else "linkedin-retorno")}
 
 
 class EnderecoIn(BaseModel):
@@ -309,11 +320,13 @@ def api_linkedin_endereco(dados: EnderecoIn, db: Session = Depends(get_db), _m: 
 def api_linkedin_disparar(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     s = get_settings()
     if not lk.configurado(s):
-        raise HTTPException(400, "Integração com o n8n não configurada (N8N_LINKEDIN_WEBHOOK_URL, N8N_TOKEN, PLATAFORMA_URL).")
+        raise HTTPException(400, "LinkedIn não configurado (LINKED_API_TOKEN e LINKED_API_IDENTIFICATION_TOKEN).")
     try:
+        if lk.direto(s):
+            return registrar(db, "linkedin", lk.executar, db, s)
         return registrar(db, "linkedin-disparo", lk.disparar, db, s)
-    except Exception as exc:  # o n8n fora do ar não deve derrubar a tela
-        raise HTTPException(502, f"O n8n não aceitou o disparo: {exc}")
+    except Exception as exc:  # serviço fora do ar não deve derrubar a tela
+        raise HTTPException(502, f"A Linked API não aceitou o pedido: {exc}")
 
 
 @app.post("/api/integracoes/linkedin/resultados")

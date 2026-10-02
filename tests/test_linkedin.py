@@ -85,7 +85,8 @@ def test_retorno_atualiza_e_confere_nome(db, settings):
 
     linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "4")
     assert any("hoje está em Grupo Gama" in m for m in linha["motivos"])
-    assert any("decisor no LinkedIn sem relação ainda: Marta Reis" in m for m in linha["motivos"])
+    # Diretora Jurídica não decide RE: não vira motivo neste negócio, só nos de Linhas Financeiras
+    assert not any("Marta Reis" in m for m in linha["motivos"])
     assert linha["pessoa"]["linkedin"] == "https://linkedin.com/in/ana"
     assert lk.receber(db, resultados)["ja_lidos"] == 2  # reenvio do n8n não duplica
 
@@ -152,7 +153,9 @@ def test_busca_escolhe_candidato_certo(db, settings):
     assert caio.linkedin_url is None and caio.linkedin_nao_encontrado
 
     fila = {a["id_alvo"]: a["acao"] for a in lk.alvos(db, settings)}
-    assert fila[f"P{ana.id}"] == "ler" and f"P{caio.id}" not in fila  # não encontrado sai da fila por 30 dias
+    # Encontrada pela busca já vale como leitura (título e endereço); não encontrado sai da fila por 30 dias
+    assert ana.linkedin_headline == "CFO | Metalúrgica Alfa" and ana.linkedin_em is not None
+    assert f"P{ana.id}" not in fila and f"P{caio.id}" not in fila
     sit = lk.situacao(db, settings)
     assert [n["nome"] for n in sit["naoEncontrados"]] == ["Caio Lima"]
 

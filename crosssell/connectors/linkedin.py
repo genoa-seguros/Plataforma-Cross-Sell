@@ -320,12 +320,15 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
 
 
 def _escolher_pessoa(p: Pessoa, candidatos: list[dict]) -> str | None:
-    """Mesmo nome (primeiro e último) e a empresa dele aparecendo no headline/empresa atual."""
+    """Mesmo nome (primeiro e último) e a empresa dele aparecendo no headline/empresa atual.
+    Sem empresa conhecida não há como separar homônimos: não escolhe."""
     nossa = _termos(p.empresa.nome_fantasia or p.empresa.razao_social) if p.empresa else set()
+    if not nossa:
+        return None
     mesmos = [c for c in candidatos if mesmo_nome(p.nome, c.get("nome") or c.get("name") or "")]
     for c in mesmos:
         texto = " ".join(str(c.get(k) or "") for k in ("headline", "empresa_atual", "empresa"))
-        if not nossa or nossa & _termos(texto):
+        if nossa & _termos(texto):
             return c.get("linkedin_url") or c.get("url") or None
     return None
 

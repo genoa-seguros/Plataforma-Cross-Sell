@@ -189,3 +189,21 @@ def test_funcionarios_do_linkedin_entram_no_porte(db, settings):
     assert depois["empresa"]["funcionarios"] == 1240
     assert any("1.240 funcionários no LinkedIn: porte para plano coletivo" in m for m in depois["motivos"])
     assert depois["comp"]["porte"] == 1.0 and depois["score"] > antes["score"]
+
+
+def test_busca_real_mariana_lazaro():
+    """Resposta real do Search People (termo "Mariana Lazaro"): só a da SumUp é aceita, e só com a empresa."""
+    candidatos = [
+        {"nome": "Mariana Lazaro", "headline": "Chief Executive Officer Brazil at SumUp",
+         "linkedin_url": "https://www.linkedin.com/in/marianalazaro"},
+        {"nome": "Lázaro Mariano", "headline": "Sócio proprietário na davinTI", "linkedin_url": "https://x/1"},
+        {"nome": "Mariana Lazero", "headline": "Arquiteta", "linkedin_url": "https://x/2"},
+        {"nome": "Mariana Lázaro Tognella", "headline": "Assistente Administrativo", "linkedin_url": "https://x/3"},
+        {"nome": "Mariana Lázaro", "headline": "Bacharel em Ciências Biológicas", "linkedin_url": "https://x/4"},
+    ]
+    sumup = Empresa(razao_social="SumUp Pagamentos Ltda", nome_fantasia="SumUp", nome_normalizado="sumup")
+    assert lk._escolher_pessoa(Pessoa(nome="Mariana Lazaro", empresa=sumup), candidatos) == \
+        "https://www.linkedin.com/in/marianalazaro"
+    assert lk._escolher_pessoa(Pessoa(nome="Mariana Lazaro"), candidatos) is None  # sem empresa: homônimos
+    outra = Empresa(razao_social="Gama Ltda", nome_normalizado="gama")
+    assert lk._escolher_pessoa(Pessoa(nome="Mariana Lazaro", empresa=outra), candidatos) is None

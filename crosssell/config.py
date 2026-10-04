@@ -16,9 +16,6 @@ AREAS_VERTICAL = {
     "linhas_financeiras": ("financeiro", "juridico", "riscos"),
     "ramos_elementares": ("operacoes", "riscos", "financeiro"),
 }
-# Palavra do cargo usada para procurar funcionários da área na página da empresa (Linked API).
-AREA_BUSCA = {"rh": "RH", "financeiro": "Financeiro", "juridico": "Jurídico", "riscos": "Riscos",
-              "operacoes": "Operações"}
 
 
 class Settings(BaseSettings):

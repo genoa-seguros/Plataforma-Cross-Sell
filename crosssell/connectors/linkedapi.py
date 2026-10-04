@@ -10,7 +10,6 @@ Formato conferido com o SDK oficial (@linkedapi/node 2.3) e com respostas reais.
 
 import httpx
 
-from crosssell.config import AREA_BUSCA
 
 BASE = "https://api.linkedapi.io"
 
@@ -57,9 +56,10 @@ def definicao(alvo: dict) -> dict:
     if acao == "buscar":
         return {"actionType": "st.searchCompanies", "term": alvo["busca"], "limit": 10}
     if acao == "area":
+        # Lista de funcionários; o filtro de cargo é ignorado pela Linked API (testado), então
+        # vem uma lista maior e a plataforma classifica cada um pela área do título.
         return {"actionType": "st.openCompanyPage", "companyUrl": alvo["linkedin_url"], "basicInfo": True,
-                "then": [{"actionType": "st.retrieveCompanyEmployees", "limit": 10,
-                          "filter": {"position": AREA_BUSCA[alvo["area"]]}}]}
+                "then": [{"actionType": "st.retrieveCompanyEmployees", "limit": 50}]}
     if tipo == "pessoa":
         return {"actionType": "st.openPersonPage", "personUrl": alvo["linkedin_url"], "basicInfo": True, "then": []}
     return {"actionType": "st.openCompanyPage", "companyUrl": alvo["linkedin_url"], "basicInfo": True,

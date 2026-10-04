@@ -48,7 +48,8 @@ from crosssell.normalize import (
 from crosssell.resolver import resolver_pessoa
 
 PRAZO_PEDIDO = timedelta(hours=36)
-BUSCA_VALIDADE = timedelta(days=30)  # quem não foi encontrado é procurado de novo depois disso
+BUSCA_VALIDADE = timedelta(days=30)
+FUNCIONARIOS = "funcionarios"  # chave em Empresa.linkedin_areas: última leitura da lista de funcionários  # quem não foi encontrado é procurado de novo depois disso
 CAMPOS_RESULTADO = ("id_alvo", "tipo", "linkedin_url", "nome", "headline", "cargo_atual", "empresa_atual",
                     "localizacao", "setor", "funcionarios", "site", "sede", "decisores", "posts", "capturado_em", "erro")
 
@@ -137,22 +138,19 @@ def _area_de(p: Pessoa) -> str | None:
 
 
 def _alvos_area(e: Empresa, verticais: set, validade: int, agora: datetime, motivo: str) -> list[dict]:
-    """Procurar a área que decide cada vertical quando ainda não há ninguém dela na empresa.
+    """Ler os funcionários da empresa quando falta alguém da área que decide alguma vertical em jogo.
+    Uma consulta por empresa: o filtro de cargo da Linked API é ignorado (testado com SumUp e Salvy),
+    então a lista vem geral e a plataforma classifica cada pessoa pela área do título.
     Só depois da página da empresa lida (os decisores podem já resolver)."""
     if not e.linkedin_url or not e.linkedin_em:
         return []
     conhecidas = {_area_de(p) for p in e.pessoas}
-    saida = []
-    for v in sorted(verticais):
-        areas = AREAS_VERTICAL.get(v, ())
-        if not areas or conhecidas & set(areas):
-            continue
-        area = areas[0]
-        feita = (e.linkedin_areas or {}).get(area)
-        if feita and datetime.fromisoformat(feita) > agora - timedelta(days=validade):
-            continue
-        saida.append({**_alvo_empresa(e, "area", motivo), "area": area})
-    return saida
+    faltam = [AREAS_VERTICAL[v][0] for v in sorted(verticais)
+              if AREAS_VERTICAL.get(v) and not conhecidas & set(AREAS_VERTICAL[v])]
+    feita = (e.linkedin_areas or {}).get(FUNCIONARIOS)
+    if not faltam or (feita and datetime.fromisoformat(feita) > agora - timedelta(days=validade)):
+        return []
+    return [{**_alvo_empresa(e, "area", motivo), "area": faltam[0]}]
 
 
 def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> list[dict]:
@@ -451,12 +449,29 @@ def _aplicar_busca(obj, r: dict, quando: datetime) -> str:
     return "nao_encontrados"
 
 
+_OUTRA_ORG = re.compile(r"(?:@|\bat\b|\bna\b|\bno\b)\s*([^|·,]+)$")  # "de"/"em" são parte do cargo
+
+
+def _de_outra_empresa(headline: str, e: Empresa) -> bool:
+    """O título cita outra organização (ex.: "Co-founder @ STAMINA VC" na lista da Salvy)?
+    A lista de funcionários da Linked API traz também investidores e conselheiros."""
+    nossa = _termos(e.nome_fantasia or e.razao_social) | _termos((e.linkedin_url or "").rsplit("/", 1)[-1].replace("-", " "))
+    for parte in re.split(r"[|·]", headline):
+        m = _OUTRA_ORG.search(parte.strip())
+        if m and len(m.group(1).strip()) >= 3:
+            org = _termos(m.group(1))
+            if org and not org & nossa:
+                return True
+    return False
+
+
 def _aplicar_area(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
-    """Funcionários com cargo da área: entram como contatos do LinkedIn se o cargo confirmar a área."""
-    area, novos = _txt(r, "area"), 0
-    for f in _lista(r.get("funcionarios_area"))[:10]:
+    """Funcionários com cargo de alguma área conhecida entram como contatos do LinkedIn.
+    Quem não tem área no título ou cita outra organização fica de fora."""
+    novos = 0
+    for f in _lista(r.get("funcionarios_area"))[:50]:
         nome, headline = f.get("nome") or f.get("name"), f.get("headline") or ""
-        if not nome or classificar_area(headline) != area:
+        if not nome or not classificar_area(headline) or _de_outra_empresa(headline, e):
             continue
         ja = db.scalar(select(Pessoa).where(Pessoa.empresa_id == e.id,
                                             Pessoa.nome_normalizado == normalizar_nome_pessoa(nome)))
@@ -467,7 +482,7 @@ def _aplicar_area(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
         p.senioridade = p.senioridade or classificar_senioridade(headline)
         p.linkedin_em = quando
         novos += ja is None
-    e.linkedin_areas = {**(e.linkedin_areas or {}), area: quando.isoformat(timespec="seconds")}
+    e.linkedin_areas = {**(e.linkedin_areas or {}), FUNCIONARIOS: quando.isoformat(timespec="seconds")}
     return novos
 
 
@@ -586,7 +601,7 @@ def iniciar(db: Session, settings: Settings, client, agora: datetime | None = No
         db.add(LinkedinPedido(workflow_id=wid, id_alvo=a["id_alvo"], acao=a["acao"], area=a.get("area"), criado_em=agora))
         obj = db.get(Pessoa if a["tipo"] == "pessoa" else Empresa, int(a["id_alvo"][1:]))
         if a["acao"] == "area":
-            obj.linkedin_areas = {**(obj.linkedin_areas or {}), a["area"]: agora.isoformat(timespec="seconds")}
+            obj.linkedin_areas = {**(obj.linkedin_areas or {}), FUNCIONARIOS: agora.isoformat(timespec="seconds")}
         else:
             obj.linkedin_pedido_em = agora
         cont["iniciados"] += 1

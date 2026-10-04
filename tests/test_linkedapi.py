@@ -28,7 +28,10 @@ EMPRESA_ALFA = {
 FUNCIONARIOS_RH = [
     {"name": "Carla Mendes", "headline": "Head de Pessoas e Cultura | Metalúrgica Alfa",
      "publicUrl": "https://www.linkedin.com/in/carla-mendes"},
-    {"name": "Davi Rocha", "headline": "Analista Fiscal", "publicUrl": "https://www.linkedin.com/in/davi"},  # não é RH
+    {"name": "Davi Rocha", "headline": "Analista Fiscal", "publicUrl": "https://www.linkedin.com/in/davi"},  # Financeiro
+    # Lista real da Salvy trazia investidores: título que cita outra organização fica de fora
+    {"name": "Rony Sz", "headline": "Co-founder @ STAMINA VC", "publicUrl": "https://www.linkedin.com/in/rony"},
+    {"name": "Eva Lins", "headline": "Vendedora", "publicUrl": "https://www.linkedin.com/in/eva"},  # sem área
 ]
 
 
@@ -92,7 +95,7 @@ def test_definicoes_no_formato_da_linked_api():
     emp = definicao({"tipo": "empresa", "acao": "ler", "linkedin_url": "https://www.linkedin.com/company/use-salvy"})
     assert [t["actionType"] for t in emp["then"]] == ["st.retrieveCompanyDMs", "st.retrieveCompanyPosts"]
     area = definicao({"tipo": "empresa", "acao": "area", "area": "rh", "linkedin_url": "https://x"})
-    assert area["then"][0]["filter"] == {"position": "RH"}
+    assert area["then"] == [{"actionType": "st.retrieveCompanyEmployees", "limit": 50}]  # filtro de cargo é ignorado
 
 
 def test_resultado_pessoa_real_gustavo():
@@ -144,17 +147,18 @@ def test_rodadas_buscam_leem_e_procuram_rh(db, settings):
     db.expire_all()
     assert alfa.funcionarios == 850 and alfa.funcionarios_fonte == "linkedin"
     assert {p.nome for p in alfa.pessoas} >= {"Ana Souza", "Bruno Prado"}
-    areas = sorted((p["def"]["companyUrl"].rsplit("/", 1)[1], p["def"]["then"][0]["filter"]["position"])
-                   for p in api.pedidos.values() if p["def"].get("then")
+    areas = sorted(p["def"]["companyUrl"].rsplit("/", 1)[1] for p in api.pedidos.values() if p["def"].get("then")
                    and p["def"]["then"][0]["actionType"] == "st.retrieveCompanyEmployees")
-    # Alfa: Saúde (Pipo) sem RH; RE já coberto pelo Diretor de Operações. Beta: Saúde e a oportunidade de RE
-    assert areas == [("beta", "Operações"), ("beta", "RH"), ("metalurgica-alfa", "RH")]
+    # Uma leitura de funcionários por empresa: Alfa (falta RH para Saúde) e Beta (falta RH e Operações)
+    assert areas == ["beta", "metalurgica-alfa"]
     lk.executar(db, s, client)
     lk.executar(db, s, client)
     db.expire_all()
     carla = db.scalar(select(Pessoa).where(Pessoa.nome == "Carla Mendes"))
     assert carla and carla.fonte == "linkedin" and carla.empresa_id == alfa.id
-    assert db.scalar(select(Pessoa).where(Pessoa.nome == "Davi Rocha")) is None  # cargo não é de RH
+    assert db.scalar(select(Pessoa).where(Pessoa.nome == "Davi Rocha")).empresa_id == alfa.id  # área Financeiro
+    assert db.scalar(select(Pessoa).where(Pessoa.nome == "Rony Sz")) is None  # investidor de outra organização
+    assert db.scalar(select(Pessoa).where(Pessoa.nome == "Eva Lins")) is None  # título sem área
 
     # Na linha de Saúde da Alfa aparece quem decide (RH) e, sem relação, a ponte
     pipo = next(x for x in tabela.montar(db, s) if x["pipedriveId"] == "11")
@@ -174,3 +178,24 @@ def test_limite_de_24h(db, settings):
     r = lk.executar(db, s, api.client(), agora=depois)
     assert r["expirados"] == 3 and r["iniciados"] >= 1
     assert len(db.scalars(select(LinkedinPedido)).all()) >= 4
+
+
+def test_funcionarios_reais_da_salvy(db, settings):
+    """Lista real (filtro de cargo ignorado pela Linked API): entram fundadores e quem tem área;
+    investidores de outra organização e títulos sem área ficam de fora."""
+    salvy = Empresa(razao_social="Salvy Tecnologia Ltda", nome_fantasia="Salvy", nome_normalizado="salvy",
+                    linkedin_url="https://www.linkedin.com/company/use-salvy")
+    db.add(salvy)
+    db.commit()
+    lista = [("William Cordeiro", "Managing Partner @SaaSholic"),
+             ("Lucas Rosa", "Co-Founder & Product @ Salvy (YC W24)"),
+             ("Rony Sztamfater", "Co-founder @ STAMINA VC"),
+             ("Yuri Enny", "Marketing Lead @ Salvy (YC W24)"),
+             ("Artur Negrão", "Co-founder & CEO, Salvy"),
+             ("Paulo Cunha", "Investidor Anjo de Empreendedores Brasileiros")]
+    lk.receber(db, [{"id_alvo": f"E{salvy.id}", "tipo": "empresa", "acao": "area", "area": "rh",
+                     "funcionarios_area": [{"nome": n, "headline": h, "linkedin_url": f"https://x/{i}"}
+                                           for i, (n, h) in enumerate(lista)],
+                     "capturado_em": "2026-10-04T10:00:00"}])
+    assert sorted(p.nome for p in salvy.pessoas) == ["Artur Negrão", "Lucas Rosa"]
+    assert "funcionarios" in salvy.linkedin_areas

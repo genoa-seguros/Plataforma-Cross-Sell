@@ -86,8 +86,9 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 
 Tipos de consulta: **ler** (perfil, ou página da empresa com decisores e posts), **buscar**
 (procura pelo nome; a pessoa só é aceita se o nome e a empresa conferirem no título, e a empresa
-pelo domínio ou pelo nome com local no Brasil) e **área** (funcionários com cargo da área que
-decide, quando ainda não conhecemos ninguém dela). Releitura a cada 90 dias; quem não foi
+pelo domínio ou pelo nome com local no Brasil) e **funcionários** (lista de até 50 pessoas da
+página da empresa, quando falta alguém da área que decide; a plataforma classifica cada um pela
+área do título e descarta quem cita outra organização, como investidores e conselheiros). Releitura a cada 90 dias; quem não foi
 encontrado volta a ser procurado depois de 30 dias e pode receber o endereço à mão na tela
 Equipe. O link da empresa também é procurado de graça no site dela.
 

@@ -71,6 +71,10 @@ class Settings(BaseSettings):
         return {int(k): {"nome": v.get("nome") or f"Funil {k}", "vertical": v.get("vertical"),
                          "tabela": bool(v.get("tabela"))} for k, v in brutos.items()}
 
+    def empresas_internas(self) -> list[str]:
+        """Nomes da própria corretora (negócios internos ou de teste não entram na tabela)."""
+        return [str(x).lower() for x in (self.verticais_config().get("empresas_internas") or [])]
+
     def campos_pipedrive(self) -> dict:
         return (self.verticais_config().get("pipedrive") or {}).get("campos") or {}
 

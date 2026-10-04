@@ -60,3 +60,7 @@ importacao:
     premio: [premio, faturamento, valor, premio mensal]
     vidas: [vidas, beneficiarios, quantidade vidas]
     status: [status, situacao]
+
+# Organizações da própria corretora: negócios internos/de teste ficam fora da tabela e das oportunidades
+# (comparado com o nome sem acento e sem sufixos societários)
+empresas_internas: [innoa corretora, genoa corretora, genoa seguros, innoa seguros]

@@ -190,3 +190,24 @@ def test_oportunidades_incluem_leads_em_negociacao(db, settings):
     assert saude["cliente"] is False and [n["produto"] for n in saude["negociando"]] == ["D&O"]
     assert any("time qualificado" in m["texto"] for m in saude["motivos"])
     assert not any(nome == "Corretora Parceira" for nome, _ in ops)  # canal de parceria não é lead de seguro
+
+
+def test_empresa_interna_fica_fora_e_cancelamento_vira_reconquista(db, settings):
+    carregar(db, settings)
+    innoa = Empresa(razao_social="Innoa Corretora de Seguros Ltda", nome_normalizado="innoa corretora seguros")
+    cli = Empresa(razao_social="Delta Tech", nome_normalizado="delta tech")
+    db.add_all([innoa, cli])
+    db.flush()
+    db.add_all([Negocio(empresa=innoa, vertical="linhas_financeiras", fonte="pipedrive", id_externo="950", pipeline_id=1,
+                        status="aberto", titulo="E&O Tecnologia 2025", produto="E&O"),
+                Negocio(empresa=cli, vertical="linhas_financeiras", fonte="pipedrive", id_externo="951", pipeline_id=1,
+                        status="aberto", titulo="E&O 2026", produto="E&O"),
+                Negocio(empresa=cli, vertical="linhas_financeiras", fonte="pipedrive", id_externo="952", pipeline_id=1,
+                        status="cancelado", titulo="E&O 2025 Cancelamento", produto="E&O",
+                        fim_vigencia=HOJE + timedelta(days=200))])
+    db.commit()
+    linhas = tabela.montar(db, settings)
+    assert not any(x["empresa"] and x["empresa"]["nome"].startswith("Innoa") for x in linhas)
+    delta = next(x for x in linhas if x["pipedriveId"] == "951")
+    assert any(m["texto"] == "cancelou E&O conosco: reconquista" for m in delta["motivos"])
+    assert not any(o["empresa"]["nome"].startswith("Innoa") for o in tabela.oportunidades(db, settings))

@@ -96,8 +96,12 @@ def _extras(e: Empresa | None, p: Pessoa | None, vertical: str | None, vigentes:
     tem = {v.vertical for v in vigentes}
     ex = [x for x in (e.negocios if e else []) if x.vertical == vertical and x.ex_cliente and x.fim_vigencia]
     if ex and vertical not in tem:
-        fim = max(x.fim_vigencia for x in ex)
-        saida.append({"texto": f"já teve {VERTICAL_LABEL[vertical]} conosco até {fim:%m/%Y}: reconquista", "sinal": "+"})
+        ultimo = max(ex, key=lambda x: x.fim_vigencia)
+        if ultimo.status == "cancelado" or ultimo.fim_vigencia > date.today():
+            texto = f"cancelou {ultimo.produto or VERTICAL_LABEL[vertical]} conosco: reconquista"
+        else:
+            texto = f"já teve {VERTICAL_LABEL[vertical]} conosco até {ultimo.fim_vigencia:%m/%Y}: reconquista"
+        saida.append({"texto": texto, "sinal": "+"})
     if p is not None and mudou_de_empresa(p):
         saida.append({"texto": f"LinkedIn: {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual}; confirmar o contato",
                       "sinal": "!"})
@@ -142,6 +146,14 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     }
 
 
+def interna(e: Empresa | None, settings: Settings) -> bool:
+    """Organização da própria corretora (config: empresas_internas)."""
+    if e is None:
+        return False
+    nome = e.nome_normalizado or ""
+    return any(x and x in nome for x in settings.empresas_internas())
+
+
 def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
     hoje = hoje or date.today()
     funis = settings.pipelines()
@@ -149,8 +161,9 @@ def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[di
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
     negocios = db.scalars(select(Negocio).where(Negocio.fonte == "pipedrive", Negocio.status == "aberto",
                                                 Negocio.pipeline_id.in_(ids))).all()
-    linhas = [linha(db, n, funis, nomes, hoje) for n in negocios]
-    return sorted(linhas, key=lambda x: x["score"], reverse=True)
+    linhas = [linha(db, n, funis, nomes, hoje) for n in negocios if not interna(n.empresa, settings)]
+    # Empate no Potencial: maior influência, depois maior valor
+    return sorted(linhas, key=lambda x: (x["score"], x["influencia"], x["valor"] or 0), reverse=True)
 
 
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
@@ -164,6 +177,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     ids = set(db.scalars(select(Negocio.empresa_id).where(Negocio.empresa_id.is_not(None))))
     saida = []
     for e in db.scalars(select(Empresa).where(Empresa.id.in_(ids))):
+        if interna(e, settings):
+            continue
         vigentes = seguros_vigentes(e)
         # Canais Parceria (sem vertical) são parceiros, não leads de seguro: não geram oportunidade
         abertos_tabela = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive"
@@ -198,7 +213,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,
             })
-    return sorted(saida, key=lambda x: x["score"], reverse=True)
+    return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 
 
 def semana(ref: date) -> tuple[date, date]:

@@ -84,9 +84,7 @@ def test_retorno_atualiza_e_confere_nome(db, settings):
     assert db.scalar(select(Noticia).where(Noticia.fonte == "Post no LinkedIn")).titulo.startswith("Inauguramos")
 
     linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "4")
-    assert any("hoje está em Grupo Gama" in m for m in linha["motivos"])
-    # Diretora Jurídica não decide RE: não vira motivo neste negócio, só nos de Linhas Financeiras
-    assert not any("Marta Reis" in m for m in linha["motivos"])
+    assert any("hoje está em Grupo Gama" in m["texto"] for m in linha["motivos"])
     assert linha["pessoa"]["linkedin"] == "https://linkedin.com/in/ana"
     assert lk.receber(db, resultados)["ja_lidos"] == 2  # reenvio do n8n não duplica
 
@@ -184,14 +182,15 @@ def test_funcionarios_do_linkedin_entram_no_porte(db, settings):
     db.commit()
     saude = lambda: next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "5")  # noqa: E731
     antes = saude()
-    assert any("porte pequeno para saúde" in m for m in antes["motivos"])
+    assert any(m["texto"] == "só 8 funcionários" and m["sinal"] == "-" for m in antes["motivos"])
     lk.receber(db, [{"id_alvo": f"E{beta.id}", "tipo": "empresa", "funcionarios": "1.240",
                      "capturado_em": "2026-09-30T10:00:00"}])
     assert beta.funcionarios == 1240 and beta.funcionarios_fonte == "linkedin"  # LinkedIn prevalece
     depois = saude()
     assert depois["empresa"]["funcionarios"] == 1240
-    assert any("1.240 funcionários no LinkedIn: porte para plano coletivo" in m for m in depois["motivos"])
-    assert depois["comp"]["porte"] == 1.0 and depois["score"] > antes["score"]
+    assert any(m["texto"] == "1.240 funcionários: empresa grande" for m in depois["motivos"])
+    func = next(c for c in depois["criterios"] if c["nome"] == "funcionarios")
+    assert func["valor"] == 1.0 and depois["score"] > antes["score"]
 
 
 def test_busca_real_mariana_lazaro():

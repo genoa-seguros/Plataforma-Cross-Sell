@@ -103,3 +103,27 @@ def test_oportunidades_e_atividade_na_organizacao(cenario):
     enviada = fake.criadas[-1]
     assert enviada["org_id"] == 20 and "deal_id" not in enviada and "participants" not in enviada
     assert c.get("/api/oportunidades").json()["itens"][0]["proximaAtividade"]["assunto"] == "Abrir conversa de RE"
+
+
+def test_esqueci_a_senha(cenario, db, monkeypatch):
+    c, _ = cenario
+    enviados = []
+    monkeypatch.setattr(webapp, "_enviar_link_senha", lambda req, u, token: enviados.append((u.email, token)) or True)
+    # Resposta igual para e-mail com e sem acesso
+    r1 = c.post("/esqueci", data={"email": "ninguem@innoaseguros.com.br"})
+    r2 = c.post("/esqueci", data={"email": "rodrigo.pedroni@innoaseguros.com.br"})
+    assert r1.status_code == r2.status_code == 200 and "enviamos um link" in r1.text and "enviamos um link" in r2.text
+    assert [e for e, _ in enviados] == ["rodrigo.pedroni@innoaseguros.com.br"]
+    c.post("/esqueci", data={"email": "rodrigo.pedroni@innoaseguros.com.br"})
+    assert len(enviados) == 1  # pedido repetido em poucos minutos não gera outro link
+
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    outra = TestClient(webapp.app)
+    token = enviados[0][1]
+    assert outra.post(f"/redefinir/{token}", data={"senha": "nova-senha-456", "confirmacao": "outra"}).status_code == 400
+    r = outra.post(f"/redefinir/{token}", data={"senha": "nova-senha-456", "confirmacao": "nova-senha-456"})
+    assert r.status_code == 200 and "Senha alterada" in r.text
+    assert outra.get(f"/redefinir/{token}").status_code == 404  # uso único
+    assert c.get("/api/tabela").status_code == 401  # sessões antigas encerradas
+    assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123").status_code == 401
+    assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "nova-senha-456").status_code == 303

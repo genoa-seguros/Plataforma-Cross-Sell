@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, tabela
 from crosssell.normalize import AREA_LABEL
+from crosssell.potencial import influencia
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -70,7 +71,7 @@ def inicio(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/login")
 def login_form(request: Request):
-    return templates.TemplateResponse(request, "login.html", {"erro": None})
+    return templates.TemplateResponse(request, "login.html", {"erro": None, "aviso": None})
 
 
 @app.post("/login")
@@ -113,6 +114,62 @@ def convite(request: Request, token: str, senha: str = Form(...), confirmacao: s
     return RedirectResponse("/login", status_code=303)
 
 
+def _enviar_link_senha(request: Request, u: Usuario, token: str) -> bool:
+    """Envia o link de nova senha pelo Microsoft 365. Sem remetente configurado, não envia
+    (o master gera o link na tela Equipe)."""
+    import html as _html
+    import logging
+
+    from crosssell.connectors.email_m365 import GraphClient
+
+    s = get_settings()
+    if not (s.email_remetente and s.ms_tenant_id and s.ms_client_id and s.ms_client_secret):
+        return False
+    link = str(request.base_url).rstrip("/") + f"/redefinir/{token}"
+    corpo = (f"<p>Olá, {_html.escape(u.nome)}.</p><p>Para criar uma nova senha na plataforma Innoa Cross Sell, "
+             f'acesse: <a href="{link}">{link}</a></p><p>O link vale 1 hora e só pode ser usado uma vez. '
+             "Se você não pediu, ignore este e-mail: a senha atual continua valendo.</p>")
+    try:
+        GraphClient(s).enviar(s.email_remetente, u.email, "Innoa Cross Sell · nova senha", corpo)
+        return True
+    except Exception:  # falha no envio não pode revelar se o e-mail existe
+        logging.getLogger(__name__).exception("Falha ao enviar o link de nova senha")
+        return False
+
+
+@app.get("/esqueci")
+def esqueci_form(request: Request):
+    return templates.TemplateResponse(request, "esqueci.html", {"enviado": False})
+
+
+@app.post("/esqueci")
+def esqueci(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
+    pedido = auth.pedir_redefinicao(db, email)
+    if pedido:
+        _enviar_link_senha(request, *pedido)
+    return templates.TemplateResponse(request, "esqueci.html", {"enviado": True})  # mesma resposta sempre
+
+
+@app.get("/redefinir/{token}")
+def redefinir_form(request: Request, token: str, db: Session = Depends(get_db)):
+    u = auth.usuario_da_redefinicao(db, token)
+    return templates.TemplateResponse(request, "redefinir.html", {"u": u, "erro": None}, status_code=200 if u else 404)
+
+
+@app.post("/redefinir/{token}")
+def redefinir(request: Request, token: str, senha: str = Form(...), confirmacao: str = Form(...),
+              db: Session = Depends(get_db)):
+    u = auth.usuario_da_redefinicao(db, token)
+    if u is None:
+        return templates.TemplateResponse(request, "redefinir.html", {"u": None, "erro": None}, status_code=404)
+    erro = auth.validar_senha(senha) or (None if senha == confirmacao else "As duas senhas não são iguais.")
+    if erro:
+        return templates.TemplateResponse(request, "redefinir.html", {"u": u, "erro": erro}, status_code=400)
+    auth.redefinir_senha(db, u, senha)
+    return templates.TemplateResponse(request, "login.html", {"erro": None, "email": u.email,
+                                                              "aviso": "Senha alterada. Entre com a nova senha."})
+
+
 # --- API -----------------------------------------------------------------
 
 def _usuario_json(u: Usuario) -> dict:
@@ -145,12 +202,13 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         "linkedin": e.linkedin_url, "setor": e.setor,
         "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
                      "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""),
+                     "influencia": influencia(p)["score"],
                      "fonte": p.fonte, "linkedin": p.linkedin_url, "headline": p.linkedin_headline,
                      "empresaAtual": p.linkedin_empresa_atual if lk.mudou_de_empresa(p) else None,
                      "focal": p.ponto_focal, "temperatura": p.temperatura, "temperaturaMotivo": p.temperatura_motivo,
                      "usuarios": (p.score_componentes or {}).get("usuarios", []),
                      "i90": (p.score_componentes or {}).get("interacoes_90d", 0)}
-                    for p in sorted(e.pessoas, key=lambda p: p.score_relacionamento, reverse=True)],
+                    for p in sorted(e.pessoas, key=lambda p: influencia(p)["score"], reverse=True)],
         "negocios": [{"vertical": n.vertical, "produto": n.produto or n.titulo, "titulo": n.titulo, "fonte": n.fonte,
                       "status": n.status, "vigente": n.vigente, "etapa": n.etapa,
                       "ini": n.inicio_vigencia.isoformat() if n.inicio_vigencia else None,
@@ -256,6 +314,18 @@ def api_desconvidar(usuario_id: int, db: Session = Depends(get_db), m: Usuario =
         raise HTTPException(400, "Você não pode remover o próprio acesso.")
     auth.desconvidar(db, u)
     return _usuario_json(u)
+
+
+@app.post("/api/equipe/{usuario_id}/nova-senha")
+def api_nova_senha(usuario_id: int, request: Request, db: Session = Depends(get_db),
+                   _m: Usuario = Depends(somente_master)):
+    """Link de nova senha gerado pelo master (quando o e-mail não chega)."""
+    u = db.get(Usuario, usuario_id)
+    if u is None or not u.ativo or not u.senha_hash:
+        raise HTTPException(400, "Só para quem já tem acesso ativo; para convites pendentes, gere um novo convite.")
+    u.redefinir_expira = None  # o master pode gerar sem esperar o intervalo
+    u, token = auth.pedir_redefinicao(db, u.email)
+    return {"usuario": _usuario_json(u), "link": str(request.base_url).rstrip("/") + f"/redefinir/{token}"}
 
 
 @app.post("/api/equipe/{usuario_id}/reenviar")

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     ms_client_secret: str = ""
 
     internal_domains: str = "innoaseguros.com.br"
+    # Caixa que envia o link de "esqueci minha senha" (o app do Microsoft 365 precisa de Mail.Send)
+    email_remetente: str = ""
 
     # Temperatura dos e-mails (Claude API). A chave vem de ANTHROPIC_API_KEY.
     anthropic_model: str = "claude-opus-5-5"

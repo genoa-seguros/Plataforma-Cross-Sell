@@ -1,20 +1,12 @@
-"""Tabela de trabalho: negócios ABERTOS dos funis marcados com `tabela: true`.
+"""Tabela de trabalho: negócios ABERTOS dos funis marcados com `tabela: true`, e a aba
+Oportunidades (verticais que a empresa ainda não tem nem está negociando).
 
-Cada linha traz o que a reunião de sexta precisa para decidir o próximo passo:
-o cliente/lead e o contato, os seguros vigentes que ele já tem conosco (por
-produto), a temperatura dos e-mails, notícias, quem tem relação e a próxima
-atividade.
+Cada linha tem dois números (ver crosssell/potencial.py):
+  Potencial   critérios de um bom negócio na vertical (ordena a tabela)
+  Influência  quem é o contato: relacionamento por e-mail + hierarquia do cargo
 
-score = 100 × (relacionamento + vínculo + momento + porte), com pesos por vertical:
-                  relacionamento  vínculo  momento  porte
-  Saúde                35%          25%      15%     25%
-  demais               40%          30%      20%     10%
-
-  relacionamento  score de e-mail do contato (ou da empresa), ajustado pela temperatura
-  vínculo         já é cliente em outras verticais (cross sell) e/ou na mesma
-  momento         renovação próxima de algum seguro vigente
-  porte           nº de funcionários (LinkedIn > Pipedrive) ou de vidas do negócio de Saúde,
-                  em escala log: 10 -> 0,33 · 100 -> 0,67 · 1.000+ -> 1
+"Por quê" traz só o que não aparece em outra coluna: critérios a favor e contra,
+reconquista e contato que mudou de empresa.
 """
 
 from collections import Counter
@@ -27,11 +19,9 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.normalize import AREA_LABEL, classificar_area
+from crosssell.potencial import influencia, melhor_contato, motivos as motivos_potencial, potencial
 
-PESOS = {"saude": (0.35, 0.25, 0.15, 0.25), None: (0.40, 0.30, 0.20, 0.10)}  # rel, vínculo, momento, porte
-PORTE_DESCONHECIDO = 0.3
 FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha"}
-AJUSTE_TEMPERATURA = {"muita": 0.15, "media": 0.0, "pouca": -0.15}
 DECISORES = {"socio", "c_level", "diretor"}
 NIVEL = {"socio": 0, "c_level": 0, "diretor": 1, "gerente": 2}
 
@@ -46,7 +36,8 @@ def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str]) -> dict:
     return {"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline, "area": area,
             "areaNome": AREA_LABEL.get(area or ""), "linkedin": p.linkedin_url, "fonte": p.fonte,
             "noPipedrive": bool(p.pipedrive_person_id), "relacao": round(p.score_relacionamento or 0),
-            "temperatura": p.temperatura, "quemFala": nomes.get(proximo, proximo) if proximo else None}
+            "temperatura": p.temperatura, "quemFala": nomes.get(proximo, proximo) if proximo else None,
+            "influencia": influencia(p)["score"]}
 
 
 def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str]) -> dict | None:
@@ -67,68 +58,11 @@ def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dic
             "daArea": bool(da_area), "ponte": ponte}
 
 
-def _motivo_decide(dec: dict | None, vertical: str) -> list[str]:
-    if dec is None:
-        return []
-    rotulo = VERTICAL_LABEL[vertical]
-    if not dec["daArea"]:
-        texto = f"ainda não sabemos quem decide {rotulo} ({' / '.join(dec['areas'])})"
-        if dec["ponte"]:
-            texto += f" — {dec['ponte']['nome']} pode indicar"
-        return [texto]
-    alvo = dec["pessoas"][0]
-    if alvo["relacao"] >= 20:
-        return []
-    texto = f"quem decide {rotulo}: {alvo['nome']} ({alvo['cargo']}) — sem relação ainda"
-    if dec["ponte"]:
-        pt = dec["ponte"]
-        texto += f"; ponte: {pt['nome']}" + (f" (fala com {pt['quemFala']})" if pt["quemFala"] else "")
-    return [texto]
-
-
 def seguros_vigentes(e: Empresa | None) -> list[Negocio]:
     if e is None:
         return []
     return sorted((n for n in e.negocios if n.vigente and n.vertical),
                   key=lambda n: (n.vertical, n.produto or n.titulo or ""))
-
-
-def _momento(vigentes: list[Negocio], hoje: date) -> tuple[float, list[str]]:
-    melhor, motivos = 0.4, []
-    for n in vigentes:
-        if not n.fim_vigencia:
-            continue
-        dias = (n.fim_vigencia - hoje).days
-        nivel = 1.0 if 30 <= dias <= 120 else (0.7 if 0 <= dias < 30 else None)
-        if nivel is None:
-            continue
-        texto = f"renovação de {n.produto or VERTICAL_LABEL[n.vertical]} em {dias} dias — gancho para a conversa"
-        if nivel > melhor:
-            melhor, motivos = nivel, [texto]
-        elif nivel == melhor:
-            motivos.append(texto)
-    return melhor, motivos
-
-
-def _porte(n: Negocio, e: Empresa | None) -> tuple[float, int | None, str, list[str]]:
-    """Valor do porte (0–1), número usado, de onde veio e o motivo para o "Por quê"."""
-    import math
-
-    if n.vertical == "saude" and n.vidas:
-        numero, origem = n.vidas, "vidas no negócio"
-    elif e is not None and e.funcionarios:
-        numero, origem = e.funcionarios, f"funcionários {FONTE_FUNC.get(e.funcionarios_fonte or '', '')}".strip()
-    else:
-        return PORTE_DESCONHECIDO, None, "", []
-    valor = max(0.0, min(1.0, math.log10(max(numero, 1)) / 3))
-    texto = f"{numero:,}".replace(",", ".") + f" {origem}"
-    if n.vertical == "saude":
-        if numero >= 30:
-            return valor, numero, origem, [f"{texto}: porte para plano coletivo"]
-        if numero < 10:
-            return valor, numero, origem, [f"{texto}: porte pequeno para saúde coletivo"]
-        return valor, numero, origem, []
-    return valor, numero, origem, ([f"{texto}: empresa de grande porte"] if numero >= 200 else [])
 
 
 def _ponte(db: Session, pessoa_id: int | None, empresa_id: int | None) -> str | None:
@@ -148,47 +82,35 @@ def _proxima_atividade(db: Session, negocio_id: int) -> Atividade | None:
                      .order_by(Atividade.vencimento))
 
 
+def _funcionarios(n: Negocio | None, e: Empresa | None) -> tuple[int | None, str]:
+    if n is not None and n.vertical == "saude" and n.vidas:
+        return n.vidas, "vidas no negócio"
+    if e is not None and e.funcionarios:
+        return e.funcionarios, f"funcionários {FONTE_FUNC.get(e.funcionarios_fonte or '', '')}".strip()
+    return None, ""
+
+
+def _extras(e: Empresa | None, p: Pessoa | None, vertical: str | None, vigentes: list[Negocio]) -> list[dict]:
+    """Motivos que não saem dos critérios: reconquista e contato que mudou de empresa."""
+    saida = []
+    tem = {v.vertical for v in vigentes}
+    ex = [x for x in (e.negocios if e else []) if x.vertical == vertical and x.ex_cliente and x.fim_vigencia]
+    if ex and vertical not in tem:
+        fim = max(x.fim_vigencia for x in ex)
+        saida.append({"texto": f"já teve {VERTICAL_LABEL[vertical]} conosco até {fim:%m/%Y}: reconquista", "sinal": "+"})
+    if p is not None and mudou_de_empresa(p):
+        saida.append({"texto": f"LinkedIn: {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual}; confirmar o contato",
+                      "sinal": "!"})
+    return saida
+
+
 def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: date) -> dict:
     e, p = n.empresa, n.pessoa
+    contato = p or melhor_contato(e)
     vigentes = seguros_vigentes(e)
-    verticais_cli = {v.vertical for v in vigentes}
-    outras = verticais_cli - {n.vertical}
-
-    base = (p.score_relacionamento if p else (e.score_relacionamento if e else 0)) / 100
-    temp = p.temperatura if p else None
-    rel = max(0.0, min(1.0, base + AJUSTE_TEMPERATURA.get(temp or "", 0)))
-    vinc = min(1.0, (0.7 if len(outras) == 1 else 1.0 if len(outras) > 1 else 0) + (0.3 if n.vertical in verticais_cli else 0))
-    mom, mot_mom = _momento(vigentes, hoje)
-    porte, func, func_origem, mot_porte = _porte(n, e)
-    w_rel, w_vinc, w_mom, w_porte = PESOS.get(n.vertical if n.vertical == "saude" else None)
-
-    motivos = []
-    if outras:
-        motivos.append("já é cliente de " + ", ".join(VERTICAL_LABEL[v] for v in sorted(outras)) + " — cross sell")
-    if not vigentes:
-        motivos.append("lead: nenhum seguro vigente conosco")
-    ex = [x for x in (e.negocios if e else []) if x.vertical == n.vertical and x.ex_cliente and x.fim_vigencia]
-    if ex and n.vertical not in verticais_cli:
-        fim = max(x.fim_vigencia for x in ex)
-        motivos.append(f"já teve {VERTICAL_LABEL[n.vertical]} conosco até {fim:%m/%Y} — reconquista")
-    motivos += mot_mom + mot_porte
-    if e is not None and e.score_componentes.get("acesso_decisor"):
-        motivos.append("relação ativa com decisor")
-
-    if p is not None and mudou_de_empresa(p):
-        motivos.append(f"LinkedIn indica que {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual} — confirmar o contato")
-    relevantes = set(AREAS_VERTICAL.get(n.vertical, ())) | {"executivo", None}  # áreas que importam para o negócio
-    sem_relacao = [x for x in (e.pessoas if e else []) if x.fonte == "linkedin" and x.senioridade in DECISORES
-                   and not x.score_relacionamento and area_pessoa(x) in relevantes]
-    for x in sem_relacao[:2]:
-        motivos.append(f"decisor no LinkedIn sem relação ainda: {x.nome} ({x.linkedin_headline or x.cargo})")
-
-    decide = quem_decide(db, e, n.vertical, nomes)
-    motivos += _motivo_decide(decide, n.vertical) if n.vertical else []
-
-    ponte = _ponte(db, p.id if p else None, e.id if e else None)
-    if ponte and n.responsavel_email and ponte != n.responsavel_email:
-        motivos.append(f"{nomes.get(ponte, ponte)} tem relação com o contato — pode apresentar")
+    pot = potencial(n.vertical, e, contato, n)
+    inf = influencia(contato)
+    func, func_origem = _funcionarios(n, e)
 
     contatos = [c for c in (e.pessoas if e else []) if c.pipedrive_person_id]
     if p is not None and p.pipedrive_person_id and p not in contatos:
@@ -199,22 +121,22 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     return {
         "id": n.id, "pipedriveId": n.id_externo, "titulo": n.titulo, "produto": n.produto, "etapa": n.etapa,
         "funil": funil.get("nome"), "vertical": n.vertical, "valor": n.valor,
-        "score": round(100 * (w_rel * rel + w_vinc * vinc + w_mom * mom + w_porte * porte), 1),
-        "comp": {"relacionamento": round(rel, 3), "vinculo": round(vinc, 3), "momento": mom, "porte": round(porte, 3)},
+        "score": pot["score"], "criterios": pot["criterios"],
+        "influencia": inf["score"], "influenciaComp": inf,
         "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem}
         if e else None,
-        "pessoa": {"id": p.id, "nome": p.nome, "cargo": p.cargo, "temperatura": temp,
-                   "temperaturaMotivo": p.temperatura_motivo, "linkedin": p.linkedin_url,
-                   "headline": p.linkedin_headline} if p else None,
+        "pessoa": {"id": contato.id, "nome": contato.nome, "cargo": contato.cargo, "temperatura": contato.temperatura,
+                   "temperaturaMotivo": contato.temperatura_motivo, "linkedin": contato.linkedin_url,
+                   "headline": contato.linkedin_headline, "doNegocio": contato is p} if contato else None,
         "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
-        "quemDecide": decide,
+        "quemDecide": quem_decide(db, e, n.vertical, nomes),
         "vigentes": [{"vertical": v.vertical, "produto": v.produto or v.titulo, "fim": v.fim_vigencia.isoformat() if v.fim_vigencia else None,
                       "fonte": v.fonte} for v in vigentes],
         "saude": {"zeca": any(v.vertical == "saude" and v.fonte == "zeca" for v in vigentes),
                   "manual": bool(saude_manual and saude_manual.status == "ativo")},
         "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
                       "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in (e.noticias[:3] if e else [])],
-        "motivos": motivos, "ponte": ponte, "dono": n.responsavel_email,
+        "motivos": _extras(e, p, n.vertical, vigentes) + motivos_potencial(pot), "dono": n.responsavel_email,
         "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                              "responsavel": prox.responsavel.email} if prox else None,
     }
@@ -232,50 +154,46 @@ def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[di
 
 
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
-    """Clientes (seguro vigente em alguma vertical) sem seguro nem negócio aberto em outra vertical.
-
-    score = 100 × (40% relação com a empresa + 25% porte + 20% vínculo + 15% sabemos quem decide)
-    """
-    import math
-
+    """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente)
+    e para leads que já estão sendo trabalhados em outra vertical (negócio aberto nos funis da tabela).
+    Ordenadas pelo Potencial na vertical da oportunidade."""
     hoje = hoje or date.today()
+    funis = settings.pipelines()
+    da_tabela = [pid for pid, f in funis.items() if f["tabela"]]
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
     ids = set(db.scalars(select(Negocio.empresa_id).where(Negocio.empresa_id.is_not(None))))
     saida = []
     for e in db.scalars(select(Empresa).where(Empresa.id.in_(ids))):
         vigentes = seguros_vigentes(e)
-        if not vigentes:
+        # Canais Parceria (sem vertical) são parceiros, não leads de seguro: não geram oportunidade
+        abertos_tabela = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive"
+                          and n.pipeline_id in da_tabela and n.vertical]
+        if not vigentes and not abertos_tabela:
             continue
         tem = {v.vertical for v in vigentes}
-        abertos = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
-        porte = math.log10(max(e.funcionarios, 1)) / 3 if e.funcionarios else PORTE_DESCONHECIDO
-        porte = max(0.0, min(1.0, porte))
+        negociando = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
         for v in VERTICAIS:
-            if v in tem or v in abertos:
+            if v in tem or v in negociando:
                 continue
             decide = quem_decide(db, e, v, nomes)
-            motivos = ["já é cliente de " + ", ".join(VERTICAL_LABEL[x] for x in sorted(tem))]
-            ex = [x for x in e.negocios if x.vertical == v and x.ex_cliente and x.fim_vigencia]
-            if ex:
-                motivos.append(f"já teve {VERTICAL_LABEL[v]} conosco até {max(x.fim_vigencia for x in ex):%m/%Y} — reconquista")
-            if e.funcionarios:
-                origem = FONTE_FUNC.get(e.funcionarios_fonte or "", "")
-                motivos.append(f"{e.funcionarios:,}".replace(",", ".") + f" funcionários {origem}".rstrip())
-            motivos += _motivo_decide(decide, v)
-            rel = (e.score_relacionamento or 0) / 100
-            vinc = min(1.0, len(tem) / 2)
-            conhece = 1.0 if decide and decide["daArea"] else 0.0
+            alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
+            contato = alvo or melhor_contato(e)
+            pot = potencial(v, e, contato)
             prox = db.scalar(select(Atividade).where(Atividade.empresa_id == e.id, Atividade.negocio_id.is_(None),
                                                      Atividade.concluida.is_(False)).order_by(Atividade.vencimento))
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
+            func, func_origem = _funcionarios(None, e)
             saida.append({
                 "id": f"{e.id}-{v}", "vertical": v, "verticalNome": VERTICAL_LABEL[v],
-                "score": round(100 * (0.40 * rel + 0.25 * porte + 0.20 * vinc + 0.15 * conhece), 1),
-                "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": e.funcionarios,
+                "score": pot["score"], "criterios": pot["criterios"],
+                "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
+                "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
                             "noPipedrive": bool(e.pipedrive_org_id)},
                 "vigentes": [{"vertical": x.vertical, "produto": x.produto or x.titulo,
                               "fim": x.fim_vigencia.isoformat() if x.fim_vigencia else None} for x in vigentes],
-                "quemDecide": decide, "motivos": motivos,
+                "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
+                                "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos_tabela],
+                "quemDecide": decide, "motivos": _extras(e, None, v, vigentes) + motivos_potencial(pot),
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,

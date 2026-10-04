@@ -98,6 +98,8 @@ def resultado(id_alvo: str, tipo: str, acao: str, area: str | None, completion) 
     return {**base, "linkedin_url": d.get("publicUrl") or "", "nome": d.get("name") or "",
             "setor": d.get("industry") or "", "funcionarios": d.get("employeesCount"),
             "site": d.get("website") or "", "sede": d.get("headquarters") or d.get("location") or "",
+            "descricao": " · ".join(x for x in (d.get("description"), d.get("specialties")) if x),
+            "investida": d.get("ventureFinancing"),
             "decisores": [_pessoa_curta(x) for x in _lista(then.get("st.retrieveCompanyDMs"))],
             "posts": [{"texto": p.get("text") or "", "data": p.get("time") or "", "url": p.get("url") or ""}
                       for p in _lista(then.get("st.retrieveCompanyPosts"))]}

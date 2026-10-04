@@ -1,0 +1,62 @@
+# Critérios de um bom negócio por vertical (Potencial, 0–100).
+# Pesos somam 100 em cada vertical. As listas são palavras procuradas (sem acento, minúsculas)
+# no setor do LinkedIn, no CNAE da Receita, na descrição da empresa no LinkedIn e no nome.
+# Edite à vontade: vale na próxima abertura da tabela.
+
+influencia:
+  # Score de Influência = relacionamento (e-mails, ajustado pela temperatura) + hierarquia do cargo
+  pesos: {relacionamento: 50, hierarquia: 50}
+  hierarquia:
+    socio: 1.0
+    c_level: 1.0
+    diretor: 0.8
+    gerente: 0.55
+    outro: 0.3
+    desconhecido: 0.25
+
+saude:
+  pesos: {influencia: 30, funcionarios: 25, qualificacao: 20, localizacao: 15, rh: 10}
+  # Time qualificado: planos melhores, prêmios e comissões maiores
+  qualificacao_alta: [startup, fintech, fundo de investimento, fundos de investimento, gestora, asset, private equity,
+    venture capital, multinacional, multinational, global, tecnologia, technology, software, saas, internet,
+    desenvolvimento de programas, farmac, pharma, medicamento, biotec, consultoria, banco, financeir, advocacia,
+    servicos juridicos, auditoria]
+  # Costumam pagar planos piores. "baixa_sempre" vale mesmo com palavra da lista alta
+  # (ex.: varejo farmacêutico); "baixa" perde para a alta (ex.: indústria farmacêutica).
+  qualificacao_baixa_sempre: [varejo, supermercado, comercio varejista, loja, atacad, restaurante, lanchonete,
+    bar e restaurante, vigilancia, limpeza]
+  qualificacao_baixa: [industria, fabricacao, manufatura, metalurg, transporte, transportadora, logistic,
+    alimentacao, construcao]
+  # Fora das capitais e regiões metropolitanas: Unimed local forte, que não trabalha com corretora
+  metropoles: [sao paulo, barueri, osasco, santana de parnaiba, santo andre, sao bernardo do campo, sao caetano do sul,
+    guarulhos, diadema, cotia, taboao da serra, carapicuiba, embu das artes, alphaville, rio de janeiro, niteroi,
+    duque de caxias, nova iguacu, sao goncalo, belo horizonte, contagem, betim, nova lima, curitiba,
+    sao jose dos pinhais, porto alegre, canoas, florianopolis, sao jose, brasilia, goiania, salvador, recife,
+    jaboatao dos guararapes, fortaleza, belem, manaus, vitoria, vila velha, serra, natal, joao pessoa, maceio,
+    aracaju, teresina, sao luis, campo grande, cuiaba, porto velho, rio branco, macapa, boa vista, palmas]
+  # RH que olha para cultura, benefícios e processos
+  rh_bom: [cultura, beneficios, benefits, people, pessoas, employee experience, clima, engajamento, processos,
+    desenvolvimento humano, talent, talentos, business partner, total rewards, remuneracao]
+  rh_basico: [assistente, auxiliar, departamento pessoal, folha de pagamento, dp]
+
+linhas_financeiras:
+  pesos: {influencia: 35, produto: 65}
+  # E&O: serviços intelectuais
+  eo: [advocacia, advogad, juridic, contab, contador, tecnologia, technology, software, saas, ti, desenvolvimento de programas,
+    hospital, clinica, medic, saude, laboratorio, ciberseguranca, cybersecurity, seguranca da informacao, consultoria,
+    engenharia, arquitetura, auditoria, corretora]
+  # D&O: gestão profissional, aporte, conselho
+  aporte: [aporte, captacao, capta, rodada, serie a, serie b, investimento, ipo, conselho, venture, fundo]
+  fundo: [fundo de investimento, fundos de investimento, gestora de recursos, gestora, asset, private equity,
+    venture capital, administracao de fundos, holdings de instituicoes]
+  # Cyber: quem tem CTO ou DPO
+  cyber_cargos: [cto, chief technology, dpo, data protection, encarregado de dados, privacidade, privacy, ciso,
+    seguranca da informacao, information security]
+  cyber_setor: [tecnologia, software, saas, fintech, financeir, banco, pagamento, e-commerce, ecommerce, varejo online,
+    hospital, clinica, laboratorio, saude, telecom]
+
+ramos_elementares:
+  pesos: {influencia: 30, perfil: 45, porte: 25}
+  # Quem move o ponteiro: galpões, indústrias, transportadoras
+  perfil_forte: [galpao, armazem, armazenagem, centro de distribuicao, logistic, industria, fabricacao, manufatura,
+    metalurg, quimic, plastic, alimentos, frigorific, papel, textil, tecelagem, transporte, transportadora, frota]

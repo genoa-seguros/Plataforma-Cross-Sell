@@ -51,6 +51,19 @@ EMPRESAS = [
     ("Rede Farmácias Vida Plena", "4771701 - Farmácias", "DEMAIS", 1300, [(1, "D&O", 150), (29, "Empresarial", 200)], [], "muita"),
     ("Têxtil Fio Nobre", "1321900 - Tecelagem", "DEMAIS", 520, [(1, "D&O", 90)], [], "media"),
 ]
+# Cidade/UF (padrão São Paulo/SP) e dados de LinkedIn/Receita que alimentam os critérios das verticais
+CIDADES = {"Alimentos Serra Azul": ("Chapecó", "SC"), "Têxtil Fio Nobre": ("Blumenau", "SC"),
+           "Construtora Pedra Alta": ("Campinas", "SP"), "Energia Ventos do Norte": ("Natal", "RN"),
+           "Logística Ponto Certo": ("Cajamar", "SP"), "Hotel Mar Aberto": ("Ubatuba", "SP")}
+EXTRAS = {
+    "Fintech Ágil Pagamentos": {"setor": "Serviços financeiros", "descricao": "Fintech de pagamentos para PMEs", "investida": True,
+                                "natureza_juridica": "205-4 - Sociedade Anônima Fechada"},
+    "Grupo Vértice Tecnologia": {"setor": "Desenvolvimento de software", "natureza_juridica": "205-4 - Sociedade Anônima Fechada"},
+    "Laboratório Prisma": {"setor": "Indústria farmacêutica", "descricao": "Farmacêutica multinacional com operação no Brasil"},
+    "Rede Farmácias Vida Plena": {"setor": "Varejo farmacêutico"},
+    "Clínica Horizonte": {"setor": "Hospitais e assistência médica"},
+    "Logística Ponto Certo": {"descricao": "Galpões logísticos e centro de distribuição"},
+}
 NOMES = ["Ana Ribeiro", "Carlos Menezes", "Juliana Prado", "Marcos Teixeira", "Fernanda Lopes", "Rafael Duarte",
          "Patrícia Nogueira", "Eduardo Campos", "Luciana Barros", "Gustavo Pires", "Renata Moraes", "Thiago Rocha",
          "Beatriz Carvalho", "André Fontes", "Camila Freitas", "Rodrigo Sales", "Helena Martins", "Bruno Vieira",
@@ -87,7 +100,9 @@ def main():
     for i, (nome, cnae, porte, func, ganhos, abertos, temp) in enumerate(EMPRESAS):
         dominio = normalizar_nome_empresa(nome).replace(" ", "") + ".exemplo.com.br"
         e = Empresa(razao_social=f"{nome} (exemplo)", nome_normalizado=normalizar_nome_empresa(nome), cnpj=cnpj_ficticio(i),
-                    dominio=dominio, cnae=cnae, porte=porte, funcionarios=func, cidade="São Paulo", uf="SP",
+                    dominio=dominio, cnae=cnae, porte=porte, funcionarios=func,
+                    cidade=CIDADES.get(nome, ("São Paulo", "SP"))[0], uf=CIDADES.get(nome, ("São Paulo", "SP"))[1],
+                    **EXTRAS.get(nome, {}),
                     pipedrive_org_id=500 + i, noticias_em=AGORA,
                     funcionarios_fonte="linkedin" if i % 3 != 2 else "pipedrive")
         db.add(e)
@@ -153,7 +168,9 @@ def main():
             p.linkedin_em = AGORA
     for i, (nome, cargo) in [(0, ("Marta Reis", "Diretora Jurídica")), (3, ("Fábio Monteiro", "CEO")),
                               (6, ("Cláudia Tavares", "Diretora de Pessoas")),
-                              (14, ("Simone Arruda", "Head de Pessoas e Benefícios"))]:
+                              (14, ("Simone Arruda", "Head de Pessoas e Benefícios")),
+                              (3, ("Igor Matos", "CTO")), (10, ("Nina Prado", "DPO · Encarregada de Dados")),
+                              (4, ("Rose Lima", "Assistente de Departamento Pessoal"))]:
         e = empresas[i]
         db.add(Pessoa(nome=nome, nome_normalizado=normalizar_nome_pessoa(nome), empresa_id=e.id, cargo=cargo,
                       senioridade=classificar_senioridade(cargo), fonte="linkedin", linkedin_url=f"https://www.linkedin.com/in/exemplo-dm-{i}",

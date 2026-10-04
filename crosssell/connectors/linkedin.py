@@ -353,6 +353,10 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
         e.dominio = e.dominio or dominio_site(_txt(r, "site"))
     if _txt(r, "sede") and not e.cidade:
         e.cidade = _txt(r, "sede")
+    if _txt(r, "descricao"):
+        e.descricao = _txt(r, "descricao")[:2000]
+    if isinstance(r.get("investida"), bool):
+        e.investida = r["investida"]
     novos = 0
     for d in _lista(r.get("decisores"))[:20]:
         nome = d.get("nome") or d.get("name")

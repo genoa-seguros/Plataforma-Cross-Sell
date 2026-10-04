@@ -135,9 +135,10 @@ def rotina(dias: int = 2):
     from crosssell.connectors import linkedin as lk
 
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("emails", lambda: emails(dias=dias, temperatura=True)),
-              ("noticias", lambda: noticias(horas=24)), ("linkedin-sites", linkedin_sites), ("recalcular", recalcular)]
+              ("noticias", lambda: noticias(horas=24)), ("receita", lambda: enriquecer(limite=50)),
+              ("linkedin-sites", linkedin_sites), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
-        passos.insert(4, ("linkedin", linkedin))
+        passos.insert(5, ("linkedin", linkedin))
     for nome, fn in passos:
         try:
             fn()

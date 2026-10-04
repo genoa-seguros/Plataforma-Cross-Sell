@@ -50,6 +50,14 @@ class GraphClient:
             self._token = r.json()["access_token"]
         return self._token
 
+    def enviar(self, remetente: str, para: str, assunto: str, html: str) -> None:
+        """Envia um e-mail pela caixa `remetente` (permissão de aplicativo Mail.Send)."""
+        r = self.http.post(f"{GRAPH}/users/{remetente}/sendMail", headers={"Authorization": f"Bearer {self.token()}"},
+                           json={"message": {"subject": assunto, "body": {"contentType": "HTML", "content": html},
+                                             "toRecipients": [{"emailAddress": {"address": para}}]},
+                                 "saveToSentItems": False})
+        r.raise_for_status()
+
     def mensagens(self, usuario: str, desde: datetime) -> Iterator[dict]:
         url = f"{GRAPH}/users/{usuario}/messages"
         params = {

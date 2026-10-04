@@ -42,12 +42,13 @@ def test_tabela_so_negocios_abertos_dos_funis_escolhidos(db, settings):
     assert {x["pipedriveId"] for x in linhas} == {"4", "5", "11"}  # 40, 38 e 31 ficam de fora
     pipo = next(x for x in linhas if x["pipedriveId"] == "11")
     assert pipo["empresa"]["funcionarios"] == 500 and pipo["empresa"]["funcionariosOrigem"] == "vidas no negócio"
-    assert any("500 vidas no negócio: porte para plano coletivo" in m for m in pipo["motivos"])
+    assert any(m["texto"] == "500 vidas: empresa grande" and m["sinal"] == "+" for m in pipo["motivos"])
     alfa = next(x for x in linhas if x["pipedriveId"] == "4")
     assert [(v["vertical"], v["produto"]) for v in alfa["vigentes"]] == [("linhas_financeiras", "D&O")]
     assert alfa["funil"] == "RE" and alfa["dono"] == "bruno.rodrigues@innoaseguros.com.br"
-    assert any("já é cliente de Linhas Financeiras" in m for m in alfa["motivos"])
-    assert any("renovação de D&O" in m for m in alfa["motivos"])
+    # "Por quê" sem redundância: o que já aparece em Seguros vigentes não se repete
+    assert not any("cliente" in m["texto"] or "renovação" in m["texto"] for m in alfa["motivos"])
+    assert alfa["pessoa"]["nome"] == "Ana Souza" and 0 < alfa["influencia"] <= 100
     beta = next(x for x in linhas if x["pipedriveId"] == "5")
     # "Já possui o seguro saúde na Genoa?" = Sim -> Saúde vigente por marcação
     assert [v["fonte"] for v in beta["vigentes"]] == ["manual"] and beta["saude"]["manual"]
@@ -78,7 +79,7 @@ def test_atividade_dentro_da_pessoa_e_todos(db, settings):
     bruno = db.scalar(select(Usuario).where(Usuario.email.like("bruno%")))
     assert victor.pipedrive_user_id == 1 and bruno.pipedrive_user_id == 2
     n, ana = neg(db, 4), db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
-    venc = HOJE + timedelta(days=(4 - HOJE.weekday()) % 7)  # sexta desta semana
+    venc = tabela.semana(HOJE)[1]  # sexta da semana de hoje (no fim de semana, a que passou)
     at = pipedrive.criar_atividade(db, client, negocio=n, pessoa_id=ana.id, assunto="Apresentar Empresarial",
                                    vencimento=venc, responsavel=bruno, criada_por=victor, tipo="call")
     enviada = fake.criadas[0]
@@ -169,3 +170,23 @@ def test_noticias_rss():
     assert itens[0]["titulo"] == "Metalúrgica Alfa investe R$ 50 mi em nova fábrica" and itens[0]["fonte"] == "Valor"
     assert noticias._cita(itens[0]["titulo"], "metalurgica alfa")
     assert not noticias._cita(itens[1]["titulo"], "metalurgica alfa")
+
+
+def test_oportunidades_incluem_leads_em_negociacao(db, settings):
+    carregar(db, settings)
+    lead = Empresa(razao_social="Gama Tech SA", nome_normalizado="gama tech", setor="Software", funcionarios=300,
+                   cidade="São Paulo", uf="SP")
+    parceiro = Empresa(razao_social="Corretora Parceira", nome_normalizado="corretora parceira")
+    db.add_all([lead, parceiro])
+    db.flush()
+    db.add_all([Negocio(empresa=lead, vertical="linhas_financeiras", fonte="pipedrive", id_externo="900", pipeline_id=1,
+                        status="aberto", titulo="D&O 2026", produto="D&O"),
+                Negocio(empresa=parceiro, vertical=None, fonte="pipedrive", id_externo="901", pipeline_id=39,
+                        status="aberto", titulo="Canal")])
+    db.commit()
+    ops = {(o["empresa"]["nome"], o["vertical"]): o for o in tabela.oportunidades(db, settings)}
+    assert ("Gama Tech SA", "saude") in ops and ("Gama Tech SA", "ramos_elementares") in ops
+    saude = ops[("Gama Tech SA", "saude")]
+    assert saude["cliente"] is False and [n["produto"] for n in saude["negociando"]] == ["D&O"]
+    assert any("time qualificado" in m["texto"] for m in saude["motivos"])
+    assert not any(nome == "Corretora Parceira" for nome, _ in ops)  # canal de parceria não é lead de seguro

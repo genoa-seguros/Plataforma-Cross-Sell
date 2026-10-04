@@ -159,7 +159,7 @@ def test_rodadas_buscam_leem_e_procuram_rh(db, settings):
     # Na linha de Saúde da Alfa aparece quem decide (RH) e, sem relação, a ponte
     pipo = next(x for x in tabela.montar(db, s) if x["pipedriveId"] == "11")
     assert [p["nome"] for p in pipo["quemDecide"]["pessoas"]] == ["Carla Mendes"]
-    assert any("quem decide Saúde: Carla Mendes" in m for m in pipo["motivos"])
+    assert any(m["texto"].startswith("RH estruturado: Carla Mendes") for m in pipo["motivos"])
     assert "rh" not in {a.get("area") for a in lk.alvos(db, s)}  # não procura RH de novo
 
 

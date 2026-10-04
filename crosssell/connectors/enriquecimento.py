@@ -57,6 +57,8 @@ def enriquecer_receita(db: Session, empresa: Empresa, http: httpx.Client | None 
     empresa.nome_fantasia = empresa.nome_fantasia or d.get("nome_fantasia") or None
     empresa.cnae = f"{d.get('cnae_fiscal')} - {d.get('cnae_fiscal_descricao')}" if d.get("cnae_fiscal") else empresa.cnae
     empresa.porte = d.get("porte") or empresa.porte
+    if d.get("natureza_juridica"):
+        empresa.natureza_juridica = f"{d.get('codigo_natureza_juridica') or ''} - {d['natureza_juridica']}".strip(" -")
     empresa.capital_social = d.get("capital_social") or empresa.capital_social
     empresa.cidade = d.get("municipio") or empresa.cidade
     empresa.uf = d.get("uf") or empresa.uf

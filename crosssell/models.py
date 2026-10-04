@@ -32,6 +32,9 @@ class Empresa(Base):
     linkedin_url: Mapped[str | None]
     setor: Mapped[str | None]
     cnae: Mapped[str | None]
+    natureza_juridica: Mapped[str | None]  # Receita (ex.: "205-4 - Sociedade Anônima Fechada")
+    descricao: Mapped[str | None]  # "Sobre" e especialidades da página do LinkedIn
+    investida: Mapped[bool | None]  # LinkedIn: recebeu investimento de venture capital
     porte: Mapped[str | None]
     funcionarios: Mapped[int | None]
     funcionarios_fonte: Mapped[str | None]  # linkedin | pipedrive | planilha
@@ -107,6 +110,8 @@ class Usuario(Base):
     senha_hash: Mapped[str | None]
     convite_token: Mapped[str | None] = mapped_column(unique=True)
     convite_expira: Mapped[datetime | None]
+    redefinir_token: Mapped[str | None] = mapped_column(unique=True)  # "esqueci minha senha" (hash)
+    redefinir_expira: Mapped[datetime | None]
     verticais: Mapped[list] = mapped_column(JSON, default=list)
     lider: Mapped[list] = mapped_column(JSON, default=list)
     pipedrive_user_id: Mapped[int | None]

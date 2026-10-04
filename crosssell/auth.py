@@ -3,6 +3,8 @@
 - Senhas: scrypt (stdlib) com sal aleatório.
 - Sessão: token aleatório no cookie; no banco fica só o hash (revogável).
 - Convite: o master gera um link de uso único; a pessoa define a senha nele.
+- Esqueci a senha: link de uso único que vale 1 hora, enviado ao e-mail da pessoa
+  (ou gerado pelo master na tela Equipe). Trocar a senha encerra as sessões abertas.
   Desconvidar desativa o usuário, encerra as sessões e para a leitura dos e-mails.
 """
 
@@ -18,6 +20,8 @@ from crosssell.models import Sessao, Usuario
 
 COOKIE = "cs_sessao"
 CONVITE_DIAS = 7
+REDEFINIR_VALIDADE = timedelta(hours=1)
+REDEFINIR_INTERVALO = timedelta(minutes=2)  # evita disparos repetidos do mesmo pedido
 SENHA_MIN = 10
 
 
@@ -111,5 +115,36 @@ def aceitar_convite(db: Session, usuario: Usuario, senha: str) -> None:
 def desconvidar(db: Session, usuario: Usuario) -> None:
     usuario.ativo = False
     usuario.convite_token = None
+    db.execute(delete(Sessao).where(Sessao.usuario_id == usuario.id))
+    db.commit()
+
+
+def pedir_redefinicao(db: Session, email: str, agora: datetime | None = None) -> tuple[Usuario, str] | None:
+    """Gera o link de nova senha. None se o e-mail não for de um usuário ativo com senha
+    (a tela responde igual nos dois casos, para não revelar quem tem acesso)."""
+    agora = agora or datetime.utcnow()
+    u = db.scalar(select(Usuario).where(Usuario.email == email.strip().lower()))
+    if u is None or not u.ativo or not u.senha_hash:
+        return None
+    if u.redefinir_expira and u.redefinir_expira - REDEFINIR_VALIDADE > agora - REDEFINIR_INTERVALO:
+        return None  # pedido repetido em poucos minutos
+    token = secrets.token_urlsafe(24)
+    u.redefinir_token = _hash_token(token)
+    u.redefinir_expira = agora + REDEFINIR_VALIDADE
+    db.commit()
+    return u, token
+
+
+def usuario_da_redefinicao(db: Session, token: str) -> Usuario | None:
+    u = db.scalar(select(Usuario).where(Usuario.redefinir_token == _hash_token(token)))
+    if u is None or not u.ativo or not u.redefinir_expira or u.redefinir_expira < datetime.utcnow():
+        return None
+    return u
+
+
+def redefinir_senha(db: Session, usuario: Usuario, senha: str) -> None:
+    usuario.senha_hash = hash_senha(senha)
+    usuario.redefinir_token = None
+    usuario.redefinir_expira = None
     db.execute(delete(Sessao).where(Sessao.usuario_id == usuario.id))
     db.commit()

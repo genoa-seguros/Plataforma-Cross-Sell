@@ -7,22 +7,26 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 
 ## Telas
 
+- **Login**: e-mail e senha, com *Esqueci minha senha* (link de uso único por e-mail, vale 1 hora;
+  o master também gera esse link na tela Equipe).
 - **Negócios**: uma linha por negócio **aberto** nos funis Linhas Financeiras (1), RE (29),
   Saúde (23), Pipo Saúde (34) e Canais Parceria (39). Os funis Garantia (40), Flash
-  Benefícios (38) e M&A (31) ficam fora da tabela. Colunas:
+  Benefícios (38) e M&A (31) ficam fora da tabela. Ordenada pelo **Potencial**. Colunas:
+  - **Potencial** (critérios da vertical) e, abaixo, o **Score de Influência** do contato.
   - **Cliente/Lead**: é *cliente* quem tem ao menos um seguro vigente.
   - **Temperatura**: Pouca, Média ou Muita abertura, calculada pela IA a partir da escrita do contato.
   - **Seguros vigentes**, por produto (D&O, Cyber, Empresarial…). Inclui a caixa *Cliente
     Saúde (fora da planilha)* para quem não aparece na exportação do Zeca.
   - **Negócio aberto**: funil, título, etapa e valor.
-  - **Por quê**: cross sell, renovação próxima, reconquista e acesso a decisor.
+  - **Por quê**: só o que não aparece em outra coluna: critérios a favor (+), contra (−) e sem
+    informação (?), reconquista e contato que mudou de empresa.
   - **Notícias**: principais manchetes recentes.
-  - **Relação**: quem apresenta (tem mais e-mails com o contato), quem atende (dono do negócio) e
-    **quem decide** a vertical do negócio (pela área do cargo) com a **ponte**, quando ninguém
-    dessa área tem relação com a equipe.
+  - **Quem decide** a vertical do negócio (pela área do cargo), com a influência de cada pessoa e a
+    **ponte** quando ninguém dessa área tem relação com a equipe.
   - **Próximo passo**: a próxima atividade e o botão *Criar atividade*.
-- **Oportunidades**: clientes com seguro vigente numa vertical e sem seguro nem negócio aberto
-  em outra (ex.: tem D&O, não tem Saúde). Mostra quem decide, a ponte e o porte; *Criar
+- **Oportunidades**: clientes (seguro vigente) e leads em negociação numa vertical que ainda não
+  têm seguro nem negócio aberto em outra (ex.: tem D&O, não tem Saúde), ordenados pelo Potencial
+  na vertical da oportunidade. Mostra quem decide, a ponte e o porte; *Criar
   atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
@@ -43,15 +47,22 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
   Benefícios; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos,
   Financeiro. Sem ninguém da área, vale o executivo (CEO, sócio). A ponte é o contato da empresa
   com relação mais forte com alguém da equipe.
-- **Score** = relacionamento + vínculo + momento + porte. Em Saúde os pesos são 35/25/15/25;
-  nas demais verticais, 40/30/20/10.
-  - *Relacionamento*: frequência, recência, reciprocidade e amplitude dos e-mails com o
-    contato, ajustados pela temperatura.
-  - *Vínculo*: seguros vigentes em outras verticais (cross sell) e/ou na mesma.
-  - *Momento*: renovação de algum seguro vigente em 30–120 dias.
-  - *Porte*: em negócios de Saúde, as vidas informadas no negócio ("Quantidade de Vidas" ou
-    "Faixa de Vidas"). Nos demais, o número de funcionários, e o do LinkedIn prevalece sobre o
-    do Pipedrive. A escala é logarítmica: 10 → 0,33, 100 → 0,67, 1.000 ou mais → 1.
+- **Score de Influência** (0–100) = 50% relacionamento por e-mail (frequência, recência,
+  reciprocidade e amplitude, ajustado pela temperatura) + 50% hierarquia do cargo (sócio/C-level 1,0;
+  diretor/head 0,8; gerente/coordenador 0,55; demais 0,3).
+- **Potencial** (0–100), pesos e palavras em [`config/criterios.yaml`](config/criterios.yaml)
+  (editável; vale sem reiniciar):
+  - *Saúde*: influência 30, funcionários (ou vidas) 25, qualificação do time 20 (startups,
+    fintechs, fundos, multinacionais, tecnologia, farmacêuticas × indústria, transporte, varejo,
+    restaurantes), localização 15 (interior perde para a Unimed local) e RH estruturado 10.
+  - *Linhas Financeiras*: influência 35 e encaixe do produto 65. E&O: serviço intelectual
+    (advocacia, contabilidade, tecnologia, saúde, consultoria). D&O: gestão profissional (venture
+    capital, aporte/conselho nas notícias, S.A., diretoria executiva, porte); fundos e gestoras:
+    IMI. Cyber: CTO ou DPO na empresa, setor com muitos dados.
+  - *RE*: influência 30, perfil 45 (galpões, indústrias, transportadoras; empresa grande em
+    escritório: empresarial e fiança) e porte 25.
+  - Dados usados: setor e descrição do LinkedIn, CNAE e natureza jurídica da Receita, cidade/UF,
+    funcionários, cargos das pessoas e notícias.
 
 ## Integrações
 
@@ -59,7 +70,7 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 |---|---|---|
 | Pipedrive | API v2 (sincronização incremental) | organizações, pessoas, negócios, etapas, usuários; escreve atividades |
 | Zeca | importação de CSV/XLSX | apólices de Saúde (ausência numa carga completa = cancelada/migrou) |
-| Microsoft 365 | Microsoft Graph (permissão de aplicativo `Mail.Read`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
+| Microsoft 365 | Microsoft Graph (permissões de aplicativo `Mail.Read` e `Mail.Send`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
 | LinkedIn | Linked API, chamada direto (`api.linkedapi.io`) | perfis, cargos, decisores, funcionários da área que decide, posts, nº de funcionários; aviso de contato que mudou de empresa |
@@ -139,7 +150,8 @@ pytest
 
 - [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,
       `api.anthropic.com`, `api.linkedapi.io`, `news.google.com` e `brasilapi.com.br`.
-- [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 e chave da Claude API.
+- [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 (`Mail.Read` e
+      `Mail.Send`, com `EMAIL_REMETENTE` para o link de nova senha) e chave da Claude API.
 - [ ] Tokens da Linked API (gerar novos antes de produção; os de teste foram expostos).
 - [ ] Exportação real do Zeca para ajustar os cabeçalhos em `config/verticais.yaml`.
 - [ ] Hospedagem (Postgres + container com HTTPS).

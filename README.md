@@ -31,6 +31,11 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
+- **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Organizações
+  duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
+  botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta.
+  *Razão social*: nome da organização × razão social da Receita (pelo CNPJ), editável, com
+  *Atualizar no Pipedrive*. Nada muda no Pipedrive sem aprovação.
 - **Equipe** (só o master): convidar e remover pessoas. Usuário ativo tem os e-mails lidos.
 - **Ficha da empresa**: seguros vigentes, pessoas e temperatura, histórico de produtos e notícias.
 
@@ -41,8 +46,10 @@ dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
   cancelamento (título com "cancelamento" ou valor negativo) não conta.
 - **Produto**: campos "Produtos Responsabilidade", "Produtos RE", "Produto Vertical Saúde" e
   "Produto Foco", nessa ordem. Sem nenhum deles, usa o título sem o ano.
-- **Saúde**: é cliente quem tem apólice ativa no Zeca, quem foi marcado na caixa da tabela ou
-  quem tem "Já possui o seguro saúde na Genoa?" = Sim em algum negócio.
+- **Saúde** não tem fim de vigência (o contrato vale até o cliente cancelar): é cliente quem tem
+  negócio de Saúde **ganho** no Pipedrive, apólice ativa no Zeca, "Já possui o seguro saúde na
+  Genoa?" = Sim ou a caixa marcada na tabela. Quando cancelar, a equipe desmarca *Ainda é cliente
+  Saúde* e a empresa vira reconquista.
 - **Quem decide**: a área sai do cargo (Pipedrive) ou do título do LinkedIn. Saúde → RH/Pessoas/
   Benefícios; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos,
   Financeiro. Sem ninguém da área, vale o executivo (CEO, sócio). A ponte é o contato da empresa
@@ -119,6 +126,7 @@ crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell noticias                # diário
 crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário
+crosssell qualidade               # semanal (a rotina já roda): duplicadas e razão social
 crosssell importar zeca arquivo.xlsx   # quando houver nova exportação
 ```
 

@@ -23,7 +23,8 @@ class Empresa(Base):
     __tablename__ = "empresas"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    cnpj: Mapped[str | None] = mapped_column(String(14), unique=True, index=True)
+    cnpj: Mapped[str | None] = mapped_column(String(14), index=True)  # repetido = organização duplicada
+    razao_receita: Mapped[str | None]  # razão social oficial (Receita), para completar o nome no Pipedrive
     razao_social: Mapped[str]
     nome_fantasia: Mapped[str | None]
     nome_normalizado: Mapped[str] = mapped_column(index=True)
@@ -285,3 +286,13 @@ class LinkedinPedido(Base):
     concluido_em: Mapped[datetime | None] = mapped_column(index=True)
     situacao: Mapped[str] = mapped_column(default="pendente")  # pendente | aplicado | erro | expirado
     erro: Mapped[str | None]
+
+
+class QualidadeIgnorada(Base):
+    """Sugestão da aba Qualidade que o master marcou como "não é problema" (ex.: matriz e filial)."""
+
+    __tablename__ = "qualidade_ignoradas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chave: Mapped[str] = mapped_column(unique=True)  # dup:<ids> | razao:<empresa_id>
+    em: Mapped[datetime] = mapped_column(default=_now)

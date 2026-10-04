@@ -54,6 +54,17 @@ class PipedriveClient:
         r.raise_for_status()
         return r.json()["data"]
 
+    def mesclar_organizacao(self, org_id: int, manter_id: int) -> dict:
+        """Mescla `org_id` em `manter_id` (o Pipedrive move negócios, pessoas, atividades e notas)."""
+        r = self.http.put(f"/v1/organizations/{org_id}/merge", json={"merge_with_id": manter_id})
+        r.raise_for_status()
+        return r.json().get("data") or {}
+
+    def atualizar_organizacao(self, org_id: int, dados: dict) -> dict:
+        r = self.http.patch(f"/v2/organizations/{org_id}", json=dados)
+        r.raise_for_status()
+        return r.json().get("data") or {}
+
     def atualizar_atividade(self, atividade_id: int, dados: dict) -> dict:
         r = self.http.patch(f"/v2/activities/{atividade_id}", json=dados)
         r.raise_for_status()

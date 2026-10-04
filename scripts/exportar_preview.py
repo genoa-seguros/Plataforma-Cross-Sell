@@ -14,7 +14,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from crosssell import tabela
+from crosssell import qualidade, tabela
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.db import SessionLocal, init_db
@@ -46,6 +46,7 @@ def exportar(como: str | None) -> dict:
         "equipe": [webapp._usuario_json(u) for u in usuarios],
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
         "oportunidades": tabela.oportunidades(db, s),
+        "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db)},
         "linkedin": {"configurado": True, "lote": s.linkedin_lote, **lk.situacao(db, s), "ultimas24h": 18,
                      "disparado": {"em": hoje.isoformat() + "T06:30", "registros": 10, "erro": None},
                      "recebido": {"em": hoje.isoformat() + "T06:52", "registros": 10, "erro": None}},

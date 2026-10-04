@@ -130,6 +130,27 @@ def linkedin_sites(limite: int = 50):
 
 
 @app.command()
+def qualidade():
+    """Revisão do cadastro: organizações duplicadas e razão social (resultado na aba Qualidade)."""
+    from crosssell import qualidade as q
+    from crosssell.pipeline import registrar
+
+    db = _db()
+    typer.echo(registrar(db, "qualidade", q.resumo, db))
+
+
+def _ultima_ha_dias(fonte: str) -> float:
+    from sqlalchemy import select
+
+    from crosssell.models import SyncLog
+
+    db = _db()
+    ultima = db.scalar(select(SyncLog.inicio).where(SyncLog.fonte == fonte, SyncLog.erro.is_(None))
+                       .order_by(SyncLog.inicio.desc()))
+    return 999 if ultima is None else (datetime.utcnow() - ultima).total_seconds() / 86400
+
+
+@app.command()
 def rotina(dias: int = 2):
     """Roda tudo em sequência (para o agendador): Pipedrive, e-mails, notícias, LinkedIn e scores."""
     from crosssell.connectors import linkedin as lk
@@ -139,6 +160,8 @@ def rotina(dias: int = 2):
               ("linkedin-sites", linkedin_sites), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
         passos.insert(5, ("linkedin", linkedin))
+    if _ultima_ha_dias("qualidade") >= 7:  # revisão do cadastro: semanal
+        passos.append(("qualidade", qualidade))
     for nome, fn in passos:
         try:
             fn()

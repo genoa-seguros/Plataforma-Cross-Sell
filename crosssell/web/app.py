@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from crosssell import auth, tabela
+from crosssell import auth, qualidade, tabela
 from crosssell.normalize import AREA_LABEL
 from crosssell.potencial import influencia
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
@@ -361,6 +361,54 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 @app.get("/api/oportunidades")
 def api_oportunidades(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     return {"itens": tabela.oportunidades(db, get_settings())}
+
+
+@app.get("/api/qualidade")
+def api_qualidade(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    return {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db)}
+
+
+class MesclarIn(BaseModel):
+    manter_id: int
+    mesclar_ids: list[int]
+
+
+@app.post("/api/qualidade/mesclar")
+def api_mesclar(dados: MesclarIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+                client: pd.PipedriveClient = Depends(get_pipedrive)):
+    try:
+        return registrar(db, "qualidade-mesclar", qualidade.mesclar, db, client, dados.manter_id, dados.mesclar_ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(502, f"O Pipedrive não aceitou a mesclagem: {exc}")
+
+
+class RazaoIn(BaseModel):
+    empresa_id: int
+    nome: str
+
+
+@app.post("/api/qualidade/razao")
+def api_razao(dados: RazaoIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+              client: pd.PipedriveClient = Depends(get_pipedrive)):
+    try:
+        qualidade.aplicar_razao(db, client, dados.empresa_id, dados.nome)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(502, f"O Pipedrive não aceitou a alteração: {exc}")
+    return {"ok": True}
+
+
+class IgnorarIn(BaseModel):
+    chave: str
+
+
+@app.post("/api/qualidade/ignorar")
+def api_ignorar(dados: IgnorarIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    qualidade.ignorar(db, dados.chave)
+    return {"ok": True}
 
 
 @app.get("/api/linkedin")

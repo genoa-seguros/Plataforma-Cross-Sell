@@ -175,6 +175,17 @@ def main():
         db.add(Pessoa(nome=nome, nome_normalizado=normalizar_nome_pessoa(nome), empresa_id=e.id, cargo=cargo,
                       senioridade=classificar_senioridade(cargo), fonte="linkedin", linkedin_url=f"https://www.linkedin.com/in/exemplo-dm-{i}",
                       linkedin_headline=f"{cargo} | {e.razao_social.replace(' (exemplo)', '')}", linkedin_em=AGORA))
+    # Qualidade do cadastro: uma organização duplicada no Pipedrive e razões sociais da Receita
+    dup = Empresa(razao_social="Transportadora Rota Sul Ltda (exemplo)", nome_normalizado=empresas[1].nome_normalizado,
+                  cnpj=empresas[1].cnpj, pipedrive_org_id=990, cidade="São Paulo", uf="SP")
+    db.add(dup)
+    db.flush()
+    db.add(Negocio(empresa=dup, vertical="ramos_elementares", fonte="pipedrive", id_externo="99001", pipeline_id=29,
+                   status="perdido", titulo="Frota 2024", produto="Frota", responsavel_email=DONO[29]))
+    for e, razao in [(empresas[0], "METALURGICA AURORA INDUSTRIA E COMERCIO LTDA"),
+                     (empresas[3], "GRUPO VERTICE TECNOLOGIA DA INFORMACAO S.A."),
+                     (empresas[7], "VAREJO BOM PRECO SUPERMERCADOS LTDA")]:
+        e.razao_receita = razao
     mudou = empresas[4].pessoas[0]
     mudou.linkedin_empresa_atual, mudou.linkedin_headline = "Grupo Andorinha", "CFO no Grupo Andorinha"
     db.commit()

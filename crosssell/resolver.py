@@ -42,17 +42,22 @@ def resolver_empresa(
     dominio = dominio or dominio_site(website)
     nome_norm = normalizar_nome_empresa(razao_social) if razao_social else None
 
+    # Cada organização do Pipedrive é uma empresa na plataforma: duas organizações com o mesmo
+    # CNPJ/domínio/nome não se fundem aqui (isso é duplicidade, tratada em crosssell.qualidade).
+    def livre(c: Empresa) -> bool:
+        return not (pipedrive_org_id and c.pipedrive_org_id and c.pipedrive_org_id != pipedrive_org_id)
+
     empresa = None
-    if cnpj:
-        empresa = db.scalar(select(Empresa).where(Empresa.cnpj == cnpj))
-    if empresa is None and pipedrive_org_id:
+    if pipedrive_org_id:
         empresa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == pipedrive_org_id))
+    if empresa is None and cnpj:
+        empresa = next((c for c in db.scalars(select(Empresa).where(Empresa.cnpj == cnpj)) if livre(c)), None)
     if empresa is None and dominio:
-        empresa = db.scalar(select(Empresa).where(Empresa.dominio == dominio))
+        empresa = next((c for c in db.scalars(select(Empresa).where(Empresa.dominio == dominio)) if livre(c)), None)
     if empresa is None and nome_norm:
         candidatos = db.scalars(select(Empresa).where(Empresa.nome_normalizado == nome_norm)).all()
-        # Nome só é usado se não houver conflito de CNPJ.
-        candidatos = [c for c in candidatos if not (cnpj and c.cnpj and c.cnpj != cnpj)]
+        # Nome só é usado se não houver conflito de CNPJ nem de organização do Pipedrive.
+        candidatos = [c for c in candidatos if not (cnpj and c.cnpj and c.cnpj != cnpj) and livre(c)]
         if len(candidatos) == 1:
             empresa = candidatos[0]
 

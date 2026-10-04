@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -30,6 +31,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")  # logo e favicon
 
 
 def get_db():

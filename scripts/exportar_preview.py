@@ -6,6 +6,7 @@ A página é a mesma interface do app (crosssell/web/app.html) com os dados embu
 ações como criar atividade ficam só no navegador e não vão ao Pipedrive.
 """
 
+import base64
 import json
 import re
 import sys
@@ -58,6 +59,10 @@ def main():
     como = sys.argv[sys.argv.index("--como") + 1] if "--como" in sys.argv else None
     dados = exportar(como)
     html = APP.read_text(encoding="utf-8")
+    # Sem servidor: logo e favicon vão embutidos na página
+    for nome in ("logo-innoa-branco.png", "logo-innoa.png", "favicon.png"):
+        dados_img = base64.b64encode((APP.parent / "static" / nome).read_bytes()).decode()
+        html = html.replace(f"/static/{nome}", f"data:image/png;base64,{dados_img}")
     html = html.replace("/*__DADOS__*/null", json.dumps(dados, ensure_ascii=False, default=str).replace("</", "<\\/"))
     if "--exemplo" in sys.argv:
         html = html.replace("Prévia com dados de exemplo", "Prévia com dados de exemplo · empresas fictícias")

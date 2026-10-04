@@ -3,38 +3,47 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Innoa Cross Sell</title>
+<link rel="icon" href="/static/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Manrope:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Montserrat:wght@500;600;700;800&display=swap">
 <style>
 /* Layout: barra com abas + coluna de 1320px; a tabela de negócios é a tela principal, rolagem horizontal própria */
 :root{
-  --bg:#f4f6f8; --surface:#ffffff; --ink:#15202b; --mute:#5c6b7a; --line:#dde3ea; --soft:#eef2f6;
-  --accent:#0b5c72; --accent-ink:#ffffff; --warn:#a15c00; --good:#1d7a46; --bad:#b42318;
-  --lf:#5b45c4; --saude:#12805c; --re:#b86a00; --canal:#4a5a6a;
-  --quente:#c2410c; --morna:#a16207; --fria:#2563eb;
-  --f-display:"Manrope",ui-sans-serif,system-ui,sans-serif;
+  /* Identidade Innoa: azul-marinho #02024E (marca) e azul #0554F2 (destaque) */
+  --brand:#02024E; --brand-ink:#ffffff;
+  --bg:#f4f5fb; --surface:#ffffff; --ink:#0f1140; --mute:#5a5d80; --line:#dfe1ee; --soft:#eef0f8;
+  --accent:#0554F2; --accent-ink:#ffffff; --warn:#a15c00; --good:#1d7a46; --bad:#b42318;
+  --lf:#6a3fd1; --saude:#12805c; --re:#b86a00; --canal:#4a5a6a;
+  --quente:#c2410c; --morna:#a16207; --fria:#0554F2;
+  --f-display:"Montserrat",ui-sans-serif,system-ui,sans-serif;
   --f-body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-data:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0f151b; --surface:#161e26; --ink:#e3e9ef; --mute:#93a3b3; --line:#283340; --soft:#1c2630;
-  --accent:#4fb3cc; --accent-ink:#06222b; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
-  --lf:#9a88f0; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd;
-  --quente:#fb923c; --morna:#facc15; --fria:#60a5fa; color-scheme:dark}}
+  --bg:#0b0c26; --surface:#13153a; --ink:#e6e8f6; --mute:#9a9dc2; --line:#262a5a; --soft:#1a1d48;
+  --accent:#5b8cff; --accent-ink:#04052a; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
+  --lf:#a58cf5; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd; --brand:#05062f; --brand-ink:#ffffff;
+  --quente:#fb923c; --morna:#facc15; --fria:#7ea6ff; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f151b; --surface:#161e26; --ink:#e3e9ef; --mute:#93a3b3; --line:#283340; --soft:#1c2630;
-  --accent:#4fb3cc; --accent-ink:#06222b; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
-  --lf:#9a88f0; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd;
-  --quente:#fb923c; --morna:#facc15; --fria:#60a5fa; color-scheme:dark}
+  --bg:#0b0c26; --surface:#13153a; --ink:#e6e8f6; --mute:#9a9dc2; --line:#262a5a; --soft:#1a1d48;
+  --accent:#5b8cff; --accent-ink:#04052a; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
+  --lf:#a58cf5; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd; --brand:#05062f; --brand-ink:#ffffff;
+  --quente:#fb923c; --morna:#facc15; --fria:#7ea6ff; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body)}
 a{color:var(--accent)}
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.top{background:var(--surface);border-bottom:1px solid var(--line);padding-inline:16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
-.top-in{max-width:1320px;margin:0 auto;display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:52px}
-.brand{font:800 17px/1 var(--f-display);color:var(--ink);text-decoration:none;letter-spacing:-.01em}
-.brand span{color:var(--accent)}
+.top{background:var(--brand);color:var(--brand-ink);padding-inline:16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.top-in{max-width:1320px;margin:0 auto;display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:56px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--brand-ink);text-decoration:none}
+.brand img{height:26px;width:auto;display:block}
+.brand span{font:600 13px/1 var(--f-display);letter-spacing:.08em;text-transform:uppercase;padding-left:10px;border-left:1px solid rgba(255,255,255,.35)}
+.top nav.abas a{color:rgba(255,255,255,.72)}
+.top nav.abas a:hover{color:#fff}
+.top nav.abas a[aria-current="page"]{color:#fff;border-bottom-color:#0554F2;border-bottom-width:3px}
+.top .dir,.top .dir a{color:rgba(255,255,255,.8)}
+.top a:focus-visible{outline-color:#fff}
 nav.abas{display:flex;gap:2px;align-self:stretch}
 nav.abas a{display:flex;align-items:center;padding:0 12px;color:var(--mute);text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
 nav.abas a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
@@ -126,7 +135,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <a class="brand" href="#negocios">Innoa <span>Cross Sell</span></a>
+  <a class="brand" href="#negocios"><img src="/static/logo-innoa-branco.png" alt="Innoa Seguros"><span>Cross Sell</span></a>
   <nav class="abas" id="abas" aria-label="Seções"></nav>
   <div class="dir"><span class="pill-demo" id="demo" hidden>Prévia com dados de exemplo · nada é enviado ao Pipedrive</span><span id="eu"></span><a href="/logout" id="sair">Sair</a></div>
 </div></header>

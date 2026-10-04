@@ -60,7 +60,7 @@ def test_saude_por_planilha_e_checkbox(db, settings):
     pipedrive.marcar_saude(db, alfa.id, True)
     db.commit()
     linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "4")
-    assert linha["saude"] == {"zeca": False, "manual": True}
+    assert linha["saude"] == {"zeca": False, "manual": True, "pipedrive": None, "desmarcado": False}
     csv = (f"CNPJ;Razão Social;Operadora;Contrato;Fim Vigência;Status\n"
            f"14.069.185/0001-03;Alfa;Amil;Z-1;{(HOJE + timedelta(days=200)):%d/%m/%Y};Ativo\n").encode()
     planilhas.importar_zeca(db, settings, csv, "zeca.csv")
@@ -211,3 +211,35 @@ def test_empresa_interna_fica_fora_e_cancelamento_vira_reconquista(db, settings)
     delta = next(x for x in linhas if x["pipedriveId"] == "951")
     assert any(m["texto"] == "cancelou E&O conosco: reconquista" for m in delta["motivos"])
     assert not any(o["empresa"]["nome"].startswith("Innoa") for o in tabela.oportunidades(db, settings))
+
+
+def test_saude_ganho_no_pipedrive_vale_ate_desmarcar(db, settings):
+    """Saúde não tem fim de vigência: ganho no passado é cliente até a equipe desmarcar."""
+    from datetime import date
+    carregar(db, settings)
+    lead = Empresa(razao_social="Zeta Tech", nome_normalizado="zeta tech")
+    db.add(lead)
+    db.flush()
+    db.add_all([Negocio(empresa=lead, vertical="saude", fonte="pipedrive", id_externo="960", pipeline_id=34,
+                        status="ganho", titulo="Saúde 2022", produto="Saúde", ganho_em=date(2022, 3, 10)),
+                Negocio(empresa=lead, vertical="linhas_financeiras", fonte="pipedrive", id_externo="961", pipeline_id=1,
+                        status="aberto", titulo="D&O 2026", produto="D&O")])
+    db.commit()
+    linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "961")
+    assert [(v["vertical"], v["vitalicio"], v["ganhoEm"]) for v in linha["vigentes"]] == [("saude", True, "2022-03-10")]
+    assert linha["saude"]["pipedrive"] == "2022-03-10" and not linha["saude"]["desmarcado"]
+    assert not any(o["empresa"]["nome"] == "Zeta Tech" and o["vertical"] == "saude" for o in tabela.oportunidades(db, settings))
+
+    pipedrive.marcar_saude(db, lead.id, False)  # "não é mais cliente Saúde"
+    db.commit()
+    db.expire_all()
+    linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "961")
+    assert linha["vigentes"] == [] and linha["saude"]["desmarcado"]
+    op = next(o for o in tabela.oportunidades(db, settings) if o["empresa"]["nome"] == "Zeta Tech" and o["vertical"] == "saude")
+    assert any("reconquista" in m["texto"] for m in op["motivos"])
+
+    pipedrive.marcar_saude(db, lead.id, True)  # confirmado: continua conosco, sem duplicar o chip
+    db.commit()
+    db.expire_all()
+    linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "961")
+    assert [v["fonte"] for v in linha["vigentes"]] == ["pipedrive"] and linha["saude"]["manual"]

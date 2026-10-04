@@ -59,10 +59,33 @@ def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dic
 
 
 def seguros_vigentes(e: Empresa | None) -> list[Negocio]:
+    """Seguros vigentes. A marcação manual de Saúde não se repete quando há Saúde ganho no Pipedrive."""
     if e is None:
         return []
-    return sorted((n for n in e.negocios if n.vigente and n.vertical),
-                  key=lambda n: (n.vertical, n.produto or n.titulo or ""))
+    vig = [n for n in e.negocios if n.vigente and n.vertical]
+    if any(n.saude_vitalicio for n in vig):
+        vig = [n for n in vig if not (n.fonte == "manual" and n.vertical == "saude")]
+    return sorted(vig, key=lambda n: (n.vertical, n.produto or n.titulo or ""))
+
+
+def estado_saude(e: Empresa | None, vigentes: list[Negocio]) -> dict:
+    """Situação de Saúde para a caixa da tabela.
+    pipedrive: data do último Saúde ganho (contrato sem fim: vale até alguém desmarcar);
+    confirmado/desmarcado: o que a equipe informou na plataforma."""
+    negs = e.negocios if e else []
+    manual = next((x for x in negs if x.fonte == "manual" and x.vertical == "saude"), None)
+    ganhos = [x for x in negs if x.saude_vitalicio]
+    ultimo = max((x.ganho_em for x in ganhos if x.ganho_em), default=None)
+    return {"zeca": any(v.vertical == "saude" and v.fonte == "zeca" for v in vigentes),
+            "manual": bool(manual and manual.status == "ativo"),
+            "pipedrive": (ultimo.isoformat() if ultimo else "sem data") if ganhos else None,
+            "desmarcado": bool(manual and manual.status == "cancelado")}
+
+
+def _vig_json(v: Negocio) -> dict:
+    return {"vertical": v.vertical, "produto": v.produto or v.titulo,
+            "fim": v.fim_vigencia.isoformat() if v.fim_vigencia else None, "fonte": v.fonte,
+            "ganhoEm": v.ganho_em.isoformat() if v.ganho_em else None, "vitalicio": v.saude_vitalicio}
 
 
 def _ponte(db: Session, pessoa_id: int | None, empresa_id: int | None) -> str | None:
@@ -94,9 +117,15 @@ def _extras(e: Empresa | None, p: Pessoa | None, vertical: str | None, vigentes:
     """Motivos que não saem dos critérios: reconquista e contato que mudou de empresa."""
     saida = []
     tem = {v.vertical for v in vigentes}
-    ex = [x for x in (e.negocios if e else []) if x.vertical == vertical and x.ex_cliente and x.fim_vigencia]
+    ex = [x for x in (e.negocios if e else []) if x.vertical == vertical and x.ex_cliente
+          and (x.fim_vigencia or x.saude_vitalicio)]
     if ex and vertical not in tem:
-        ultimo = max(ex, key=lambda x: x.fim_vigencia)
+        ultimo = max(ex, key=lambda x: x.fim_vigencia or date.max)
+        if ultimo.saude_vitalicio:
+            texto = "já teve Saúde conosco (desmarcado na plataforma): reconquista"
+            saida.append({"texto": texto, "sinal": "+"})
+            return saida + ([{"texto": f"LinkedIn: {p.nome.split()[0]} hoje está em {p.linkedin_empresa_atual}; confirmar o contato",
+                              "sinal": "!"}] if p is not None and mudou_de_empresa(p) else [])
         if ultimo.status == "cancelado" or ultimo.fim_vigencia > date.today():
             texto = f"cancelou {ultimo.produto or VERTICAL_LABEL[vertical]} conosco: reconquista"
         else:
@@ -120,7 +149,6 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
     if p is not None and p.pipedrive_person_id and p not in contatos:
         contatos.insert(0, p)
     prox = _proxima_atividade(db, n.id)
-    saude_manual = next((x for x in (e.negocios if e else []) if x.fonte == "manual" and x.vertical == "saude"), None)
     funil = funis.get(n.pipeline_id, {})
     return {
         "id": n.id, "pipedriveId": n.id_externo, "titulo": n.titulo, "produto": n.produto, "etapa": n.etapa,
@@ -134,10 +162,8 @@ def linha(db: Session, n: Negocio, funis: dict, nomes: dict[str, str], hoje: dat
                    "headline": contato.linkedin_headline, "doNegocio": contato is p} if contato else None,
         "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
         "quemDecide": quem_decide(db, e, n.vertical, nomes),
-        "vigentes": [{"vertical": v.vertical, "produto": v.produto or v.titulo, "fim": v.fim_vigencia.isoformat() if v.fim_vigencia else None,
-                      "fonte": v.fonte} for v in vigentes],
-        "saude": {"zeca": any(v.vertical == "saude" and v.fonte == "zeca" for v in vigentes),
-                  "manual": bool(saude_manual and saude_manual.status == "ativo")},
+        "vigentes": [_vig_json(v) for v in vigentes],
+        "saude": estado_saude(e, vigentes),
         "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
                       "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in (e.noticias[:3] if e else [])],
         "motivos": _extras(e, p, n.vertical, vigentes) + motivos_potencial(pot), "dono": n.responsavel_email,
@@ -204,8 +230,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
                 "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
                             "noPipedrive": bool(e.pipedrive_org_id)},
-                "vigentes": [{"vertical": x.vertical, "produto": x.produto or x.titulo,
-                              "fim": x.fim_vigencia.isoformat() if x.fim_vigencia else None} for x in vigentes],
+                "vigentes": [_vig_json(x) for x in vigentes],
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
                                 "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos_tabela],
                 "quemDecide": decide, "motivos": _extras(e, None, v, vigentes) + motivos_potencial(pot),

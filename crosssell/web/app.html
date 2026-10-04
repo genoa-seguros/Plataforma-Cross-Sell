@@ -203,7 +203,8 @@ const previa = {
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
       D.linhas.filter(l => l.empresa?.id == m[1]).forEach(l => {
-        l.saude.manual = b.cliente;
+        l.saude.manual = b.cliente; l.saude.desmarcado = !b.cliente;
+        if (l.saude.pipedrive) { l._vit = l._vit || l.vigentes.filter(v => v.vitalicio); l.vigentes = l.vigentes.filter(v => !v.vitalicio && v.fonte !== "manual"); if (b.cliente) l.vigentes.push(...l._vit); return; }
         l.vigentes = l.vigentes.filter(v => v.fonte !== "manual");
         if (b.cliente) l.vigentes.push({vertical:"saude", produto:"Saúde", fim:null, fonte:"manual"});
       });
@@ -250,10 +251,14 @@ function abas(ativa) {
 /* ---------- Negócios ---------- */
 function celulaVigentes(l) {
   const chips = l.vigentes.length
-    ? `<div class="chips">${l.vigentes.map(v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}` : v.fonte === "manual" ? " · marcado" : ""))).join("")}</div>`
+    ? `<div class="chips">${l.vigentes.map(v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}`
+        : v.vitalicio ? (v.ganhoEm ? ` · desde ${mesAno(v.ganhoEm)}` : "") + (l.saude.manual ? "" : " · a confirmar")
+        : v.fonte === "manual" ? " · marcado" : ""))).join("")}</div>`
     : `<span class="sub">Nenhum seguro vigente</span>`;
-  const saude = l.empresa && !l.saude.zeca
-    ? `<label class="check"><input type="checkbox" data-saude="${l.empresa.id}" ${l.saude.manual ? "checked" : ""}> Cliente Saúde (fora da planilha)</label>` : "";
+  const s = l.saude;
+  const saude = !l.empresa || s.zeca ? ""
+    : s.pipedrive ? `<label class="check" title="Saúde não tem fim de vigência: vale até alguém desmarcar"><input type="checkbox" data-saude="${l.empresa.id}" ${s.desmarcado ? "" : "checked"}> Ainda é cliente Saúde${s.pipedrive !== "sem data" ? ` (ganho em ${mesAno(s.pipedrive)})` : ""}</label>`
+    : `<label class="check"><input type="checkbox" data-saude="${l.empresa.id}" ${s.manual ? "checked" : ""}> Cliente Saúde (fora da planilha)</label>`;
   return `<div class="vig">${chips}${saude}</div>`;
 }
 function celulaTemp(p) {
@@ -585,7 +590,7 @@ async function telaEmpresa(id) {
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.cidade && `${e.cidade}${e.uf ? "/" + e.uf : ""}`, e.funcionarios && `${e.funcionarios} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}</div>
     <div>${vig.length ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'} <span class="sub">· relacionamento ${Math.round(e.score)} de 100</span></div>
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>
-    ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${saudeManual ? "checked" : ""}> Cliente Saúde (fora da planilha do Zeca)</label>`}
+    ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${vig.some(n => n.vertical === "saude") ? "checked" : ""}> Cliente Saúde${e.negocios.some(n => n.vertical === "saude" && n.status === "ganho" && !n.fim) ? " (ganho no Pipedrive; desmarque se cancelou)" : " (fora da planilha do Zeca)"}</label>`}
   </section>
   <section><h2>Negócios abertos</h2><div class="tabela"><table class="larga">
     <thead><tr><th>Potencial</th><th>Cliente/Lead</th><th>Temperatura</th><th>Quem decide</th><th>Seguros vigentes</th><th>Negócio aberto</th><th>Por quê</th><th>Notícias</th><th>Próximo passo</th></tr></thead>
@@ -610,7 +615,7 @@ document.addEventListener("click", ev => {
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
   try {
-    if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Marcação de cliente Saúde removida");
+    if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       if (!PREVIA) LINHAS = (await api.get("/api/tabela")).linhas; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
   } catch (err) { aviso(err.message); ev.target.checked = !ev.target.checked; }

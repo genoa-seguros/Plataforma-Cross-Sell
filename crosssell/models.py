@@ -154,6 +154,7 @@ class Negocio(Base):
     seguradora: Mapped[str | None]
     inicio_vigencia: Mapped[date | None] = mapped_column(Date)
     fim_vigencia: Mapped[date | None] = mapped_column(Date)
+    ganho_em: Mapped[date | None] = mapped_column(Date)  # Pipedrive won_time
     valor: Mapped[float | None]
     vidas: Mapped[int | None]
     responsavel_email: Mapped[str | None]
@@ -170,6 +171,8 @@ class Negocio(Base):
         e marcações manuais de Saúde valem enquanto ativas (e dentro do fim, se houver).
         """
         hoje = date.today()
+        if self.saude_vitalicio:
+            return not self.saude_desmarcada
         if self.fonte == "pipedrive":
             return self.status == "ganho" and self.fim_vigencia is not None and self.fim_vigencia > hoje
         if self.status != "ativo":
@@ -177,8 +180,22 @@ class Negocio(Base):
         return self.fim_vigencia is None or self.fim_vigencia >= hoje
 
     @property
+    def saude_vitalicio(self) -> bool:
+        """Saúde ganho no Pipedrive sem fim de vigência: o contrato vale até o cliente cancelar."""
+        return (self.fonte == "pipedrive" and self.vertical == "saude" and self.status == "ganho"
+                and self.fim_vigencia is None)
+
+    @property
+    def saude_desmarcada(self) -> bool:
+        """Alguém informou na plataforma que a empresa não é mais cliente Saúde."""
+        return any(n.fonte == "manual" and n.vertical == "saude" and n.status == "cancelado"
+                   for n in (self.empresa.negocios if self.empresa else []))
+
+    @property
     def ex_cliente(self) -> bool:
         """Já foi cliente nesta vertical (vigência vencida ou apólice cancelada)."""
+        if self.saude_vitalicio:
+            return self.saude_desmarcada
         return self.status == "cancelado" or (self.status in ("ganho", "ativo") and not self.vigente
                                               and self.fim_vigencia is not None)
 

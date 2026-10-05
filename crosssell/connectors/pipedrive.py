@@ -25,7 +25,8 @@ class PipedriveClient:
     def __init__(self, token: str, domain: str = "api", transport: httpx.BaseTransport | None = None):
         self.http = httpx.Client(
             base_url=f"https://{domain}.pipedrive.com/api",
-            params={"api_token": token},
+            # No cabeçalho, não na URL: a URL aparece nas mensagens de erro (log, sync_log e tela)
+            headers={"x-api-token": token},
             timeout=30,
             transport=transport,
         )

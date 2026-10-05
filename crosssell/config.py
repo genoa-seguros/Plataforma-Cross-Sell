@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Rotina dentro do servidor (hospedagem de um container só, ex.: AWS App Runner/Lightsail)
     rotina_interna: bool = False
     rotina_minutos: int = 60
+    rotina_limite_minutos: int = 120  # uma rodada travada é encerrada depois disso (a próxima roda normal)
 
     # Login: o master é criado pelo comando `crosssell criar-master`.
     sessao_dias: int = 14

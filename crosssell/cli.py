@@ -154,6 +154,18 @@ def _ultima_ha_dias(fonte: str) -> float:
 @app.command()
 def rotina(dias: int = 2):
     """Roda tudo em sequência (para o agendador): Pipedrive, e-mails, notícias, LinkedIn e scores."""
+    from crosssell.db import trava
+
+    # Só uma rotina por vez (a interna do servidor e uma rodada manual, ou dois servidores): uma rodada
+    # em paralelo repetiria consultas pagas à Linked API e à Claude API.
+    with trava("crosssell-rotina") as livre:
+        if not livre:
+            typer.echo("Outra rotina já está rodando; esta rodada foi pulada.", err=True)
+            return
+        _rodar_rotina(dias)
+
+
+def _rodar_rotina(dias: int) -> None:
     from crosssell.connectors import linkedin as lk
 
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("emails", lambda: emails(dias=dias, temperatura=True)),

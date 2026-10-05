@@ -145,7 +145,13 @@ const D = /*__DADOS__*/null;
 const PREVIA = !!D;
 const TIPOS = {task:"Tarefa", call:"Ligação", meeting:"Reunião", email:"E-mail"};
 const TEMP = {muita:"Muita abertura", media:"Média abertura", pouca:"Pouca abertura"};
-let V = {}, EU = null, USUARIOS = [], LINHAS = [], OPS = [];
+let V = {}, EU = null, USUARIOS = [], OPS = [];
+
+// Equipe e verticais, carregadas uma vez por página (sem montar a tabela no servidor)
+async function carregarBase() {
+  if (USUARIOS.length && Object.keys(V).length) return;
+  const b = await api.get("/api/base"); USUARIOS = b.usuarios; V = b.verticais;
+}
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
 const filtroOp = {vertical:"", q:"", tipo:"", rel:""};
 let refSemana = new Date();
@@ -236,7 +242,7 @@ const previa = {
   seq: 1000,
   get(path) {
     if (path === "/api/eu") return D.eu;
-    if (path === "/api/tabela") return {linhas: D.linhas, usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
+    if (path === "/api/base") return {usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
     if (path === "/api/equipe") return D.equipe;
     if (path === "/api/linkedin") return D.linkedin;
     if (path === "/api/oportunidades") return {itens: D.oportunidades || []};
@@ -426,7 +432,7 @@ function filtrarOps() {
   document.getElementById("contagem-op").textContent = `${ls.length} de ${OPS.length} oportunidades`;
 }
 async function telaOportunidades() {
-  if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
+  await carregarBase();
   OPS = (await api.get("/api/oportunidades")).itens;
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:10px">
@@ -542,7 +548,7 @@ async function telaQualidade() {
 
 /* ---------- To-dos da semana ---------- */
 async function telaTodos() {
-  if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
+  await carregarBase();
   const r = await api.get("/api/todos?ref=" + iso(refSemana));
   const grupos = {};
   r.itens.forEach(i => (grupos[i.responsavel] ||= []).push(i));
@@ -579,7 +585,7 @@ async function telaTodos() {
 /* ---------- Equipe ---------- */
 async function telaEquipe() {
   if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
-  if (!Object.keys(V).length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
+  await carregarBase();
   const equipe = await api.get("/api/equipe");
   const vs = Object.entries(V);
   document.getElementById("app").innerHTML = `
@@ -671,7 +677,7 @@ async function telaLinkedin() {
 
 /* ---------- Ficha da empresa ---------- */
 async function telaEmpresa(id) {
-  if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
+  await carregarBase();
   const e = await api.get("/api/empresas/" + id);
   if (!OPS.length) OPS = (await api.get("/api/oportunidades")).itens;
   const vig = e.negocios.filter(n => n.vigente), ops = OPS.filter(o => o.empresa.id == id), abertos = e.negocios.filter(n => n.status === "aberto");

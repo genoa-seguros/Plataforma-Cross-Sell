@@ -205,11 +205,16 @@ def api_eu(u: Usuario = Depends(usuario_atual)):
     return _usuario_json(u)
 
 
-@app.get("/api/tabela")
-def api_tabela(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+@app.get("/api/base")
+def api_base(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Equipe ativa e verticais: o que toda tela precisa (sem montar a tabela)."""
     usuarios = db.scalars(select(Usuario).where(Usuario.ativo.is_(True)).order_by(Usuario.nome)).all()
-    return {"linhas": tabela.montar(db, get_settings()), "usuarios": [_usuario_json(x) for x in usuarios],
-            "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS}}
+    return {"usuarios": [_usuario_json(x) for x in usuarios], "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS}}
+
+
+@app.get("/api/tabela")
+def api_tabela(db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    return {"linhas": tabela.montar(db, get_settings()), **api_base(db, u)}
 
 
 @app.get("/api/empresas/{empresa_id}")

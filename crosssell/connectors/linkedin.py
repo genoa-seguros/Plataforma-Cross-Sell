@@ -84,13 +84,19 @@ def _termos(nome: str | None) -> set[str]:
 
 
 def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], dict[int, str], dict[int, set]]:
-    """Empresas e pessoas a manter atualizadas, em ordem de prioridade (tabela por score,
-    depois Oportunidades), e as verticais em jogo em cada empresa."""
+    """Empresas e pessoas a manter atualizadas, em ordem de prioridade (Oportunidades pelo
+    Potencial, depois as empresas dos negócios abertos), e as verticais em jogo em cada empresa."""
     from crosssell import tabela
 
     empresas: dict[int, str] = {}
     pessoas: dict[int, str] = {}
     verticais: dict[int, set] = {}
+    for op in tabela.oportunidades(db, settings):
+        eid = op["empresa"]["id"]
+        empresas.setdefault(eid, f"oportunidade: {op['verticalNome']}")
+        verticais.setdefault(eid, set()).add(op["vertical"])
+        for c in op["contatos"]:
+            pessoas.setdefault(c["id"], "contato da empresa")
     for linha in tabela.montar(db, settings):
         if linha["empresa"]:
             empresas.setdefault(linha["empresa"]["id"], f"{linha['funil']}: {linha['titulo']}")
@@ -100,10 +106,6 @@ def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], d
             pessoas.setdefault(linha["pessoa"]["id"], "contato do negócio")
         for c in linha["contatos"]:
             pessoas.setdefault(c["id"], "contato da empresa")
-    for op in tabela.oportunidades(db, settings):
-        eid = op["empresa"]["id"]
-        empresas.setdefault(eid, f"oportunidade: {op['verticalNome']}")
-        verticais.setdefault(eid, set()).add(op["vertical"])
     return empresas, pessoas, verticais
 
 

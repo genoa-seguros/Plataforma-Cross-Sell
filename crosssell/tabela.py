@@ -213,6 +213,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
             continue
         tem = {v.vertical for v in vigentes}
         negociando = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
+        # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
+        relacoes = sorted(set(db.scalars(select(Interacao.usuario_email).where(Interacao.empresa_id == e.id))))
         for v in VERTICAIS:
             if v in tem or v in negociando:
                 continue
@@ -230,7 +232,10 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
                 "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
                             "noPipedrive": bool(e.pipedrive_org_id)},
-                "vigentes": [_vig_json(x) for x in vigentes],
+                "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
+                "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
+                              "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
+                "relacoes": relacoes,
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
                                 "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos_tabela],
                 "quemDecide": decide, "motivos": _extras(e, None, v, vigentes) + motivos_potencial(pot),

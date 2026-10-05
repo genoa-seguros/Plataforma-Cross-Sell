@@ -1,32 +1,23 @@
 # Plataforma Cross Sell · Innoa
 
 Ferramenta tática para a reunião semanal (sexta-feira) das verticais **Linhas Financeiras, Saúde e
-Ramos Elementares**. Mostra os negócios abertos com tudo o que ajuda a decidir o próximo passo:
-o que o cliente já tem conosco, a temperatura do contato, notícias e quem tem relação. A partir
-dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
+Ramos Elementares**. Mostra o **cross sell que ninguém está trabalhando**: clientes e leads de uma
+vertical que ainda não têm nem negociam outra, ordenados pelo potencial, com quem decide e quem
+pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha os to-dos da semana.
 
 ## Telas
 
 - **Login**: e-mail e senha, com *Esqueci minha senha* (link de uso único por e-mail, vale 1 hora;
   o master também gera esse link na tela Equipe).
-- **Negócios**: uma linha por negócio **aberto** nos funis Linhas Financeiras (1), RE (29),
-  Saúde (23), Pipo Saúde (34) e Canais Parceria (39). Os funis Garantia (40), Flash
-  Benefícios (38) e M&A (31) ficam fora da tabela. Ordenada pelo **Potencial**. Colunas:
-  - **Potencial** (critérios da vertical) e, abaixo, o **Score de Influência** do contato.
-  - **Cliente/Lead**: é *cliente* quem tem ao menos um seguro vigente.
-  - **Temperatura**: Pouca, Média ou Muita abertura, calculada pela IA a partir da escrita do contato.
-  - **Seguros vigentes**, por produto (D&O, Cyber, Empresarial…). Inclui a caixa *Cliente
-    Saúde (fora da planilha)* para quem não aparece na exportação do Zeca.
-  - **Negócio aberto**: funil, título, etapa e valor.
-  - **Por quê**: só o que não aparece em outra coluna: critérios a favor (+), contra (−) e sem
-    informação (?), reconquista e contato que mudou de empresa.
-  - **Notícias**: principais manchetes recentes.
-  - **Quem decide** a vertical do negócio (pela área do cargo), com a influência de cada pessoa e a
-    **ponte** quando ninguém dessa área tem relação com a equipe.
-  - **Próximo passo**: a próxima atividade e o botão *Criar atividade*.
-- **Oportunidades**: clientes (seguro vigente) e leads em negociação numa vertical que ainda não
-  têm seguro nem negócio aberto em outra (ex.: tem D&O, não tem Saúde), ordenados pelo Potencial
-  na vertical da oportunidade. Mostra quem decide, a ponte e o porte; *Criar
+- **Oportunidades** (tela inicial): o cross sell que **ninguém está trabalhando**. Clientes
+  (seguro vigente) e leads em negociação numa vertical que ainda não têm seguro nem negócio aberto
+  em outra (ex.: tem D&O, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade.
+  O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
+  ela sai daqui. Colunas: Potencial (e Score de Influência), Empresa (Cliente/Lead), Oportunidade,
+  Quem decide e a ponte, Por quê (+ a favor, − contra, ? falta informação), Notícias, Já tem
+  conosco (com as caixas de Saúde), Em negociação e Próximo passo. Filtros por vertical,
+  cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
+  como cada coluna é calculada. Mostra quem decide, a ponte e o porte; *Criar
   atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita

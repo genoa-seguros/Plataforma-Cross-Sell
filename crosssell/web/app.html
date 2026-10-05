@@ -131,7 +131,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <a class="brand" href="#negocios"><img class="logo-claro" src="/static/logo-innoa.png" alt="Innoa Seguros"><img class="logo-escuro" src="/static/logo-innoa-branco.png" alt=""><span>Cross Sell</span></a>
+  <a class="brand" href="#oportunidades"><img class="logo-claro" src="/static/logo-innoa.png" alt="Innoa Seguros"><img class="logo-escuro" src="/static/logo-innoa-branco.png" alt=""><span>Cross Sell</span></a>
   <nav class="abas" id="abas" aria-label="Seções"></nav>
   <div class="dir"><span class="pill-demo" id="demo" hidden>Prévia com dados de exemplo · nada é enviado ao Pipedrive</span><span id="eu"></span><a href="/logout" id="sair">Sair</a></div>
 </div></header>
@@ -147,7 +147,7 @@ const TIPOS = {task:"Tarefa", call:"Ligação", meeting:"Reunião", email:"E-mai
 const TEMP = {muita:"Muita abertura", media:"Média abertura", pouca:"Pouca abertura"};
 let V = {}, EU = null, USUARIOS = [], LINHAS = [], OPS = [];
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
-const filtroOp = {vertical:"", q:"", tipo:""};
+const filtroOp = {vertical:"", q:"", tipo:"", rel:""};
 let refSemana = new Date();
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -260,7 +260,8 @@ const previa = {
     }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
-      D.linhas.filter(l => l.empresa?.id == m[1]).forEach(l => {
+      if (b.cliente) D.oportunidades = (D.oportunidades || []).filter(o => !(o.empresa.id == m[1] && o.vertical === "saude"));
+      [...D.linhas, ...(D.oportunidades || [])].filter(l => l.empresa?.id == m[1]).forEach(l => {
         l.saude.manual = b.cliente; l.saude.desmarcado = !b.cliente;
         if (l.saude.pipedrive) { l._vit = l._vit || l.vigentes.filter(v => v.vitalicio); l.vigentes = l.vigentes.filter(v => !v.vitalicio && v.fonte !== "manual"); if (b.cliente) l.vigentes.push(...l._vit); return; }
         l.vigentes = l.vigentes.filter(v => v.fonte !== "manual");
@@ -304,7 +305,7 @@ function todosLocal(refIso) {
 
 /* ---------- Abas ---------- */
 function abas(ativa) {
-  const itens = [["negocios","Negócios"],["oportunidades","Oportunidades"],["todos","To-dos da semana"]];
+  const itens = [["oportunidades","Oportunidades"],["todos","To-dos da semana"]];
   if (EU?.papel === "master") itens.push(["qualidade","Qualidade"], ["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
 }
@@ -317,9 +318,10 @@ function celulaVigentes(l) {
         : v.fonte === "manual" ? " · marcado" : ""))).join("")}</div>`
     : `<span class="sub">Nenhum seguro vigente</span>`;
   const s = l.saude;
-  const saude = !l.empresa || s.zeca ? ""
+  // Na oportunidade, a caixa só aparece onde decide algo: Saúde ganho no Pipedrive ou oportunidade de Saúde
+  const saude = !l.empresa || s.zeca || (l.verticalNome && !s.pipedrive && l.vertical !== "saude") ? ""
     : s.pipedrive ? `<label class="check" title="Saúde não tem fim de vigência: vale até alguém desmarcar"><input type="checkbox" data-saude="${l.empresa.id}" ${s.desmarcado ? "" : "checked"}> Ainda é cliente Saúde${s.pipedrive !== "sem data" ? ` (ganho em ${mesAno(s.pipedrive)})` : ""}</label>`
-    : `<label class="check"><input type="checkbox" data-saude="${l.empresa.id}" ${s.manual ? "checked" : ""}> Cliente Saúde (fora da planilha)</label>`;
+    : `<label class="check"><input type="checkbox" data-saude="${l.empresa.id}" ${s.manual ? "checked" : ""}> ${l.verticalNome ? "Já é cliente Saúde (fora da planilha)" : "Cliente Saúde (fora da planilha)"}</label>`;
   return `<div class="vig">${chips}${saude}</div>`;
 }
 function celulaTemp(p) {
@@ -350,74 +352,8 @@ function listaMotivos(ms) {
   return `<ul class="motivos">${ms.map(m => { const [cls, rot] = SINAL[m.sinal] || ["", ""];
     return `<li class="${cls}"><span class="sinal" aria-label="${rot}" title="${rot}">${{"+":"+","-":"−","?":"?","!":"!"}[m.sinal] || "·"}</span>${esc(m.texto)}</li>`; }).join("")}</ul>`;
 }
-function linhaHTML(l) {
-  const cliente = l.vigentes.length > 0;
-  const prox = l.proximaAtividade;
-  return `<tr>
-    <td>${celulaScore(l)}</td>
-    <td style="min-width:180px">${l.empresa ? `<a href="#empresa-${l.empresa.id}">${esc(l.empresa.nome)}</a>` : "<span class='sub'>sem organização</span>"}
-      <div>${cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}${l.empresa?.funcionarios ? ` <span class="sub" title="${esc(l.empresa.funcionariosOrigem)}">· ${l.empresa.funcionarios.toLocaleString("pt-BR")} ${l.empresa.funcionariosOrigem.startsWith("vidas") ? "vidas" : "func."}</span>` : ""}</div>
-      ${l.pessoa ? `<div class="sub">${l.pessoa.doNegocio === false ? '<span class="mute">contato mais influente: </span>' : ""}${esc(l.pessoa.nome)}${l.pessoa.cargo ? " · " + esc(l.pessoa.cargo) : ""}${inLink(l.pessoa.linkedin)}</div>${l.pessoa.headline ? `<div class="sub" style="max-width:220px">${esc(l.pessoa.headline)}</div>` : ""}` : ""}</td>
-    <td style="min-width:130px">${celulaTemp(l.pessoa)}</td>
-    <td style="min-width:210px">${celulaDecide(l.quemDecide, l.vertical, true) || '<span class="sub">—</span>'}</td>
-    <td>${celulaVigentes(l)}</td>
-    <td style="min-width:170px">${vchip(l.vertical, l.funil)}<div style="margin-top:4px">${esc(l.titulo)}</div><div class="sub">${esc(l.etapa || "")}${l.valor ? " · " + brl(l.valor) : ""}</div></td>
-    <td style="min-width:240px">${listaMotivos(l.motivos)}</td>
-    <td class="not" style="min-width:200px;max-width:260px">${l.noticias.length ? l.noticias.slice(0,2).map(n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
-    <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
-      <button class="btn sec" data-ativ="${l.id}" ${l.contatos.length ? "" : 'disabled title="Nenhum contato desta empresa está no Pipedrive"'}>Criar atividade</button></div></td>
-  </tr>`;
-}
-function filtrar() {
-  const q = filtro.q.toLowerCase();
-  const ls = LINHAS.filter(l =>
-    (!filtro.funil || l.funil === filtro.funil) &&
-    (!filtro.dono || l.dono === filtro.dono) &&
-    (!filtro.temp || (filtro.temp === "-" ? !l.pessoa?.temperatura : l.pessoa?.temperatura === filtro.temp)) &&
-    (!filtro.tipo || (filtro.tipo === "cliente") === (l.vigentes.length > 0)) &&
-    (!q || (l.empresa?.nome || "").toLowerCase().includes(q) || (l.pessoa?.nome || "").toLowerCase().includes(q) || (l.titulo || "").toLowerCase().includes(q)));
-  document.getElementById("linhas").innerHTML = ls.length ? ls.map(linhaHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhum negócio aberto com esses filtros.</td></tr>`;
-  document.getElementById("contagem").textContent = `${ls.length} de ${LINHAS.length} negócios abertos`;
-}
-async function telaNegocios() {
-  const t = await api.get("/api/tabela");
-  LINHAS = t.linhas; USUARIOS = t.usuarios; V = t.verticais;
-  const funis = [...new Map(LINHAS.map(l => [l.funil, l.vertical])).entries()].sort();
-  const donos = [...new Set(LINHAS.map(l => l.dono).filter(Boolean))].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b)));
-  document.getElementById("app").innerHTML = `
-  <section style="display:grid;gap:10px">
-    <div class="filtros" role="group" aria-label="Funil">
-      <button class="chip off" data-funil="" aria-pressed="${!filtro.funil}">Todos os funis</button>
-      ${funis.map(([f, v]) => `<button class="chip c-${v || "null"}" data-funil="${esc(f)}" aria-pressed="${filtro.funil === f}">${esc(f)}</button>`).join("")}
-    </div>
-    <div class="filtros">
-      <select id="f-tipo" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtro.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtro.tipo==="lead"?"selected":""}>Só leads</option></select>
-      <select id="f-temp" aria-label="Temperatura"><option value="">Qualquer temperatura</option>${Object.entries(TEMP).map(([k, t]) => `<option value="${k}" ${filtro.temp===k?"selected":""}>${t}</option>`).join("")}<option value="-" ${filtro.temp==="-"?"selected":""}>Sem e-mails</option></select>
-      <select id="f-dono" aria-label="Quem atende"><option value="">Quem atende: todos</option>${donos.map(d => `<option value="${esc(d)}" ${filtro.dono===d?"selected":""}>${esc(nomeDe(d))}</option>`).join("")}</select>
-      <input type="search" id="f-q" placeholder="Buscar empresa, pessoa ou negócio" value="${esc(filtro.q)}">
-      <span class="sub" id="contagem"></span>
-    </div>
-    <div class="tabela"><table class="larga">
-      <thead><tr><th>Potencial</th><th>Cliente/Lead</th><th>Temperatura</th><th>Quem decide</th><th>Seguros vigentes</th><th>Negócio aberto</th><th>Por quê</th><th>Notícias</th><th>Próximo passo</th></tr></thead>
-      <tbody id="linhas"></tbody></table></div>
-    <p class="nota"><b>Potencial</b> = critérios de um bom negócio na vertical (passe o mouse no número para ver cada um). Saúde: influência, funcionários, qualificação do time, localização e RH estruturado. Linhas Financeiras: influência e encaixe do produto (E&O: serviço intelectual; D&O: gestão profissional, aporte, fundo; Cyber: CTO/DPO). RE: influência, perfil (galpões, indústrias, transportadoras) e porte. <b>Influência</b> = relacionamento por e-mail + hierarquia do cargo do contato. Em "Por quê": <span class="mais">+</span> a favor, <span class="menos">−</span> contra, <span class="falta">?</span> falta informação. Seguro vigente = negócio ganho com fim de vigência depois de hoje.</p>
-  </section>`;
-  filtrar();
-  document.querySelectorAll("[data-funil]").forEach(b => b.onclick = () => { filtro.funil = b.dataset.funil; telaNegociosRender(); });
-  document.getElementById("f-tipo").onchange = e => { filtro.tipo = e.target.value; filtrar(); };
-  document.getElementById("f-temp").onchange = e => { filtro.temp = e.target.value; filtrar(); };
-  document.getElementById("f-dono").onchange = e => { filtro.dono = e.target.value; filtrar(); };
-  document.getElementById("f-q").oninput = e => { filtro.q = e.target.value; filtrar(); };
-}
-function telaNegociosRender() { document.querySelectorAll("[data-funil]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.funil === filtro.funil))); filtrar(); }
-
 /* ---------- Criar atividade ---------- */
 function proximaSexta() { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7)); return iso(d); }
-function abrirAtividade(id) {
-  const l = LINHAS.find(x => x.id == id);
-  modalAtividade({titulo: `${l.empresa?.nome || ""} · ${l.titulo}`, contatos: l.contatos, pessoaId: l.pessoa?.id,
-    donoEmail: l.dono, assunto: (l.produto || l.titulo) + ": próximo passo", corpo: {negocio_id: l.id}, semPessoa: false});
-}
 function abrirAtividadeOp(id) {
   const o = OPS.find(x => x.id === id);
   const ponte = o.quemDecide?.ponte, alvo = o.quemDecide?.pessoas?.[0];
@@ -457,7 +393,7 @@ function modalAtividade(ctx) {
         vencimento: document.getElementById("a-venc").value, responsavel_id: +document.getElementById("a-resp").value,
         nota: document.getElementById("a-nota").value || null});
       fechar(); aviso(PREVIA ? "Atividade criada na prévia (não foi enviada ao Pipedrive)" : "Atividade criada no Pipedrive");
-      if (location.hash.startsWith("#empresa") || location.hash === "#oportunidades") render(); else { if (!PREVIA) LINHAS = (await api.get("/api/tabela")).linhas; filtrar(); }
+      render();
     } catch (err) { const el = document.getElementById("a-erro"); el.textContent = err.message; el.hidden = false; btn.disabled = false; }
   };
 }
@@ -471,7 +407,8 @@ function opHTML(o) {
     <td>${vchip(o.vertical, o.verticalNome)}</td>
     <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
     <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
-    <td><div class="chips">${o.vigentes.map(v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}` : ""))).join("") || '<span class="sub">—</span>'}</div></td>
+    <td class="not" style="min-width:190px;max-width:240px">${o.noticias.length ? o.noticias.map(n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
+    <td>${celulaVigentes(o)}</td>
     <td><div class="chips">${o.negociando.map(v => vchip(v.vertical, v.produto, "off")).join("") || '<span class="sub">—</span>'}</div></td>
     <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
       <button class="btn sec" data-ativ-op="${esc(o.id)}" ${o.empresa.noPipedrive || o.contatos.length ? "" : 'disabled title="A empresa não está no Pipedrive"'}>Criar atividade</button></div></td>
@@ -480,8 +417,9 @@ function opHTML(o) {
 function filtrarOps() {
   const q = filtroOp.q.toLowerCase();
   const ls = OPS.filter(o => (!filtroOp.vertical || o.vertical === filtroOp.vertical) && (!q || o.empresa.nome.toLowerCase().includes(q))
-    && (!filtroOp.tipo || (filtroOp.tipo === "cliente") === o.cliente));
-  document.getElementById("ops").innerHTML = ls.length ? ls.map(opHTML).join("") : `<tr><td colspan="8" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
+    && (!filtroOp.tipo || (filtroOp.tipo === "cliente") === o.cliente)
+    && (!filtroOp.rel || (filtroOp.rel === "-" ? !o.relacoes.length : o.relacoes.includes(filtroOp.rel))));
+  document.getElementById("ops").innerHTML = ls.length ? ls.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   document.getElementById("contagem-op").textContent = `${ls.length} de ${OPS.length} oportunidades`;
 }
 async function telaOportunidades() {
@@ -493,24 +431,26 @@ async function telaOportunidades() {
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
+      <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...new Set(OPS.flatMap(o => o.relacoes))].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
       <span class="sub" id="contagem-op"></span>
     </div>
     <div class="tabela"><table class="larga">
-      <thead><tr><th>Potencial</th><th>Empresa</th><th>Oportunidade</th><th>Quem decide · ponte</th><th>Por quê</th><th>Já tem conosco</th><th>Em negociação</th><th>Próximo passo</th></tr></thead>
+      <thead><tr><th>Potencial</th><th>Empresa</th><th>Oportunidade</th><th>Quem decide · ponte</th><th>Por quê</th><th>Notícias</th><th>Já tem conosco</th><th>Em negociação</th><th>Próximo passo</th></tr></thead>
       <tbody id="ops"></tbody></table></div>
-    <p class="nota">Empresas que já são clientes ou que estamos negociando em uma vertical e que ainda não têm seguro nem negócio aberto em outra. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: empresas que já são clientes ou que estamos negociando em uma vertical e que ainda não têm seguro nem negócio aberto em outra. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   filtrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop;
     document.querySelectorAll("[data-vop]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.vop === filtroOp.vertical))); filtrarOps(); });
   document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtrarOps(); };
   document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtrarOps(); };
+  document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtrarOps(); };
 }
 
 /* ---------- Qualidade do cadastro (master) ---------- */
 async function telaQualidade() {
-  if (EU?.papel !== "master") { location.hash = "#negocios"; return; }
+  if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
   const q = await api.get("/api/qualidade");
   const org = x => `<div><b>${esc(x.nome)}</b> <span class="sub">· org ${x.orgId}</span></div>
     <div class="sub">${[x.cnpj && x.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), x.site, `${x.negocios} negócios (${x.ganhos} ganhos)`, `${x.pessoas} pessoas`].filter(Boolean).map(esc).join(" · ")}</div>`;
@@ -591,7 +531,7 @@ async function telaTodos() {
 
 /* ---------- Equipe ---------- */
 async function telaEquipe() {
-  if (EU?.papel !== "master") { location.hash = "#negocios"; return; }
+  if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
   if (!Object.keys(V).length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
   const equipe = await api.get("/api/equipe");
   const vs = Object.entries(V);
@@ -686,11 +626,12 @@ async function telaLinkedin() {
 async function telaEmpresa(id) {
   if (!USUARIOS.length) { const t = await api.get("/api/tabela"); USUARIOS = t.usuarios; V = t.verticais; LINHAS = t.linhas; }
   const e = await api.get("/api/empresas/" + id);
-  const vig = e.negocios.filter(n => n.vigente), abertos = LINHAS.filter(l => l.empresa?.id == id);
+  if (!OPS.length) OPS = (await api.get("/api/oportunidades")).itens;
+  const vig = e.negocios.filter(n => n.vigente), ops = OPS.filter(o => o.empresa.id == id), abertos = e.negocios.filter(n => n.status === "aberto");
   const temSaudeZeca = vig.some(n => n.vertical === "saude" && n.fonte === "zeca"), saudeManual = vig.some(n => n.vertical === "saude" && n.fonte === "manual");
   const situacao = n => n.vigente ? "Vigente" : n.status === "aberto" ? "Em negociação" : n.status === "cancelado" ? "Cancelado" : n.status === "perdido" ? "Perdido" : n.fim ? "Vencido" : "Ganho sem fim de vigência";
   document.getElementById("app").innerHTML = `
-  <a href="#negocios" class="small">← Negócios</a>
+  <a href="#oportunidades" class="small">← Oportunidades</a>
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.cidade && `${e.cidade}${e.uf ? "/" + e.uf : ""}`, e.funcionarios && `${e.funcionarios} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}</div>
@@ -698,9 +639,10 @@ async function telaEmpresa(id) {
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>
     ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${vig.some(n => n.vertical === "saude") ? "checked" : ""}> Cliente Saúde${e.negocios.some(n => n.vertical === "saude" && n.status === "ganho" && !n.fim) ? " (ganho no Pipedrive; desmarque se cancelou)" : " (fora da planilha do Zeca)"}</label>`}
   </section>
-  <section><h2>Negócios abertos</h2><div class="tabela"><table class="larga">
-    <thead><tr><th>Potencial</th><th>Cliente/Lead</th><th>Temperatura</th><th>Quem decide</th><th>Seguros vigentes</th><th>Negócio aberto</th><th>Por quê</th><th>Notícias</th><th>Próximo passo</th></tr></thead>
-    <tbody>${abertos.length ? abertos.map(linhaHTML).join("") : '<tr><td colspan="9" class="vazio">Nenhum negócio aberto nos funis acompanhados.</td></tr>'}</tbody></table></div></section>
+  <section><h2>Oportunidades</h2><div class="tabela"><table class="larga">
+    <thead><tr><th>Potencial</th><th>Empresa</th><th>Oportunidade</th><th>Quem decide · ponte</th><th>Por quê</th><th>Notícias</th><th>Já tem conosco</th><th>Em negociação</th><th>Próximo passo</th></tr></thead>
+    <tbody id="ops">${ops.length ? ops.map(opHTML).join("") : '<tr><td colspan="9" class="vazio">Nenhuma oportunidade: a empresa já tem ou está negociando todas as verticais.</td></tr>'}</tbody></table></div></section>
+  <section><h2>Em negociação no Pipedrive</h2><div class="grupo" style="padding:12px 14px">${abertos.length ? `<div class="chips">${abertos.map(n => vchip(n.vertical, `${n.produto}${n.etapa ? " · " + n.etapa : ""}`)).join("")}</div>` : '<span class="sub">Nenhum negócio aberto.</span>'}</div></section>
   <section><h2>Pessoas</h2><div class="tabela"><table>
     <thead><tr><th>Nome</th><th>Cargo</th><th>Área</th><th>E-mail</th><th>Influência</th><th>Relação</th><th>Temperatura</th><th>Fala com</th></tr></thead>
     <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.area || "")}</td><td class="small">${esc(p.email || "")}</td>
@@ -715,29 +657,27 @@ async function telaEmpresa(id) {
 
 /* ---------- Eventos globais ---------- */
 document.addEventListener("click", ev => {
-  const b = ev.target.closest("[data-ativ]"); if (b && !b.disabled) abrirAtividade(b.dataset.ativ);
   const o = ev.target.closest("[data-ativ-op]"); if (o && !o.disabled) abrirAtividadeOp(o.dataset.ativOp);
 });
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
   try {
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
-      if (!PREVIA) LINHAS = (await api.get("/api/tabela")).linhas; render(); }
+      OPS = []; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
   } catch (err) { aviso(err.message); ev.target.checked = !ev.target.checked; }
 });
 
 async function render() {
-  const h = location.hash || "#negocios";
+  const h = location.hash && location.hash !== "#negocios" ? location.hash : "#oportunidades";
   const m = h.match(/^#empresa-(\d+)$/);
-  abas(m ? "negocios" : h.slice(1));
+  abas(m ? "oportunidades" : h.slice(1));
   try {
     if (m) await telaEmpresa(m[1]);
     else if (h === "#todos") await telaTodos();
-    else if (h === "#oportunidades") await telaOportunidades();
     else if (h === "#qualidade") await telaQualidade();
     else if (h === "#equipe") await telaEquipe();
-    else await telaNegocios();
+    else await telaOportunidades();
   } catch (err) { if (err.message !== "login") document.getElementById("app").innerHTML = `<p class="vazio">${esc(err.message)}</p>`; }
 }
 

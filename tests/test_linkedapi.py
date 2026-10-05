@@ -53,8 +53,9 @@ class LinkedApiFalsa:
             return [{"name": "Ana Souza", "headline": "Advogada", "publicUrl": "https://www.linkedin.com/in/ana-adv"},
                     {"name": "Ana Souza", "headline": "CFO | Metalúrgica Alfa", "publicUrl": "https://www.linkedin.com/in/ana-cfo"}]
         if t == "st.openCompanyPage" and d["then"] and d["then"][0]["actionType"] == "st.retrieveCompanyEmployees":
+            lista = [] if "beta" in d["companyUrl"] else FUNCIONARIOS_RH  # cada empresa com os seus funcionários
             return {**{k: v for k, v in EMPRESA_ALFA.items() if k != "then"},
-                    "then": [{"actionType": "st.retrieveCompanyEmployees", "success": True, "data": FUNCIONARIOS_RH}]}
+                    "then": [{"actionType": "st.retrieveCompanyEmployees", "success": True, "data": lista}]}
         if t == "st.openCompanyPage" and "beta" in d["companyUrl"]:
             return {"name": "Beta Serviços", "publicUrl": d["companyUrl"], "employeesCount": 40, "then": []}
         if t == "st.openCompanyPage":

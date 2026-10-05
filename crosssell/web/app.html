@@ -98,6 +98,12 @@ ul.lista{margin:0;padding-left:16px;display:grid;gap:2px;font-size:13px}
 .decide{font-size:12px;display:grid;gap:3px;margin-top:8px;padding-top:6px;border-top:1px dashed var(--line, #ddd)}
 .decide .ponte{margin-top:2px}
 .decide.solo{margin-top:0;padding-top:0;border-top:0}
+th[data-ajuda]{cursor:help}
+th[data-ajuda]::after{content:"?";display:inline-grid;place-items:center;width:14px;height:14px;margin-left:5px;border-radius:50%;
+  border:1px solid currentColor;font:600 9px/1 var(--f-body);vertical-align:1px;opacity:.6}
+#dica{position:fixed;z-index:40;max-width:340px;background:var(--ink);color:var(--bg);font:400 12.5px/1.45 var(--f-body);
+  padding:10px 12px;border-radius:8px;box-shadow:0 6px 24px rgba(2,2,78,.18);pointer-events:none;text-transform:none;letter-spacing:0;white-space:normal}
+#dica b{font-weight:600}
 ul.motivos{list-style:none;margin:0;padding:0;display:grid;gap:3px;font-size:13px}
 ul.motivos li{display:grid;grid-template-columns:16px 1fr;gap:4px;align-items:baseline}
 .sinal{font:700 12px/1 var(--f-data);text-align:center}
@@ -144,6 +150,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 <main id="app"><p class="vazio">Carregando…</p></main>
 <div id="modal"></div>
 <div class="aviso" id="aviso" hidden></div>
+<div id="dica" role="tooltip" hidden></div>
 
 <script>
 const D = /*__DADOS__*/null;
@@ -165,6 +172,57 @@ const nomeDe = email => (USUARIOS.find(u => u.email === email) || {}).nome || em
 const vchip = (v, txt, extra="") => `<span class="chip c-${v || "null"} ${extra}">${esc(txt ?? V[v] ?? "Sem vertical")}</span>`;
 const inLink = url => url ? ` <a class="in" href="${esc(url)}" target="_blank" rel="noopener" title="Perfil no LinkedIn">in</a>` : "";
 function aviso(msg){ const a = document.getElementById("aviso"); a.textContent = msg; a.hidden = false; clearTimeout(aviso.t); aviso.t = setTimeout(() => a.hidden = true, 3500); }
+
+/* ---------- Explicação dos títulos das colunas (passar o mouse ou focar com Tab) ---------- */
+const AJUDA = {
+  "Potencial": "<b>Quão bom é este negócio pelos critérios da vertical</b>, de 0 a 100. Ordena a tabela.<br>• <b>Saúde</b>: influência 30, funcionários 25, qualificação do time 20, localização 15, RH estruturado 10.<br>• <b>Linhas Financeiras</b>: influência 35, encaixe do produto 65 (E&O: serviço intelectual; D&O: gestão profissional, aporte, fundo; Cyber: CTO ou DPO).<br>• <b>RE</b>: influência 30, perfil 45 (galpão, indústria, frota), porte 25.<br>Passe o mouse no número para ver a nota de cada critério. Abaixo dele, o Score de Influência do contato.",
+  "op:Potencial": "<b>Quão boa é a oportunidade</b>, de 0 a 100, com os critérios da vertical da oportunidade (os mesmos da aba Negócios). A influência usada é a de quem decide; sem ninguém da área, a do contato mais influente. Ordena a tabela.",
+  "Cliente/Lead": "<b>Empresa e contato do negócio.</b> <b>Cliente</b>: tem pelo menos um seguro vigente conosco. <b>Lead</b>: nenhum. Funcionários: LinkedIn (preferência) ou Pipedrive; em Saúde, as vidas do negócio. Se o negócio não tem contato, aparece o contato mais influente da empresa.",
+  "Empresa": "<b>Empresa da oportunidade.</b> <b>Cliente</b>: tem seguro vigente conosco. <b>Lead</b>: ainda não tem, mas está em negociação em outra vertical.",
+  "Temperatura": "<b>Abertura do contato</b>, lida pela IA nas últimas respostas dele aos e-mails da equipe: Muita, Média ou Pouca abertura, com o motivo. O texto dos e-mails não fica guardado.",
+  "Quem decide": "<b>Quem costuma decidir esta vertical na empresa</b>, pela área do cargo (Pipedrive) ou do título no LinkedIn: Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos, Financeiro. Sem ninguém da área, o executivo (CEO, sócio).<br><b>infl.</b> = Score de Influência. Se ninguém da área tem relação com a equipe, a <b>Ponte</b> é o contato da empresa com relação mais forte e quem da equipe fala com ele.",
+  "Quem decide · ponte": "<b>Quem costuma decidir a vertical da oportunidade</b>, pela área do cargo (Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos, Financeiro). <b>infl.</b> = Score de Influência. <b>Ponte</b>: contato da empresa com relação mais forte com a equipe, que pode apresentar quem decide.",
+  "Seguros vigentes": "<b>O que a empresa já tem conosco</b>, por produto. Vigente = negócio ganho no Pipedrive com fim de vigência depois de hoje. Saúde ganho vale até alguém desmarcar <i>Ainda é cliente Saúde</i> (contrato sem fim de vigência). Também contam apólice ativa no Zeca e a caixa marcada.",
+  "Já tem conosco": "<b>Seguros vigentes</b> da empresa, por produto (mesma regra da aba Negócios).",
+  "Em negociação": "<b>Negócios abertos</b> da empresa em outras verticais. Leads aparecem aqui porque já estão sendo trabalhados.",
+  "Oportunidade": "<b>Vertical que a empresa ainda não tem nem está negociando.</b> Abrir conversa aqui é cross sell.",
+  "Negócio aberto": "<b>O negócio em andamento no Pipedrive</b>: funil, título, etapa e valor.",
+  "Por quê": "<b>Só o que não aparece nas outras colunas.</b><br><b>+</b> critério a favor · <b>−</b> contra · <b>?</b> falta informação (ex.: ninguém de RH mapeado) · <b>!</b> atenção (ex.: o contato mudou de empresa no LinkedIn). Inclui reconquista, quando a empresa já foi cliente na vertical.",
+  "Notícias": "<b>Manchetes recentes sobre a empresa</b> (Google Notícias, atualizado diariamente) e posts da página dela no LinkedIn.",
+  "Próximo passo": "<b>Próxima atividade aberta</b> criada pela plataforma. <i>Criar atividade</i> registra no Pipedrive, dentro da pessoa, e aparece em To-dos da semana.",
+  "op:Próximo passo": "<b>Próxima atividade aberta</b> para esta empresa fora de negócios. <i>Criar atividade</i> registra no Pipedrive, na organização (e na pessoa, se escolhida), e aparece em To-dos da semana.",
+  "Influência": "<b>Score de Influência</b>, de 0 a 100: 50% relacionamento por e-mail (ajustado pela temperatura) + 50% hierarquia do cargo (sócio/C-level 1,0; diretor/head 0,8; gerente/coordenador 0,55; demais 0,3).",
+  "Relação": "<b>Relacionamento por e-mail</b>, de 0 a 100, nos últimos 90 dias: frequência 35%, recência 30%, reciprocidade (ida e volta) 25%, amplitude (quantas pessoas da equipe falam com ela) 10%.",
+  "Área": "<b>Área pelo cargo</b> (Pipedrive) ou título (LinkedIn): RH/Pessoas, Financeiro, Jurídico, Riscos, Operações, TI ou Executivo. Define quem decide cada vertical.",
+  "Fala com": "<b>Quem da equipe troca e-mails</b> com esta pessoa.",
+  "Fica": "<b>Organização que permanece</b> depois da mesclagem: a com mais negócios ganhos; depois, mais negócios, CNPJ e a mais antiga.",
+  "Será mesclada": "<b>Organização que deixa de existir</b>: negócios, pessoas, atividades e notas passam para a que fica. Não tem volta.",
+  "Razão social (editável)": "<b>Razão social da Receita Federal</b>, pelo CNPJ. Os acentos vêm do nome atual quando a palavra já existia. Confira antes de atualizar no Pipedrive.",
+};
+function chaveAjuda(th) {
+  const t = th.textContent.replace(/\?$/, "").trim();
+  const op = th.closest("table")?.querySelector("#ops");
+  return op && AJUDA["op:" + t] ? AJUDA["op:" + t] : AJUDA[t];
+}
+function marcarAjuda(raiz = document) {
+  raiz.querySelectorAll("th:not([data-ajuda])").forEach(th => { const a = chaveAjuda(th); if (a) { th.dataset.ajuda = "1"; th.tabIndex = 0; th._ajuda = a; } });
+}
+(() => {
+  const dica = () => document.getElementById("dica");
+  const mostrar = th => {
+    const d = dica(); d.innerHTML = th._ajuda; d.hidden = false;
+    const r = th.getBoundingClientRect(), w = Math.min(340, innerWidth - 24);
+    d.style.left = Math.max(12, Math.min(r.left, innerWidth - w - 12)) + "px";
+    const h = d.offsetHeight, embaixo = r.bottom + 8 + h < innerHeight;
+    d.style.top = (embaixo ? r.bottom + 8 : Math.max(8, r.top - h - 8)) + "px";
+  };
+  const esconder = () => { const d = dica(); if (d) d.hidden = true; };
+  document.addEventListener("mouseover", e => { const th = e.target.closest?.("th[data-ajuda]"); th ? mostrar(th) : esconder(); });
+  document.addEventListener("focusin", e => { const th = e.target.closest?.("th[data-ajuda]"); th ? mostrar(th) : esconder(); });
+  document.addEventListener("scroll", esconder, true);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") esconder(); });
+  new MutationObserver(() => marcarAjuda()).observe(document.getElementById("app"), {childList: true, subtree: true});
+})();
 
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
 const api = {

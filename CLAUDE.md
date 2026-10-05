@@ -84,5 +84,6 @@ clients the same way (connectors accept a `transport`/client) rather than hittin
 ## Gotchas
 
 - `build/` is pip/setuptools output and is gitignored. Edit `crosssell/`, never `build/`.
-- Deployment: `Dockerfile` (runs `initdb` then uvicorn) and `deploy/` (AWS EC2 + RDS, Caddy for HTTPS,
-  `instalar.sh`/`atualizar.sh`; see `deploy/LEIA-ME.md`).
+- Deployment: `Dockerfile` (runs `initdb` then uvicorn) and `deploy/` (MVP on the existing EC2 `zeca-server`,
+  next to the Zeca API: `web` + `postgres` + daily local `backup` containers in `/opt/crosssell`, behind the host
+  Nginx with Certbot at crosssell.coinsure.com.br; see `deploy/LEIA-ME.md`).

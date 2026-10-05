@@ -4,6 +4,5 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 git pull --ff-only
 cd deploy
-export $(grep '^DOMINIO=' .env | xargs)
-sudo docker compose up -d --build web
-sudo docker image prune -f  # apaga as imagens antigas que cada atualização deixa no disco
+docker compose up -d --build web   # ao subir, o container aplica as migrações do banco
+docker image prune -f  # apaga as imagens antigas que cada atualização deixa no disco

@@ -1,7 +1,8 @@
 import zlib
 from contextlib import contextmanager
+from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from crosssell.config import get_settings
@@ -25,10 +26,34 @@ engine = make_engine()
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def init_db(bind=None) -> None:
-    from crosssell import models  # noqa: F401  (registra as tabelas)
+MIGRACOES = Path(__file__).parent / "migrations"
+ESQUEMA_INICIAL = "0001"  # crosssell/migrations/versions/0001_esquema_inicial.py
 
-    Base.metadata.create_all(bind or engine)
+
+def config_alembic(conexao):
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRACOES))
+    cfg.attributes["connection"] = conexao
+    return cfg
+
+
+def init_db(bind=None) -> None:
+    """Deixa o banco na versão mais nova das migrações (crosssell/migrations). Pode rodar sempre:
+    sem migração pendente, não faz nada."""
+    from alembic import command
+
+    eng = bind or engine
+    with eng.begin() as conexao:
+        if eng.dialect.name == "postgresql":  # dois processos subindo juntos: um migra, o outro espera
+            conexao.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": zlib.crc32(b"crosssell-migracoes")})
+        cfg = config_alembic(conexao)
+        tabelas = set(inspect(conexao).get_table_names())
+        if "empresas" in tabelas and "alembic_version" not in tabelas:
+            # Banco criado pelo create_all, antes das migrações: já tem o esquema inicial
+            command.stamp(cfg, ESQUEMA_INICIAL)
+        command.upgrade(cfg, "head")
 
 
 @contextmanager

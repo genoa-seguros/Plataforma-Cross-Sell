@@ -146,6 +146,20 @@ embutidos. Nele as ações ficam só no navegador.
 pytest
 ```
 
+### Mudanças no banco (migrações)
+
+O banco segue as migrações do Alembic em `crosssell/migrations/versions/`. Elas são aplicadas
+sozinhas no `crosssell initdb`, ao subir o servidor e em todo comando do `crosssell` (no servidor, o
+`deploy/atualizar.sh` já cuida disso). Depois de mudar `crosssell/models.py`:
+
+```bash
+alembic revision --autogenerate -m "o que mudou"   # gera a migração comparando o modelo com o banco do .env
+```
+
+Revise o arquivo gerado e faça o commit junto com o modelo. O teste `tests/test_migracoes.py` falha se
+um modelo mudar sem migração. Bancos criados antes das migrações são marcados como `0001` na primeira
+execução, sem perder dados.
+
 ## Pendências para produção
 
 - [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,

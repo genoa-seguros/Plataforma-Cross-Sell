@@ -61,9 +61,15 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
 - **Config:** `config.py` `Settings` (pydantic-settings, `.env`), cached by `get_settings()` (lru_cache).
   `db.py` creates the engine at import time from `DATABASE_URL` (SQLite locally, Postgres in prod;
   `postgres://` URLs are rewritten to `postgresql+psycopg://`).
-- **No migrations:** the schema is created with `Base.metadata.create_all` (`init_db`). New tables appear
-  automatically, but new columns on existing tables are **not** added to an existing database. Handle that
-  explicitly when changing models.
+- **Migrations (Alembic):** `crosssell/migrations/` lives inside the package so it ships in the Docker image.
+  `db.init_db()` runs `alembic upgrade head` (under a Postgres advisory lock) and is called by every CLI
+  command and at server startup; a database created by the old `create_all` is stamped `0001` first. After
+  changing `models.py`, run `alembic revision --autogenerate -m "..."` (uses `DATABASE_URL` from `.env`) and
+  commit the reviewed file. `tests/test_migracoes.py` fails when models and migrations diverge. Tests still
+  build their in-memory DB with `create_all`.
+- **Experiments that touch `models.py` or migrations:** do them in a copy or worktree, not in the working
+  directory. The user often keeps `uvicorn --reload` running against `demo.db`, and a reload runs `init_db()`,
+  applying whatever migration is on disk.
 
 ## Tests
 

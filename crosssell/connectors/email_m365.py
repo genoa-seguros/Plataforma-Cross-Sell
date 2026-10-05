@@ -154,10 +154,21 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
     usuarios = [u.email for u in db.scalars(select(Usuario).where(Usuario.ativo.is_(True)))]
     total: dict[str, int] = {}
     textos: dict[int, list[dict]] = {}
+    falhas = []
     for u in usuarios:
-        res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)), textos)
+        parcial: dict[int, list[dict]] = {}
+        try:
+            res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)), parcial)
+        except httpx.HTTPError as exc:  # ex.: caixa fora da Access Policy (403): as outras seguem
+            db.rollback()  # descarta o que esta caixa deixou pela metade
+            falhas.append(f"{u} ({exc})")
+            continue
+        for pessoa_id, lista in parcial.items():
+            textos.setdefault(pessoa_id, []).extend(lista)
         for k, v in res.items():
             total[k] = total.get(k, 0) + v
     if classificador is not None and textos:
         total["temperaturas"] = temperatura.atualizar(db, classificador, textos)
+    if falhas:  # o que foi lido já está gravado; o erro fica no log da sincronização
+        raise RuntimeError(f"{len(falhas)} de {len(usuarios)} caixas não foram lidas: " + "; ".join(falhas))
     return total

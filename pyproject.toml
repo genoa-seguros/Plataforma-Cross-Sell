@@ -15,6 +15,7 @@ dependencies = [
   "jinja2>=3.1",
   "python-multipart>=0.0.9",
   "anthropic>=1.0",
+  "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +32,7 @@ build-backend = "setuptools.build_meta"
 include = ["crosssell*"]
 
 [tool.setuptools.package-data]
-crosssell = ["web/templates/*.html", "web/app.html"]
+crosssell = ["web/templates/*.html", "web/app.html", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,10 @@
+.git
+__pycache__
+*.pyc
+*.db
+.env
+tests
+scripts
+n8n
+crosssell.egg-info
+.pytest_cache

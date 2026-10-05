@@ -127,3 +127,22 @@ def test_esqueci_a_senha(cenario, db, monkeypatch):
     assert c.get("/api/tabela").status_code == 401  # sessões antigas encerradas
     assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123").status_code == 401
     assert entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "nova-senha-456").status_code == 303
+
+
+def test_melhorias(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert c.post("/api/melhorias", headers=H, json={"titulo": " "}).status_code == 400
+    x = c.post("/api/melhorias", headers=H, json={"titulo": "Mostrar valor da apólice", "prioridade": "alta"}).json()
+    assert x["situacao"] == "nova" and x["autor"] == "Rodrigo"
+    # Membro anota, mas não muda a situação
+    _, token = auth.convidar(db, "membro@innoaseguros.com.br", "Membro", ["saude"])
+    u = auth.usuario_do_convite(db, token)
+    auth.aceitar_convite(db, u, "senha-do-membro-1")
+    m = TestClient(webapp.app)
+    entrar(m, "membro@innoaseguros.com.br", "senha-do-membro-1")
+    y = m.post("/api/melhorias", headers=H, json={"titulo": "Filtro por seguradora"}).json()
+    assert m.post(f"/api/melhorias/{y['id']}", headers=H, json={"situacao": "feita"}).status_code == 403
+    assert m.post(f"/api/melhorias/{x['id']}", headers=H, json={"prioridade": "baixa"}).status_code == 403
+    assert c.post(f"/api/melhorias/{y['id']}", headers=H, json={"situacao": "andamento"}).json()["situacao"] == "andamento"
+    assert [i["titulo"] for i in m.get("/api/melhorias").json()] == ["Filtro por seguradora", "Mostrar valor da apólice"]

@@ -24,9 +24,7 @@ import yaml
 from crosssell.models import Empresa, Negocio, Pessoa
 from crosssell.normalize import classificar_area, classificar_senioridade, sem_acento
 
-# config/criterios.yaml da pasta de trabalho (servidor/Docker); se não houver, o do repositório
-ARQUIVO = next((c for c in (Path("config/criterios.yaml"), Path(__file__).resolve().parents[1] / "config" / "criterios.yaml")
-                if c.exists()), Path("config/criterios.yaml"))
+ARQUIVO = Path(__file__).resolve().parents[1] / "config" / "criterios.yaml"
 AJUSTE_TEMPERATURA = {"muita": 0.15, "media": 0.0, "pouca": -0.15}
 SEM_DADO = 0.4  # critério ainda sem informação: nem ajuda nem derruba
 

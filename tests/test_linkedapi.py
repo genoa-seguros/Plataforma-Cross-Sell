@@ -42,6 +42,8 @@ class LinkedApiFalsa:
         self.pedidos: dict[str, dict] = {}
         self.headers = []
         self.pendentes = pendentes  # quantas consultas responder "running" antes de concluir
+        self.falhas: dict[tuple[str, int], Exception] = {}  # (método, nº da chamada) -> exceção a levantar
+        self.chamadas = {"POST": 0, "GET": 0}
 
     def _resposta(self, d: dict):
         t = d["actionType"]
@@ -66,6 +68,9 @@ class LinkedApiFalsa:
     def client(self) -> LinkedApiClient:
         def handler(req: httpx.Request):
             self.headers.append(dict(req.headers))
+            self.chamadas[req.method] += 1
+            if (req.method, self.chamadas[req.method]) in self.falhas:
+                raise self.falhas[(req.method, self.chamadas[req.method])]
             if req.method == "POST":
                 wid = f"wf-{len(self.pedidos) + 1}"
                 self.pedidos[wid] = {"def": json.loads(req.content), "consultas": 0}
@@ -179,6 +184,42 @@ def test_limite_de_24h(db, settings):
     r = lk.executar(db, s, api.client(), agora=depois)
     assert r["expirados"] == 3 and r["iniciados"] >= 1
     assert len(db.scalars(select(LinkedinPedido)).all()) >= 4
+
+
+def test_queda_de_conexao_nao_perde_pedidos_pagos(db, settings):
+    s = config(settings)
+    carregar(db, s)
+    api = LinkedApiFalsa(pendentes=99)
+    api.falhas[("POST", 3)] = httpx.ConnectTimeout("timeout")  # 3º pedido sem resposta: conta como falha
+    r = lk.executar(db, s, api.client())
+    assert r["iniciados"] == 3 and r["falhas"] == 1 and r["erro"].startswith("conexao")
+    assert len(db.scalars(select(LinkedinPedido)).all()) == 3
+
+
+def test_erro_no_meio_do_lote_mantem_os_pedidos_ja_feitos(db, settings):
+    s = config(settings)
+    carregar(db, s)
+    api = LinkedApiFalsa(pendentes=99)
+    api.falhas[("POST", 3)] = RuntimeError("quebrou")
+    try:
+        lk.executar(db, s, api.client())
+    except RuntimeError:
+        pass
+    db.rollback()
+    assert {p.workflow_id for p in db.scalars(select(LinkedinPedido))} == {"wf-1", "wf-2"}
+    assert lk.executar(db, s, api.client())["iniciados"] == 2  # não repete os dois que já estavam em andamento
+
+
+def test_queda_de_conexao_ao_consultar_mantem_o_pedido(db, settings):
+    s = config(settings, linkedin_limite_dia=1)
+    carregar(db, s)
+    api = LinkedApiFalsa()
+    lk.executar(db, s, api.client())
+    api.falhas[("GET", 1)] = httpx.ReadTimeout("timeout")
+    r = lk.executar(db, s, api.client())
+    assert r["andamento"] == 1 and r["erros"] == 0
+    assert db.scalar(select(LinkedinPedido)).situacao == "pendente"
+    assert lk.executar(db, s, api.client())["aplicados"] == 1  # na rodada seguinte o resultado é aplicado
 
 
 def test_funcionarios_reais_da_salvy(db, settings):

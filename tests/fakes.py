@@ -63,6 +63,7 @@ class FakePipedrive:
         self.criadas: list[dict] = []
         self.atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
+        self.falhar_usuarios = False  # /v1/users fora do ar
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handler)
@@ -85,5 +86,7 @@ class FakePipedrive:
             return httpx.Response(200, json={"data": {"id": aid, "done": aid in self.feitas}})
         recurso = caminho.rsplit("/", 1)[1]
         if recurso == "users":
+            if self.falhar_usuarios:
+                return httpx.Response(503, json={"error": "indisponível"})
             return httpx.Response(200, json={"data": DADOS["users"]})
         return httpx.Response(200, json={"data": DADOS[recurso], "additional_data": {"next_cursor": None}})

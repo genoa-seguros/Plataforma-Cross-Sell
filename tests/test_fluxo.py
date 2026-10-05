@@ -1,12 +1,13 @@
 import os
 from datetime import datetime, timedelta
 
+import httpx
 from sqlalchemy import select
 
 from crosssell import tabela
 from crosssell.config import Settings
 from crosssell.connectors import email_m365, noticias, pipedrive, planilhas
-from crosssell.models import Empresa, Negocio, Pessoa, Usuario
+from crosssell.models import Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.pipeline import carregar_usuarios
 from crosssell.scoring import relacionamento
 from crosssell.temperatura import Classificador, atualizar
@@ -36,6 +37,15 @@ def test_regra_de_vigencia(db, settings):
     assert neg(db, 3).produto == "Garantia"        # sem campo de produto: título sem o ano
     assert neg(db, 4).etapa == "Em Cotação"
     assert neg(db, 9) is None                      # funil 31 não configurado
+
+
+def test_falha_nos_usuarios_do_pipedrive_mantem_o_responsavel(db, settings):
+    fake = FakePipedrive()
+    client = carregar(db, settings, fake)
+    assert neg(db, 4).responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
+    fake.falhar_usuarios = True
+    pipedrive.sincronizar(db, settings, client)  # o resto da sincronização segue
+    assert neg(db, 4).responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
 
 
 def test_tabela_so_negocios_abertos_dos_funis_escolhidos(db, settings):
@@ -160,6 +170,42 @@ def test_temperatura_pelos_emails_do_contato(db, settings):
     assert chamada["output_config"]["format"]["type"] == "json_schema"
     assert "Oi Ana" not in chamada["messages"][0]["content"]  # e-mail enviado pela equipe não entra
     relacionamento.calcular(db)
+
+
+def test_caixa_com_erro_nao_impede_as_outras(db, settings):
+    carregar(db, settings)
+    agora = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def msg(id_, de, para, texto):
+        return {"id": id_, "conversationId": "t-" + id_, "sentDateTime": agora,
+                "from": {"emailAddress": {"address": de}}, "toRecipients": [{"emailAddress": {"address": para}}],
+                "uniqueBody": {"content": texto}}
+
+    def graph(req: httpx.Request):
+        if "oauth2" in req.url.path:
+            return httpx.Response(200, json={"access_token": "tok"})
+        caixa = req.url.path.split("/users/")[1].split("/")[0]
+        if caixa.startswith("bruno"):  # 1ª página lida, a 2ª recusada: nada desta caixa fica pela metade
+            if req.url.params.get("pagina") == "2":
+                return httpx.Response(403, json={"error": {"code": "ErrorAccessDenied"}})
+            return httpx.Response(200, json={"value": [msg("b1", "novo@gama.com.br", caixa, "Oi")],
+                                             "@odata.nextLink": f"https://graph.microsoft.com/v1.0/users/{caixa}/messages?pagina=2"})
+        if caixa.startswith("victor"):
+            return httpx.Response(200, json={"value": [msg("v1", "ana@alfa.com.br", caixa, "Vamos marcar a reunião?")]})
+        return httpx.Response(200, json={"value": []})
+
+    client = email_m365.GraphClient(settings, transport=httpx.MockTransport(graph))
+    falso = _ClaudeFalso('{"temperatura": "muita", "justificativa": "Propõe reunião."}')
+    try:
+        email_m365.sincronizar(db, settings, client=client, classificador=Classificador(settings, client=falso))
+    except RuntimeError as exc:
+        assert "1 de 4 caixas" in str(exc) and "bruno.rodrigues" in str(exc)
+    else:
+        raise AssertionError("deveria avisar da caixa com erro")
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    assert db.scalars(select(Interacao).where(Interacao.pessoa_id == ana.id)).first() is not None
+    assert ana.temperatura == "muita"  # a temperatura das outras caixas é calculada mesmo assim
+    assert db.scalar(select(Pessoa).where(Pessoa.email == "novo@gama.com.br")) is None
 
 
 def test_chave_da_claude_vem_do_arquivo_env(tmp_path, monkeypatch):

@@ -141,7 +141,7 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
     try:
         donos = vincular_usuarios(db, client)
     except httpx.HTTPError:
-        donos = {}
+        donos = None  # sem a lista de usuários: mantém o responsável já gravado em vez de apagá-lo
     etapas = {s["id"]: s.get("name") for s in client.paginar("stages")}
 
     contagem = {"organizacoes": 0, "pessoas": 0, "negocios": 0, "ignorados": 0}
@@ -208,7 +208,8 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
         qtd = campos.get(campos_cfg.get("vidas")) if campos_cfg.get("vidas") else None
         faixa = _rotulo(campos.get(campos_cfg.get("faixa_vidas"))) if campos_cfg.get("faixa_vidas") else None
         neg.vidas = int(qtd) if isinstance(qtd, (int, float)) and qtd > 0 else _limite_faixa(faixa)
-        neg.responsavel_email = donos.get(d.get("owner_id"))
+        if donos is not None:
+            neg.responsavel_email = donos.get(d.get("owner_id"))
         # "Já possui o seguro saúde na Genoa?" = Sim -> registra a empresa como cliente Saúde.
         if empresa is not None and _rotulo(campos.get(campos_cfg.get("possui_saude"))) == "Sim":
             marcar_saude(db, empresa.id, True, origem="pipedrive")

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     linkedin_lote: int = 10  # consultas iniciadas por rodada (a rotina roda de hora em hora)
     linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
 
+    # Rotina dentro do servidor (hospedagem de um container só, ex.: AWS App Runner/Lightsail)
+    rotina_interna: bool = False
+    rotina_minutos: int = 60
+
     # Login: o master é criado pelo comando `crosssell criar-master`.
     sessao_dias: int = 14
     cookie_seguro: bool = True  # exige HTTPS em produção; desligue só em ambiente local

@@ -1,3 +1,4 @@
+import threading
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -24,10 +25,29 @@ AQUI = Path(__file__).parent
 templates = Jinja2Templates(directory=AQUI / "templates")
 
 
+def _rotina_interna(parar: threading.Event, minutos: int) -> None:
+    """Roda `crosssell rotina` dentro do próprio servidor, de hora em hora (ROTINA_INTERNA=true).
+    Útil em hospedagens de um container só; com um agendador externo, deixe desligado."""
+    import subprocess
+    import sys
+
+    if parar.wait(120):  # primeira rodada 2 min depois de subir
+        return
+    while True:
+        subprocess.run([sys.executable, "-m", "crosssell.cli", "rotina"], check=False)
+        if parar.wait(max(minutos, 5) * 60):
+            return
+
+
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
+    parar = threading.Event()
+    s = get_settings()
+    if s.rotina_interna:
+        threading.Thread(target=_rotina_interna, args=(parar, s.rotina_minutos), daemon=True).start()
     yield
+    parar.set()
 
 
 app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)

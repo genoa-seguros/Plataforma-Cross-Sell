@@ -16,6 +16,7 @@ dependencies = [
   "python-multipart>=0.0.9",
   "anthropic>=1.0",
   "psycopg[binary]>=3.1",
+  "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +33,8 @@ build-backend = "setuptools.build_meta"
 include = ["crosssell*"]
 
 [tool.setuptools.package-data]
-crosssell = ["web/templates/*.html", "web/app.html", "web/static/*"]
+crosssell = ["web/templates/*.html", "web/app.html", "web/static/*", "migrations/*.py",
+             "migrations/script.py.mako", "migrations/versions/*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,5 +1,7 @@
 # Colocar no ar
 
+> Na AWS da Innoa: siga [`deploy/LEIA-ME.md`](../deploy/LEIA-ME.md) (EC2 + RDS em São Paulo).
+
 A plataforma é um único container (`Dockerfile`) + um banco Postgres + uma tarefa de hora em hora.
 
 | Peça | O que roda |

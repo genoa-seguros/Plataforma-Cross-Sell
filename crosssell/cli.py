@@ -40,11 +40,12 @@ def criar_master(email: str, nome: str):
 
 @app.command()
 def convidar(email: str, nome: str, base_url: str = typer.Option("http://localhost:8000"),
-             vertical: list[str] = typer.Option([], help="linhas_financeiras | saude | ramos_elementares")):
-    """Gera um link de convite (o mesmo que a tela Equipe gera)."""
+             vertical: list[str] = typer.Option([], help="linhas_financeiras | saude | ramos_elementares"),
+             master: bool = typer.Option(False, help="Convite de master (administra a equipe)")):
+    """Gera um link de convite (o mesmo que a tela Equipe gera). A pessoa cria a própria senha nele."""
     from crosssell import auth
 
-    _, token = auth.convidar(_db(), email, nome, vertical)
+    _, token = auth.convidar(_db(), email, nome, vertical, papel="master" if master else "membro")
     typer.echo(f"{base_url.rstrip('/')}/convite/{token}")
 
 

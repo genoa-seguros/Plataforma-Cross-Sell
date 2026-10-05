@@ -203,7 +203,8 @@ def redefinir(request: Request, token: str, senha: str = Form(...), confirmacao:
 def _usuario_json(u: Usuario) -> dict:
     return {"id": u.id, "email": u.email, "nome": u.nome, "papel": u.papel, "ativo": u.ativo,
             "verticais": u.verticais, "lider": u.lider, "pipedrive": bool(u.pipedrive_user_id),
-            "pendente": u.senha_hash is None}
+            "pendente": u.pendente, "leEmails": u.le_emails, "leituraErro": u.leitura_erro,
+            "leituraEm": u.leitura_em.isoformat(timespec="minutes") if u.leitura_em else None}
 
 
 @app.get("/api/eu")
@@ -336,6 +337,27 @@ def api_convidar(dados: ConviteIn, request: Request, db: Session = Depends(get_d
     verticais = [v for v in dados.verticais if v in VERTICAIS]
     u, token = auth.convidar(db, dados.email, dados.nome, verticais, [v for v in dados.lider if v in verticais])
     return {"usuario": _usuario_json(u), "link": _link(request, token)}
+
+
+class LeituraIn(BaseModel):
+    ler: bool
+
+
+@app.post("/api/equipe/{usuario_id}/emails")
+def api_leitura_emails(usuario_id: int, dados: LeituraIn, db: Session = Depends(get_db),
+                       _m: Usuario = Depends(somente_master)):
+    """Liga ou desliga a leitura da caixa de e-mail. A pessoa também precisa estar no grupo da Access
+    Policy do Microsoft 365; senão a leitura é recusada e a tela mostra "recusada"."""
+    u = db.get(Usuario, usuario_id)
+    if u is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    if dados.ler and (not u.ativo or u.pendente):
+        raise HTTPException(400, "A leitura só pode ser ligada depois que a pessoa entrar na plataforma.")
+    u.le_emails = dados.ler
+    if not dados.ler:
+        u.leitura_erro = None
+    db.commit()
+    return _usuario_json(u)
 
 
 @app.post("/api/equipe/{usuario_id}/desconvidar")

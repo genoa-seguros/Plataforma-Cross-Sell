@@ -10,7 +10,9 @@ do relacionamento. Dos e-mails RECEBIDOS de contatos conhecidos lemos também
 o trecho novo da resposta (uniqueBody, sem o histórico citado). Esse texto
 vai para a classificação de temperatura e é descartado em seguida.
 
-As caixas lidas são as dos usuários ATIVOS da plataforma (convidados pelo master).
+As caixas lidas são as dos usuários que já entraram na plataforma e com a leitura ligada pelo master
+(tela Equipe). O Microsoft 365 ainda restringe o app ao grupo da Access Policy: fora dele, a leitura
+é recusada (403) e a tela Equipe mostra "recusada".
 """
 
 from collections.abc import Iterable, Iterator
@@ -151,18 +153,25 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
 
     client = client or GraphClient(settings)
     desde = datetime.utcnow() - timedelta(days=dias)
-    usuarios = [u.email for u in db.scalars(select(Usuario).where(Usuario.ativo.is_(True)))]
+    usuarios = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
+                                                Usuario.senha_hash.is_not(None))).all()
     total: dict[str, int] = {}
     textos: dict[int, list[dict]] = {}
     falhas = []
     for u in usuarios:
         parcial: dict[int, list[dict]] = {}
         try:
-            res = registrar_mensagens(db, settings, u, (converter_graph(m) for m in client.mensagens(u, desde)), parcial)
+            res = registrar_mensagens(db, settings, u.email, (converter_graph(m) for m in client.mensagens(u.email, desde)),
+                                      parcial)
         except httpx.HTTPError as exc:  # ex.: caixa fora da Access Policy (403): as outras seguem
             db.rollback()  # descarta o que esta caixa deixou pela metade
-            falhas.append(f"{u} ({exc})")
+            recusada = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403
+            u.leitura_erro = "recusada" if recusada else (str(exc) or type(exc).__name__)[:300]
+            db.commit()
+            falhas.append(f"{u.email} ({exc})")
             continue
+        u.leitura_em, u.leitura_erro = datetime.utcnow(), None
+        db.commit()
         for pessoa_id, lista in parcial.items():
             textos.setdefault(pessoa_id, []).extend(lista)
         for k, v in res.items():

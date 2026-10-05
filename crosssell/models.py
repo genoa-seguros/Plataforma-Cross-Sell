@@ -9,7 +9,7 @@ cliente Saúde — vira um registro de Negocio.
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from crosssell.db import Base
@@ -99,7 +99,8 @@ class Pessoa(Base):
 
 
 class Usuario(Base):
-    """Pessoa da Innoa com acesso à plataforma. Usuário ativo tem os e-mails lidos."""
+    """Pessoa da Innoa com acesso à plataforma. A caixa de e-mail só é lida se o master ligar a leitura
+    (tela Equipe) e a pessoa estiver no grupo da Access Policy do Microsoft 365."""
 
     __tablename__ = "usuarios"
 
@@ -117,10 +118,15 @@ class Usuario(Base):
     lider: Mapped[list] = mapped_column(JSON, default=list)
     pipedrive_user_id: Mapped[int | None]
     criado_em: Mapped[datetime] = mapped_column(default=_now)
+    # Leitura da caixa de e-mail: desligada até o master ligar (e só vale para quem já entrou)
+    le_emails: Mapped[bool] = mapped_column(default=False, server_default=false())
+    leitura_em: Mapped[datetime | None]  # última leitura da caixa que deu certo
+    leitura_erro: Mapped[str | None]  # erro da última tentativa ("recusada": fora do grupo no Microsoft 365)
 
     @property
-    def le_emails(self) -> bool:
-        return self.ativo
+    def pendente(self) -> bool:
+        """Convidado, mas ainda não criou a senha (nunca entrou)."""
+        return self.senha_hash is None
 
 
 class Sessao(Base):

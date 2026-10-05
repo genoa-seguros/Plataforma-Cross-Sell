@@ -115,6 +115,7 @@ def aceitar_convite(db: Session, usuario: Usuario, senha: str) -> None:
 def desconvidar(db: Session, usuario: Usuario) -> None:
     usuario.ativo = False
     usuario.convite_token = None
+    usuario.le_emails = False  # se for convidado de novo, o master liga outra vez
     db.execute(delete(Sessao).where(Sessao.usuario_id == usuario.id))
     db.commit()
 

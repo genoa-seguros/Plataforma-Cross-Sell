@@ -291,7 +291,8 @@ const previa = {
       const u = {id: ++this.seq, email: b.email.toLowerCase(), nome: b.nome, papel:"membro", ativo:true, verticais:b.verticais, lider:b.lider, pipedrive:false, pendente:true};
       D.equipe.push(u); return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id};
     }
-    if ((m = path.match(/^\/api\/equipe\/(\d+)\/desconvidar$/))) { const u = D.equipe.find(x => x.id == m[1]); u.ativo = false; return u; }
+    if ((m = path.match(/^\/api\/equipe\/(\d+)\/desconvidar$/))) { const u = D.equipe.find(x => x.id == m[1]); u.ativo = false; u.leEmails = false; return u; }
+    if ((m = path.match(/^\/api\/equipe\/(\d+)\/emails$/))) { const u = D.equipe.find(x => x.id == m[1]); if (b.ler && u.pendente) throw new Error("A leitura só pode ser ligada depois que a pessoa entrar na plataforma."); u.leEmails = b.ler; return u; }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/nova-senha$/))) { const u = D.equipe.find(x => x.id == m[1]); return {usuario:u, link:"https://(endereço da plataforma)/redefinir/exemplo-" + u.id}; }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/reenviar$/))) { const u = D.equipe.find(x => x.id == m[1]); u.ativo = true; return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id}; }
     throw new Error("rota desconhecida");
@@ -583,6 +584,20 @@ async function telaTodos() {
 }
 
 /* ---------- Equipe ---------- */
+// Chave da leitura da caixa de e-mail: só para quem já entrou; mostra o resultado da última leitura
+function leitura(u) {
+  if (!u.ativo) return "";
+  const pode = !u.pendente;
+  const hora = x => new Date(x + "Z").toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"});
+  const estado = !pode ? '<span class="mute">disponível depois que a pessoa entrar</span>'
+    : !u.leEmails ? '<span class="mute">desligada</span>'
+    : u.leituraErro === "recusada" ? '<span style="color:var(--bad)">recusada pelo Microsoft 365: adicione ao grupo crosssell-equipe</span>'
+    : u.leituraErro ? `<span style="color:var(--bad)" title="${esc(u.leituraErro)}">erro na última leitura</span>`
+    : u.leituraEm ? `<span style="color:var(--good)">lida em ${hora(u.leituraEm)}</span>`
+    : '<span class="mute">ligada, aguardando a próxima rodada</span>';
+  return `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-leitura="${u.id}"${u.leEmails ? " checked" : ""}${pode ? "" : " disabled"}> ${estado}</label>`;
+}
+
 async function telaEquipe() {
   if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
   await carregarBase();
@@ -600,16 +615,17 @@ async function telaEquipe() {
         <fieldset><legend>Lidera</legend>${vs.map(([k, t]) => `<label><input type="checkbox" name="c-lider" value="${k}"> ${t}</label>`).join("")}</fieldset>
         <button class="btn">Gerar convite</button>
       </div>
-      <p class="nota">A pessoa recebe um link para criar a senha (vale 7 dias). Enquanto o acesso estiver ativo, os e-mails dela com clientes são lidos pela IA.</p>
+      <p class="nota">A pessoa recebe um link para criar a senha (vale 7 dias). Os e-mails dela só são lidos se você ligar a leitura abaixo, depois que ela entrar, e ela estiver no grupo crosssell-equipe do Microsoft 365.</p>
       <div id="c-link"></div>
     </form>
     <div class="grupo" id="lk" style="padding:14px;display:grid;gap:10px"></div>
     <div class="tabela"><table>
-      <thead><tr><th>Nome</th><th>E-mail</th><th>Verticais</th><th>Situação</th><th>Pipedrive</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Verticais</th><th>Situação</th><th>Leitura de e-mails</th><th>Pipedrive</th><th></th></tr></thead>
       <tbody>${equipe.map(u => `<tr>
         <td>${esc(u.nome)}${u.papel === "master" ? ' <span class="sub">· master</span>' : ""}</td><td class="small">${esc(u.email)}</td>
         <td><div class="chips">${u.verticais.map(v => vchip(v, V[v] + (u.lider.includes(v) ? " · líder" : ""))).join("") || '<span class="sub">—</span>'}</div></td>
-        <td class="small">${!u.ativo ? '<span class="mute">Acesso removido</span>' : u.pendente ? '<span style="color:var(--warn)">Convite pendente</span>' : '<span style="color:var(--good)">Ativo · e-mails lidos</span>'}</td>
+        <td class="small">${!u.ativo ? '<span class="mute">Acesso removido</span>' : u.pendente ? '<span style="color:var(--warn)">Convite pendente</span>' : '<span style="color:var(--good)">Ativo</span>'}</td>
+        <td class="small">${leitura(u)}</td>
         <td class="small">${u.pipedrive ? "vinculado" : '<span class="mute">não vinculado</span>'}</td>
         <td style="white-space:nowrap">${u.papel === "master" ? "" : u.ativo
           ? `${u.pendente ? `<button class="btn sec" data-reenviar="${u.id}">Novo link</button> ` : `<button class="btn sec" data-novasenha="${u.id}">Link de nova senha</button> `}<button class="btn perigo" data-remover="${u.id}">Remover acesso</button>`
@@ -634,6 +650,13 @@ async function telaEquipe() {
   document.querySelectorAll("[data-novasenha]").forEach(b => b.onclick = async () => {
     try { const r = await api.post(`/api/equipe/${b.dataset.novasenha}/nova-senha`); mostrarLink(r.link, r.usuario.nome, "Link de nova senha (vale 1 hora)"); }
     catch (err) { aviso(err.message); } });
+  document.querySelectorAll("[data-leitura]").forEach(b => b.onchange = async () => {
+    try {
+      await api.post(`/api/equipe/${b.dataset.leitura}/emails`, {ler: b.checked});
+      aviso(b.checked ? "Leitura ligada. Confira se a pessoa está no grupo crosssell-equipe do Microsoft 365." : "Leitura desligada.");
+      telaEquipe();
+    } catch (err) { b.checked = !b.checked; aviso(err.message); }
+  });
   document.querySelectorAll("[data-remover]").forEach(b => b.onclick = async () => {
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar remoção"; return; }
     await api.post(`/api/equipe/${b.dataset.remover}/desconvidar`); aviso("Acesso removido. Os e-mails dessa pessoa deixam de ser lidos."); telaEquipe();

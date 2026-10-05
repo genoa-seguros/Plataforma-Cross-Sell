@@ -43,6 +43,15 @@ def test_login_obrigatorio_e_senha_errada(cenario):
     assert len(c.get("/api/tabela").json()["linhas"]) == 3
 
 
+def test_base_traz_equipe_e_verticais_sem_a_tabela(cenario):
+    c, _ = cenario
+    assert c.get("/api/base").status_code == 401
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    base = c.get("/api/base").json()
+    assert "linhas" not in base and base["verticais"]["saude"] == "Saúde"
+    assert "rodrigo.pedroni@innoaseguros.com.br" in {u["email"] for u in base["usuarios"]}
+
+
 def test_convite_desconvite_e_permissoes(cenario, db):
     c, _ = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")

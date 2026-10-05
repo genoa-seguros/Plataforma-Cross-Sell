@@ -66,9 +66,10 @@ class Settings(BaseSettings):
         return {d.strip().lower() for d in self.internal_domains.split(",") if d.strip()}
 
     def verticais_config(self) -> dict:
+        """Relido só quando o arquivo muda (a tabela consulta o config uma vez por empresa)."""
         if not self.verticais_file.exists():
             return {}
-        return yaml.safe_load(self.verticais_file.read_text(encoding="utf-8")) or {}
+        return _ler_yaml(str(self.verticais_file.resolve()), self.verticais_file.stat().st_mtime)
 
     def pipelines(self) -> dict[int, dict]:
         """pipeline_id -> {nome, vertical, tabela}."""
@@ -94,6 +95,11 @@ class Settings(BaseSettings):
                 "lider": list(u.get("lider") or []),
             })
         return saida
+
+
+@lru_cache(maxsize=8)
+def _ler_yaml(caminho: str, mtime: float) -> dict:
+    return yaml.safe_load(Path(caminho).read_text(encoding="utf-8")) or {}
 
 
 @lru_cache

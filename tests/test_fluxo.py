@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -169,6 +170,17 @@ def test_chave_da_claude_vem_do_arquivo_env(tmp_path, monkeypatch):
     assert Classificador(Settings(_env_file=arquivo)).client.api_key == "chave-do-arquivo"
     monkeypatch.setenv("ANTHROPIC_API_KEY", "chave-do-ambiente")  # sem .env: continua valendo o ambiente
     assert Classificador(Settings(_env_file=None)).client.api_key == "chave-do-ambiente"
+
+
+def test_verticais_yaml_lido_uma_vez_e_relido_quando_muda(tmp_path):
+    arquivo = tmp_path / "verticais.yaml"
+    arquivo.write_text("empresas_internas: [innoa]\n", encoding="utf-8")
+    s = Settings(_env_file=None, verticais_file=arquivo)
+    assert s.empresas_internas() == ["innoa"]
+    assert s.verticais_config() is s.verticais_config()  # sem reler o arquivo a cada chamada
+    arquivo.write_text("empresas_internas: [innoa, genoa]\n", encoding="utf-8")
+    os.utime(arquivo, (arquivo.stat().st_atime, arquivo.stat().st_mtime + 5))
+    assert s.empresas_internas() == ["innoa", "genoa"]  # editar o arquivo vale sem reiniciar
 
 
 def test_noticias_rss():

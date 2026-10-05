@@ -158,6 +158,9 @@ let refSemana = new Date();
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dt = d => d ? d.slice(0,10).split("-").reverse().join("/") : "";
+// Horários do servidor vêm em UTC, sem fuso (ex.: "2026-10-05T22:05"): mostra no fuso de quem vê
+const hora = x => new Date(x + "Z").toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"});
+const dia = x => new Date(x + "Z").toLocaleDateString("pt-BR");
 const dm = d => d ? dt(d).slice(0,5) : "";
 const mesAno = d => d ? `${d.slice(5,7)}/${d.slice(2,4)}` : "";
 const iso = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;
@@ -469,7 +472,7 @@ async function telaMelhorias() {
   const card = x => `<li class="${x.situacao === "feita" || x.situacao === "descartada" ? "feita" : ""}">
       <span class="chip ${x.prioridade === "alta" ? "t-muita" : x.prioridade === "media" ? "t-media" : "off"}">${PRIORIDADE[x.prioridade]}</span>
       <div><div class="ass">${esc(x.titulo)}</div>${x.descricao ? `<div class="sub" style="white-space:pre-wrap">${esc(x.descricao)}</div>` : ""}
-        <div class="sub">${esc(x.autor)} · ${dt(x.criadaEm)}</div></div>
+        <div class="sub">${esc(x.autor)} · ${dia(x.criadaEm)}</div></div>
       <div style="display:grid;gap:4px;justify-items:end">
         ${master ? `<select data-sit="${x.id}" aria-label="Situação">${Object.entries(SITUACAO).map(([k, t]) => `<option value="${k}" ${k === x.situacao ? "selected" : ""}>${t}</option>`).join("")}</select>` : `<span class="sub">${SITUACAO[x.situacao]}</span>`}
         ${master || x.autorId === EU?.id ? `<select data-pri="${x.id}" aria-label="Prioridade">${Object.entries(PRIORIDADE).map(([k, t]) => `<option value="${k}" ${k === x.prioridade ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}
@@ -588,7 +591,6 @@ async function telaTodos() {
 function leitura(u) {
   if (!u.ativo) return "";
   const pode = !u.pendente;
-  const hora = x => new Date(x + "Z").toLocaleString("pt-BR", {dateStyle: "short", timeStyle: "short"});
   const estado = !pode ? '<span class="mute">disponível depois que a pessoa entrar</span>'
     : !u.leEmails ? '<span class="mute">desligada</span>'
     : u.leituraErro === "recusada" ? '<span style="color:var(--bad)">recusada pelo Microsoft 365: adicione ao grupo crosssell-equipe</span>'
@@ -666,7 +668,7 @@ async function telaEquipe() {
 async function telaLinkedin() {
   const el = document.getElementById("lk");
   const st = await api.get("/api/linkedin");
-  const quando = x => x ? `${dt(x.em)} ${x.em.slice(11, 16)} · ${x.registros} itens${x.erro ? " · com erro" : ""}` : "nunca";
+  const quando = x => x ? `${hora(x.em)} · ${x.registros} itens${x.erro ? " · com erro" : ""}` : "nunca";
   const nao = st.naoEncontrados || [];
   el.innerHTML = `<h2 style="margin:0">LinkedIn</h2>
     <p class="nota">Automático, pela Linked API. A cada hora a plataforma aplica as consultas que ficaram prontas e inicia até ${st.lote} novas, sem passar de ${st.limiteDia ?? 50} em 24 horas, na ordem da tabela (maior score primeiro) e depois das Oportunidades. Quem já tem endereço é <b>lido</b> (página da empresa com decisores e posts); quem não tem é <b>buscado</b> pelo nome, e a plataforma só aceita se o nome e a empresa conferirem. Quando falta alguém da área que decide (RH para Saúde, por exemplo), ela procura os <b>funcionários dessa área</b> na página da empresa.</p>

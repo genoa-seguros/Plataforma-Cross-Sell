@@ -555,6 +555,9 @@ def coletar(db: Session, client, agora: datetime | None = None) -> dict:
         try:
             st = client.consultar(ped.workflow_id)
         except LinkedApiErro as exc:
+            if exc.tipo == "conexao":  # sem resposta não dá para saber se terminou: confere na próxima rodada
+                cont["andamento"] += 1
+                continue
             st = {"workflowStatus": "failed", "failure": {"message": str(exc)}}
         status = st.get("workflowStatus")
         if status in ("pending", "running"):
@@ -606,6 +609,7 @@ def iniciar(db: Session, settings: Settings, client, agora: datetime | None = No
             obj.linkedin_areas = {**(obj.linkedin_areas or {}), FUNCIONARIOS: agora.isoformat(timespec="seconds")}
         else:
             obj.linkedin_pedido_em = agora
+        db.commit()  # já foi pago: grava na hora, para uma falha adiante não fazer pedir de novo
         cont["iniciados"] += 1
     db.commit()
     return cont

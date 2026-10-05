@@ -39,11 +39,18 @@ class LinkedApiClient:
             raise LinkedApiErro("semResultado", "a Linked API respondeu sem resultado")
         return corpo["result"]
 
+    def _chamar(self, metodo: str, caminho: str, **kwargs) -> dict:
+        try:
+            r = self.http.request(metodo, caminho, **kwargs)
+        except httpx.HTTPError as exc:  # timeout, conexão recusada: tratado como os erros da própria API
+            raise LinkedApiErro("conexao", str(exc) or type(exc).__name__) from exc
+        return self._resposta(r)
+
     def iniciar(self, definicao: dict) -> str:
-        return self._resposta(self.http.post("/workflows", json=definicao))["workflowId"]
+        return self._chamar("POST", "/workflows", json=definicao)["workflowId"]
 
     def consultar(self, workflow_id: str) -> dict:
-        return self._resposta(self.http.get(f"/workflows/{workflow_id}"))
+        return self._chamar("GET", f"/workflows/{workflow_id}")
 
 
 def definicao(alvo: dict) -> dict:

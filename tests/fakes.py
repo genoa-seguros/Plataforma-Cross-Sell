@@ -64,11 +64,13 @@ class FakePipedrive:
         self.atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
         self.falhar_usuarios = False  # /v1/users fora do ar
+        self.requisicoes: list[httpx.Request] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handler)
 
     def _handler(self, req: httpx.Request) -> httpx.Response:
+        self.requisicoes.append(req)
         caminho = req.url.path
         if req.method == "POST" and caminho.endswith("/v2/activities"):
             corpo = json.loads(req.content)

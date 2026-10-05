@@ -48,6 +48,20 @@ def test_falha_nos_usuarios_do_pipedrive_mantem_o_responsavel(db, settings):
     assert neg(db, 4).responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
 
 
+def test_token_do_pipedrive_fora_da_url(db, settings):
+    fake = FakePipedrive()
+    fake.falhar_usuarios = True
+    client = pipedrive.PipedriveClient("token-secreto", transport=fake.transport())
+    try:
+        client.usuarios()
+    except httpx.HTTPStatusError as exc:
+        assert "token-secreto" not in str(exc)  # a mensagem de erro vai para o log, o sync_log e a tela
+    else:
+        raise AssertionError("deveria falhar")
+    req = fake.requisicoes[-1]
+    assert req.headers["x-api-token"] == "token-secreto" and "token-secreto" not in str(req.url)
+
+
 def test_tabela_so_negocios_abertos_dos_funis_escolhidos(db, settings):
     carregar(db, settings)
     linhas = tabela.montar(db, settings)

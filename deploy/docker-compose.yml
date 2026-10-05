@@ -1,5 +1,10 @@
 # Produção num servidor (ex.: AWS Lightsail/EC2): plataforma + HTTPS automático (Caddy).
 # O banco é um PostgreSQL gerenciado (DATABASE_URL no .env). Uso: ver deploy/LEIA-ME.md
+# Logs do Docker com limite (sem isso crescem até encher o disco): até 5 arquivos de 10 MB por serviço
+x-logs: &logs
+  driver: json-file
+  options: {max-size: "10m", max-file: "5"}
+
 services:
   web:
     build: ..
@@ -8,6 +13,7 @@ services:
       ROTINA_INTERNA: "true"   # rotina de hora em hora dentro do próprio container
     restart: unless-stopped
     expose: ["8000"]
+    logging: *logs
   caddy:
     image: caddy:2
     restart: unless-stopped
@@ -19,6 +25,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [web]
+    logging: *logs
 volumes:
   caddy_data:
   caddy_config:

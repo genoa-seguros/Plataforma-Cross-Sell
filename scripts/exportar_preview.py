@@ -49,8 +49,8 @@ def exportar(como: str | None) -> dict:
         "oportunidades": tabela.oportunidades(db, s),
         "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db)},
         "linkedin": {"configurado": True, "lote": s.linkedin_lote, **lk.situacao(db, s), "ultimas24h": 18,
-                     "disparado": {"em": hoje.isoformat() + "T06:30", "registros": 10, "erro": None},
-                     "recebido": {"em": hoje.isoformat() + "T06:52", "registros": 10, "erro": None}},
+                     "disparado": {"em": hoje.isoformat() + "T09:30", "registros": 10, "erro": None},
+                     "recebido": {"em": hoje.isoformat() + "T09:52", "registros": 10, "erro": None}},
     }
 
 

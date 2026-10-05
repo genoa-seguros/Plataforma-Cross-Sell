@@ -11,7 +11,7 @@
 :root{
   /* Identidade Innoa: azul-marinho #02024E (marca) e azul #0554F2 (destaque) */
   --brand:#02024E; --brand-ink:#ffffff;
-  --bg:#f4f5fb; --surface:#ffffff; --ink:#0f1140; --mute:#5a5d80; --line:#dfe1ee; --soft:#eef0f8;
+  --bg:#f7f8fa; --surface:#ffffff; --ink:#0f1140; --mute:#5a5d80; --line:#dfe1ee; --soft:#eef0f8;
   --accent:#0554F2; --accent-ink:#ffffff; --warn:#a15c00; --good:#1d7a46; --bad:#b42318;
   --lf:#6a3fd1; --saude:#12805c; --re:#b86a00; --canal:#4a5a6a;
   --quente:#c2410c; --morna:#a16207; --fria:#0554F2;
@@ -34,16 +34,18 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body)}
 a{color:var(--accent)}
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.top{background:var(--brand);color:var(--brand-ink);padding-inline:16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
-.top-in{max-width:1320px;margin:0 auto;display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:56px}
-.brand{display:flex;align-items:center;gap:10px;color:var(--brand-ink);text-decoration:none}
+.top{background:var(--surface);color:var(--ink);border-bottom:1px solid var(--line);padding-inline:16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.top-in{max-width:1320px;margin:0 auto;display:flex;gap:16px;align-items:center;flex-wrap:wrap;min-height:60px;padding-block:6px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--brand);text-decoration:none}
 .brand img{height:26px;width:auto;display:block}
-.brand span{font:600 13px/1 var(--f-display);letter-spacing:.08em;text-transform:uppercase;padding-left:10px;border-left:1px solid rgba(255,255,255,.35)}
-.top nav.abas a{color:rgba(255,255,255,.72)}
-.top nav.abas a:hover{color:#fff}
-.top nav.abas a[aria-current="page"]{color:#fff;border-bottom-color:#0554F2;border-bottom-width:3px}
-.top .dir,.top .dir a{color:rgba(255,255,255,.8)}
-.top a:focus-visible{outline-color:#fff}
+.brand .logo-escuro{display:none}
+.brand span{font:600 12px/1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;padding-left:10px;border-left:1px solid var(--line);color:var(--mute)}
+.top nav.abas a{color:var(--mute)}
+.top nav.abas a:hover{color:var(--ink)}
+.top nav.abas a[aria-current="page"]{color:var(--brand);font-weight:600;border-bottom-color:var(--accent);border-bottom-width:3px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .brand .logo-claro{display:none}:root:not([data-theme="light"]) .brand .logo-escuro{display:block}
+  :root:not([data-theme="light"]) .top nav.abas a[aria-current="page"]{color:var(--ink)}}
+:root[data-theme="dark"] .brand .logo-claro{display:none} :root[data-theme="dark"] .brand .logo-escuro{display:block}
 nav.abas{display:flex;gap:2px;align-self:stretch}
 nav.abas a{display:flex;align-items:center;padding:0 12px;color:var(--mute);text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
 nav.abas a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
@@ -135,7 +137,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <a class="brand" href="#negocios"><img src="/static/logo-innoa-branco.png" alt="Innoa Seguros"><span>Cross Sell</span></a>
+  <a class="brand" href="#negocios"><img class="logo-claro" src="/static/logo-innoa.png" alt="Innoa Seguros"><img class="logo-escuro" src="/static/logo-innoa-branco.png" alt=""><span>Cross Sell</span></a>
   <nav class="abas" id="abas" aria-label="Seções"></nav>
   <div class="dir"><span class="pill-demo" id="demo" hidden>Prévia com dados de exemplo · nada é enviado ao Pipedrive</span><span id="eu"></span><a href="/logout" id="sair">Sair</a></div>
 </div></header>

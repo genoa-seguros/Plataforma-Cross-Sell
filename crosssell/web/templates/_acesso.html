@@ -6,19 +6,23 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Montserrat:wght@600;700;800&display=swap">
 <link rel="icon" href="/static/favicon.png">
 <style>
-:root{--brand:#02024E;--bg:#f4f5fb;--surface:#fff;--ink:#0f1140;--mute:#5a5d80;--line:#dfe1ee;--soft:#eef0f8;--accent:#0554F2;--accent-ink:#fff;--erro:#b42318;--ok:#1d7a46}
-@media (prefers-color-scheme:dark){:root{--brand:#05062f;--bg:#0b0c26;--surface:#13153a;--ink:#e6e8f6;--mute:#9a9dc2;--line:#262a5a;--soft:#1a1d48;--accent:#5b8cff;--accent-ink:#04052a;--erro:#f97066;--ok:#5cc78d;color-scheme:dark}}
+:root{--brand:#02024E;--gelo:#eef0f6;--bg:#f7f8fa;--surface:#fff;--ink:#0f1140;--mute:#5a5d80;--line:#dfe1ee;--soft:#eef0f8;--accent:#0554F2;--accent-ink:#fff;--erro:#b42318;--ok:#1d7a46}
+@media (prefers-color-scheme:dark){:root{--brand:#e6e8f6;--gelo:#13153a;--bg:#0b0c26;--surface:#13153a;--ink:#e6e8f6;--mute:#9a9dc2;--line:#262a5a;--soft:#1a1d48;--accent:#5b8cff;--accent-ink:#04052a;--erro:#f97066;--ok:#5cc78d;color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
-.lado{background:var(--brand);color:#fff;padding:48px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
-.lado::after{content:"";position:absolute;right:-90px;bottom:-90px;width:320px;height:320px;background:#0554F2;clip-path:polygon(100% 0,100% 100%,0 100%);opacity:.9}
+.lado{background:var(--gelo);color:var(--ink);padding:48px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden;border-right:1px solid var(--line)}
+.lado::after{content:"";position:absolute;right:0;bottom:0;width:140px;height:140px;background:var(--accent);clip-path:polygon(100% 0,100% 100%,0 100%);opacity:.9}
 .lado > *{position:relative;z-index:1}
 .lado .marca img{height:44px;width:auto;display:block}
-.lado .marca span{display:block;margin-top:10px;font:600 13px/1 Montserrat,system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;opacity:.8}
-.lado h2{font:700 30px/1.2 Montserrat,system-ui,sans-serif;margin:0 0 12px;max-width:440px;text-wrap:balance}
-.lado p{margin:0;max-width:420px;opacity:.85}
-.lado ul{margin:16px 0 0;padding-left:18px;opacity:.85;display:grid;gap:4px}
-.lado small{opacity:.7}
+.lado .marca span{display:block;margin-top:10px;font:600 13px/1 Montserrat,system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.lado h2{font:700 30px/1.2 Montserrat,system-ui,sans-serif;margin:0 0 12px;max-width:440px;text-wrap:balance;color:var(--brand)}
+.lado p,.lado ul{color:var(--mute);opacity:1}
+.lado small{color:var(--mute)}
+.lado .marca img.escuro{display:none}
+@media (prefers-color-scheme:dark){.lado .marca img.claro{display:none}.lado .marca img.escuro{display:block}}
+.lado p{margin:0;max-width:420px}
+.lado ul{margin:16px 0 0;padding-left:18px;display:grid;gap:4px}
+
 .centro{display:grid;place-items:center;padding:24px 16px}
 .caixa{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:28px;display:grid;gap:16px}
 .caixa .marca{display:none}
@@ -41,7 +45,7 @@ a{color:var(--accent)}
 </head>
 <body>
 <aside class="lado">
-  <div class="marca"><img src="/static/logo-innoa-branco.png" alt="Innoa Seguros"><span>Cross Sell</span></div>
+  <div class="marca"><img class="claro" src="/static/logo-innoa.png" alt="Innoa Seguros"><img class="escuro" src="/static/logo-innoa-branco.png" alt=""><span>Cross Sell</span></div>
   <div>
     <h2>A reunião de sexta com o próximo passo de cada negócio.</h2>
     <p>Linhas Financeiras, Saúde e Ramos Elementares em uma tabela só:</p>

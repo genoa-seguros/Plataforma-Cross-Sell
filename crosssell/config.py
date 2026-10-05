@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     # Caixa que envia o link de "esqueci minha senha" (o app do Microsoft 365 precisa de Mail.Send)
     email_remetente: str = ""
 
-    # Temperatura dos e-mails (Claude API). A chave vem de ANTHROPIC_API_KEY.
+    # Temperatura dos e-mails (Claude API). A chave vem de ANTHROPIC_API_KEY (.env ou ambiente).
+    anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-5-5"
     temperatura_max_emails: int = 5
 

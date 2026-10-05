@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from crosssell import tabela
+from crosssell.config import Settings
 from crosssell.connectors import email_m365, noticias, pipedrive, planilhas
 from crosssell.models import Empresa, Negocio, Pessoa, Usuario
 from crosssell.pipeline import carregar_usuarios
@@ -158,6 +159,16 @@ def test_temperatura_pelos_emails_do_contato(db, settings):
     assert chamada["output_config"]["format"]["type"] == "json_schema"
     assert "Oi Ana" not in chamada["messages"][0]["content"]  # e-mail enviado pela equipe não entra
     relacionamento.calcular(db)
+
+
+def test_chave_da_claude_vem_do_arquivo_env(tmp_path, monkeypatch):
+    # O .env é lido pelo Settings, não vira variável de ambiente: a chave precisa chegar ao SDK por ele
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    arquivo = tmp_path / ".env"
+    arquivo.write_text("ANTHROPIC_API_KEY=chave-do-arquivo\n", encoding="utf-8")
+    assert Classificador(Settings(_env_file=arquivo)).client.api_key == "chave-do-arquivo"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "chave-do-ambiente")  # sem .env: continua valendo o ambiente
+    assert Classificador(Settings(_env_file=None)).client.api_key == "chave-do-ambiente"
 
 
 def test_noticias_rss():

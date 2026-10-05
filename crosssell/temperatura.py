@@ -53,7 +53,8 @@ FORMATO = {
 class Classificador:
     def __init__(self, settings: Settings, client: anthropic.Anthropic | None = None):
         self.settings = settings
-        self.client = client or anthropic.Anthropic()
+        # A chave do .env só chega ao SDK por aqui; vazia, o SDK procura nas variáveis de ambiente.
+        self.client = client or anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
 
     def classificar(self, emails: list[dict]) -> dict | None:
         """emails: [{"data": datetime, "texto": str}], do mais antigo para o mais recente."""

@@ -1,0 +1,24 @@
+# Produção num servidor (ex.: AWS Lightsail/EC2): plataforma + HTTPS automático (Caddy).
+# O banco é um PostgreSQL gerenciado (DATABASE_URL no .env). Uso: ver deploy/LEIA-ME.md
+services:
+  web:
+    build: ..
+    env_file: .env
+    environment:
+      ROTINA_INTERNA: "true"   # rotina de hora em hora dentro do próprio container
+    restart: unless-stopped
+    expose: ["8000"]
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMINIO: ${DOMINIO}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+volumes:
+  caddy_data:
+  caddy_config:

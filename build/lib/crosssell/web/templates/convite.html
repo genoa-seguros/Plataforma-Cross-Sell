@@ -1,0 +1,17 @@
+{% extends "_acesso.html" %}
+{% block titulo %}Convite{% endblock %}
+{% block corpo %}
+{% if u %}
+<h1>Olá, {{ u.nome }}. Crie sua senha</h1>
+<p class="nota">Ao entrar, a plataforma passa a ler os metadados dos seus e-mails com clientes e o texto das respostas deles, para medir o relacionamento. O conteúdo dos e-mails não fica guardado.</p>
+<form method="post">
+  <label>Senha (mínimo 10 caracteres) <span class="senha"><input type="password" name="senha" id="senha" autocomplete="new-password" minlength="10" required autofocus><button type="button" data-mostrar="senha" aria-pressed="false">Mostrar</button></span></label>
+  <label>Repita a senha <input type="password" name="confirmacao" id="confirmacao" autocomplete="new-password" minlength="10" required></label>
+  {% if erro %}<p class="erro" role="alert">{{ erro }}</p>{% endif %}
+  <button>Criar senha e continuar</button>
+</form>
+{% else %}
+<h1>Convite inválido ou expirado</h1>
+<p class="nota">Peça ao administrador um novo link de convite.</p>
+{% endif %}
+{% endblock %}

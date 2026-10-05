@@ -1,0 +1,5 @@
+# Certificado HTTPS automático (Let's Encrypt) para o domínio em DOMINIO
+{$DOMINIO} {
+	encode gzip
+	reverse_proxy web:8000
+}

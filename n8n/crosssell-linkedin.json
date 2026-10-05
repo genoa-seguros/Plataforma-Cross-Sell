@@ -1,0 +1,580 @@
+{
+  "name": "CrossSell · LinkedIn (Linked API)",
+  "nodes": [
+    {
+      "id": "f440313f-d10f-5c73-9a7c-6431a07c99c4",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crosssell-linkedin",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "34ede0ee-62e2-510b-9078-f9a69c93b1ef"
+    },
+    {
+      "id": "1a8bedd3-bd96-59ec-bea2-1d5bff32e308",
+      "name": "Separar alvos",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "body.alvos",
+        "options": {}
+      }
+    },
+    {
+      "id": "705815ae-bba4-524b-8a7b-9321527548c7",
+      "name": "Buscar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "923fdd1f-ccee-55f8-bd35-3ce6d5c77028",
+              "leftValue": "={{ $json.acao }}",
+              "rightValue": "buscar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f14804eb-9424-5606-8d90-fc27201a0313",
+      "name": "Buscar pessoa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "6fc2343a-0d27-519f-838e-e174ec06e713",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "pessoa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "eeb82728-f5c5-5f16-be10-a30a4bf1894b",
+      "name": "⚠ TROCAR: Linked API · Search People",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        680
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c5acb6c7-77c3-59d3-926d-b9bf28b03a25",
+      "name": "⚠ TROCAR: Linked API · Search Companies",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        860
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "0e13278b-3edd-5b67-93fe-319ec735687a",
+      "name": "Aguardar busca pessoa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        680
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "e0286439-af26-5c16-a573-8b5e4030d34d"
+    },
+    {
+      "id": "f42d8570-0e89-535e-bc0e-0045b4af462d",
+      "name": "Aguardar busca empresa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        860
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "a081a406-3e76-5a72-9a85-883cd459b521"
+    },
+    {
+      "id": "c1c31581-d0df-5f63-879d-25259aec99ae",
+      "name": "Candidatos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        760
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Resultado de Search People / Search Companies -> candidatos para a plataforma escolher.\n// A plataforma só aceita um candidato se o nome e a empresa (ou o domínio do site) conferirem.\nconst alvo = $('Separar alvos').first().json;\nconst b = $json.body ?? $json;\nlet lista = b.data ?? b.result ?? b.results ?? b.items ?? b;\nif (!Array.isArray(lista)) lista = lista.people ?? lista.companies ?? lista.results ?? lista.items ?? [];\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    acao: 'buscar',\n    candidatos: lista.slice(0, 10).map(c => ({\n      nome: c.name || c.fullName || '',\n      headline: c.headline || '',\n      linkedin_url: c.publicUrl || c.url || c.profileUrl || c.companyUrl || '',\n      local: c.location || '',\n      site: c.website || '',\n      setor: c.industry || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+      }
+    },
+    {
+      "id": "187035b8-c123-5379-adc7-e25c6a277175",
+      "name": "É pessoa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "02f3032a-50aa-5693-a3d3-250873cf5dd3",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "pessoa",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b5e7931e-1fc7-5cd9-a547-e20953a584df",
+      "name": "⚠ TROCAR: Linked API · Fetch Person",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "9b7b13ec-243f-5ba4-a0af-642668230362",
+      "name": "⚠ TROCAR: Linked API · Fetch Company",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        420
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "eb462dc3-8fcb-5f82-9902-c4b9d5dfbff9",
+      "name": "Aguardar pessoa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        200
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "e4a84e57-8a47-51bc-b6d4-39c6b03fd5c6"
+    },
+    {
+      "id": "3836f1fa-4738-524f-9bef-611bc0795f15",
+      "name": "Aguardar empresa",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        420
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 15,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "webhookId": "c77e7b42-34c6-5c8d-8e8d-24dceca3bc8c"
+    },
+    {
+      "id": "dc9c1313-250a-5d69-b7e0-3049f961b8f5",
+      "name": "Mapear",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Converte a resposta da Linked API no formato que a plataforma espera.\n// Os nomes dos campos variam entre versões: o pick() tenta alternativas.\n// Na primeira execução, confira a saída dos nós da Linked API e ajuste se algum campo vier vazio.\nconst alvo = $('Separar alvos').first().json;  // a plataforma envia um alvo por execução\n// Depois do Wait, o retorno da Linked API vem em body (às vezes dentro de data/result).\nconst b = $json.body ?? $json;\nconst r = b.data ?? b.result ?? b;\nconst pick = (...caminhos) => {\n  for (const c of caminhos) {\n    const v = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), r);\n    if (v !== undefined && v !== null && v !== '') return v;\n  }\n  return '';\n};\nconst lista = (v) => (Array.isArray(v) ? v : []);\nconst exp0 = lista(pick('experiences', 'experience'))[0] || {};\n\nreturn {\n  json: {\n    id_alvo: alvo.id_alvo,\n    tipo: alvo.tipo,\n    linkedin_url: pick('publicUrl', 'url', 'profileUrl', 'companyUrl'),\n    nome: pick('name', 'fullName'),\n    headline: pick('headline'),\n    cargo_atual: pick('position') || exp0.position || exp0.title || '',\n    empresa_atual: pick('companyName') || exp0.companyName || exp0.company || '',\n    localizacao: pick('location'),\n    setor: pick('industry'),\n    funcionarios: pick('employeesCount', 'employeeCount', 'staffCount', 'employeesOnLinkedIn', 'size'),\n    site: pick('website'),\n    sede: pick('headquarters', 'location'),\n    decisores: lista(pick('dms', 'decisionMakers')).slice(0, 20).map(d => ({\n      nome: d.name, headline: d.headline || '', linkedin_url: d.publicUrl || d.url || '',\n    })),\n    posts: lista(pick('posts')).slice(0, 5).map(p => ({\n      texto: p.text || '', data: p.time || p.date || '', url: p.url || '',\n    })),\n    capturado_em: new Date().toISOString().slice(0, 19),\n  },\n};\n"
+      }
+    },
+    {
+      "id": "6bcf6b5f-bff7-5532-915e-cf9b945d6761",
+      "name": "Registrar erro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1380,
+        540
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "262bcaba-2399-5108-b930-fb55f7c20b1f",
+              "name": "id_alvo",
+              "value": "={{ $('Separar alvos').first().json.id_alvo }}",
+              "type": "string"
+            },
+            {
+              "id": "b7280a22-6175-5612-b1d7-3499ad08f334",
+              "name": "tipo",
+              "value": "={{ $('Separar alvos').first().json.tipo }}",
+              "type": "string"
+            },
+            {
+              "id": "295a6a47-b2ca-537d-8449-27d353a61df5",
+              "name": "erro",
+              "value": "={{ $json.error?.message || $json.error || 'Falha na Linked API' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "083320b5-fcb6-5707-bdef-5adcbc09422b",
+      "name": "Devolver à plataforma",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').first().json.body.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "865c89f6-753f-581f-ae07-84404d7f3d8e",
+      "name": "Leia antes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -60
+      ],
+      "parameters": {
+        "content": "## CrossSell · LinkedIn\nA plataforma chama este **Webhook** com um lote de alvos; cada alvo é consultado na Linked API e o resultado volta para a plataforma. O fluxo é linear (sem repetição): termina sozinho.\n\n**Credencial** (*Header Auth*): nome `Authorization`, valor `Bearer <N8N_TOKEN>`. Selecione-a no **Webhook** e no **Devolver à plataforma**.\n\nAtive o fluxo e copie a *Production URL* do Webhook para `N8N_LINKEDIN_WEBHOOK_URL` na plataforma.",
+        "width": 620,
+        "height": 300,
+        "color": 5
+      }
+    },
+    {
+      "id": "f7df010e-bb16-5964-95d5-5ced32660ac6",
+      "name": "Trocar nós da Linked API",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        600,
+        -160
+      ],
+      "parameters": {
+        "content": "## ⚠ Trocar os 2 nós marcados\nSubstitua cada nó **⚠ TROCAR** pelo nó da Linked API (pacote `n8n-nodes-linked-api`):\n\n**Fetch Person**: Person URL `{{ $('Separar alvos').first().json.linkedin_url }}`; *Additional Data*: só Experience.\n\n**Fetch Company**: URL `{{ $json.linkedin_url }}` ou *Search Companies* com `{{ $json.nome }}`. Ative *decision makers* e *posts*.\n\nA Linked API responde de forma assíncrona: em **todos** os nós da Linked API, preencha *Webhook URL* com `{{ $execution.resumeUrl }}`. É esse endereço que acorda o nó **Aguardar** (Wait, *On Webhook Call*, limite de 15 min) com o resultado.\n\nEm ambos: *Settings → On Error → Continue (using error output)*, ligando a saída de erro ao nó **Registrar erro**.",
+        "width": 520,
+        "height": 420,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Separar alvos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar alvos": {
+      "main": [
+        [
+          {
+            "node": "Buscar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar?": {
+      "main": [
+        [
+          {
+            "node": "Buscar pessoa?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É pessoa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pessoa?": {
+      "main": [
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Search People",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Search Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Search People": {
+      "main": [
+        [
+          {
+            "node": "Aguardar busca pessoa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Search Companies": {
+      "main": [
+        [
+          {
+            "node": "Aguardar busca empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar busca pessoa": {
+      "main": [
+        [
+          {
+            "node": "Candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar busca empresa": {
+      "main": [
+        [
+          {
+            "node": "Candidatos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candidatos": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É pessoa?": {
+      "main": [
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Fetch Person",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⚠ TROCAR: Linked API · Fetch Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Fetch Person": {
+      "main": [
+        [
+          {
+            "node": "Aguardar pessoa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠ TROCAR: Linked API · Fetch Company": {
+      "main": [
+        [
+          {
+            "node": "Aguardar empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar pessoa": {
+      "main": [
+        [
+          {
+            "node": "Mapear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar empresa": {
+      "main": [
+        [
+          {
+            "node": "Mapear",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mapear": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar erro": {
+      "main": [
+        [
+          {
+            "node": "Devolver à plataforma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

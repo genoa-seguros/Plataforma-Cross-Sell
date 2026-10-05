@@ -1,0 +1,66 @@
+# Verticais da ferramenta: linhas_financeiras | saude | ramos_elementares
+# (Linhas Pessoais está fora por enquanto.)
+
+pipedrive:
+  # vertical: de qual vertical são os negócios GANHOS do funil (seguros vigentes).
+  # tabela: se os negócios ABERTOS do funil entram na tabela de trabalho.
+  pipelines:
+    1:  {nome: Linhas Financeiras, vertical: linhas_financeiras, tabela: true}
+    40: {nome: Garantia,           vertical: linhas_financeiras, tabela: false}
+    29: {nome: RE,                 vertical: ramos_elementares,  tabela: true}
+    23: {nome: Saúde,              vertical: saude,              tabela: true}
+    34: {nome: Pipo Saúde,         vertical: saude,              tabela: true}
+    38: {nome: Flash Benefícios,   vertical: saude,              tabela: false}
+    39: {nome: Canais Parceria,    vertical: null,               tabela: true}
+    # 31 (M&A - Corretoras) fica de fora.
+
+  # Campos customizados de negócio.
+  campos:
+    inicio_vigencia: 3ee3bdd07bab71fba84767ffb7d5d89f49b1f3d3
+    fim_vigencia: 0d4a74f324a5c95618a51042c3185da9c8846bc3
+    # Ordem de preferência para o nome do produto (ex.: D&O, Cyber, Empresarial).
+    produto:
+      - 243db2a0f48ee484d65af0c737bcea6ab509a590   # Produtos Responsabilidade
+      - 87667ea5ea62cfd03118a42581f40bc5fb33e973   # Produtos RE
+      - 74bcdb3b63321d279e6ada0de40e1ca1b36f0171   # Produto Vertical Saúde
+      - 111caded10585e6ab8d4e46d53597c930dee42cc   # Produto Foco
+    # Porte para Saúde: quantidade de vidas informada no negócio
+    vidas: 3b47081b57efbf488b9f8872569826aade33057d        # Quantidade de Vidas
+    faixa_vidas: 0b51bac054685ca49b31360b65782bab350a150b  # Faixa de Vidas
+    # "Se empresa, já possui o seguro saúde na Genoa?" = Sim -> sinal de cliente Saúde
+    possui_saude: dced275b9f49ad3ac158c4a961bc17920ad4de57
+
+# Equipe inicial (o usuário master convida e remove pessoas pela tela Equipe).
+usuarios:
+  - email: bruno.rodrigues@innoaseguros.com.br
+    nome: Bruno Rodrigues
+    verticais: [ramos_elementares]
+    lider: [ramos_elementares]
+  - email: victor.boldrini@innoaseguros.com.br
+    nome: Victor Boldrini
+    verticais: [linhas_financeiras]
+    lider: [linhas_financeiras]
+  - email: pedro.acciari@innoaseguros.com.br
+    nome: Pedro Acciari
+    verticais: [linhas_financeiras, saude]
+  - email: pamela.silva@innoaseguros.com.br
+    nome: Pamela Silva
+    verticais: [saude, linhas_financeiras]
+
+# Mapeamento de colunas da planilha do Zeca (comparação sem acento/maiúsculas).
+importacao:
+  zeca:
+    cnpj: [cnpj, cnpj estipulante, documento]
+    razao_social: [razao social, estipulante, empresa, cliente]
+    produto: [produto, plano, ramo]
+    operadora: [operadora, seguradora]
+    numero_apolice: [apolice, contrato, numero contrato, numero apolice]
+    inicio_vigencia: [inicio vigencia, vigencia inicial, inicio]
+    fim_vigencia: [fim vigencia, vigencia final, renovacao, aniversario]
+    premio: [premio, faturamento, valor, premio mensal]
+    vidas: [vidas, beneficiarios, quantidade vidas]
+    status: [status, situacao]
+
+# Organizações da própria corretora: negócios internos/de teste ficam fora da tabela e das oportunidades
+# (comparado com o nome sem acento e sem sufixos societários)
+empresas_internas: [innoa corretora, genoa corretora, genoa seguros, innoa seguros]

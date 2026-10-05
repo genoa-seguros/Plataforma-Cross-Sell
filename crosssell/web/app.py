@@ -1,3 +1,4 @@
+import logging
 import threading
 from contextlib import asynccontextmanager
 from datetime import date
@@ -22,10 +23,11 @@ from crosssell.models import Atividade, Empresa, Melhoria, Negocio, SyncLog, Usu
 from crosssell.pipeline import recalcular, registrar
 
 AQUI = Path(__file__).parent
+log = logging.getLogger(__name__)
 templates = Jinja2Templates(directory=AQUI / "templates")
 
 
-def _rotina_interna(parar: threading.Event, minutos: int) -> None:
+def _rotina_interna(parar: threading.Event, minutos: int, limite_minutos: int) -> None:
     """Roda `crosssell rotina` dentro do próprio servidor, de hora em hora (ROTINA_INTERNA=true).
     Útil em hospedagens de um container só; com um agendador externo, deixe desligado."""
     import subprocess
@@ -34,7 +36,10 @@ def _rotina_interna(parar: threading.Event, minutos: int) -> None:
     if parar.wait(120):  # primeira rodada 2 min depois de subir
         return
     while True:
-        subprocess.run([sys.executable, "-m", "crosssell.cli", "rotina"], check=False)
+        try:
+            subprocess.run([sys.executable, "-m", "crosssell.cli", "rotina"], check=False, timeout=limite_minutos * 60)
+        except subprocess.TimeoutExpired:  # rodada travada: é encerrada para não parar a rotina para sempre
+            log.warning("A rotina passou de %s minutos e foi encerrada; a próxima roda no horário.", limite_minutos)
         if parar.wait(max(minutos, 5) * 60):
             return
 
@@ -45,7 +50,8 @@ async def lifespan(_app):
     parar = threading.Event()
     s = get_settings()
     if s.rotina_interna:
-        threading.Thread(target=_rotina_interna, args=(parar, s.rotina_minutos), daemon=True).start()
+        threading.Thread(target=_rotina_interna, args=(parar, s.rotina_minutos, s.rotina_limite_minutos),
+                         daemon=True).start()
     yield
     parar.set()
 

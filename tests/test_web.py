@@ -155,3 +155,50 @@ def test_melhorias(cenario, db):
     assert m.post(f"/api/melhorias/{x['id']}", headers=H, json={"prioridade": "baixa"}).status_code == 403
     assert c.post(f"/api/melhorias/{y['id']}", headers=H, json={"situacao": "andamento"}).json()["situacao"] == "andamento"
     assert [i["titulo"] for i in m.get("/api/melhorias").json()] == ["Filtro por seguradora", "Mostrar valor da apólice"]
+
+
+def test_rotina_pulada_quando_outra_esta_rodando(monkeypatch):
+    from contextlib import contextmanager
+
+    from crosssell import cli, db as banco
+
+    rodadas = []
+    monkeypatch.setattr(cli, "_rodar_rotina", lambda dias: rodadas.append(dias))
+
+    @contextmanager
+    def ocupada(nome, bind=None):
+        yield False
+
+    monkeypatch.setattr(banco, "trava", ocupada)
+    cli.rotina(dias=2)
+    assert rodadas == []
+
+
+def test_trava_nao_bloqueia_no_sqlite(engine):
+    from crosssell.db import trava
+
+    with trava("x", bind=engine) as a, trava("x", bind=engine) as b:
+        assert a and b  # SQLite é só desenvolvimento: um processo, sem rotina interna
+
+
+def test_rotina_interna_encerra_rodada_travada(monkeypatch):
+    import subprocess
+
+    chamadas = []
+
+    def demorou(cmd, check, timeout):
+        chamadas.append(timeout)
+        raise subprocess.TimeoutExpired(cmd, timeout)
+
+    monkeypatch.setattr(subprocess, "run", demorou)
+
+    class Evento:  # espera inicial, depois duas rodadas e para
+        def __init__(self):
+            self.vezes = 0
+
+        def wait(self, segundos):
+            self.vezes += 1
+            return self.vezes > 2
+
+    webapp._rotina_interna(Evento(), minutos=60, limite_minutos=90)
+    assert chamadas == [90 * 60, 90 * 60]  # a rodada travada não impede a seguinte

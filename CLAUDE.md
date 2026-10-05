@@ -44,7 +44,8 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   `ex_cliente`) in `models.py`. Saúde has no end date, and a `fonte="manual"` cancelled Saúde deal is how
   the UI "unchecks" a Saúde client.
 - **Scoring:** `potencial.py` computes Potencial per vertical from weights/keyword lists in
-  `config/criterios.yaml` (reloaded by file mtime, no restart needed) plus `influencia()` (50% e-mail
+  `config/criterios.yaml` (reloaded by file mtime, no restart needed locally; in production the file is
+  baked into the Docker image, so a change needs a commit plus `deploy/atualizar.sh`) plus `influencia()` (50% e-mail
   relationship from `scoring/relacionamento.py`, 50% job-title hierarchy). `temperatura.py` uses the Claude
   API (`ANTHROPIC_MODEL`) to classify contact openness from e-mail replies. E-mail text is never stored.
 - **LinkedIn** (`connectors/linkedin.py`, `linkedapi.py`): calls Linked API directly when

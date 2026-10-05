@@ -1,7 +1,8 @@
 # Colocar no ar
 
-> Na AWS da Innoa: siga [`deploy/LEIA-ME.md`](../deploy/LEIA-ME.md) (EC2 + RDS em São Paulo). Este
-> resumo serve para outro provedor de container.
+> Na AWS da Innoa: siga [`deploy/LEIA-ME.md`](../deploy/LEIA-ME.md) (EC2 `zeca-server` em us-east-1,
+> com Postgres e backup no Docker e o Nginx do servidor). Este resumo serve para outro provedor de
+> container.
 
 A plataforma é um único container (`Dockerfile`) + um banco Postgres + uma tarefa de hora em hora.
 
@@ -39,7 +40,7 @@ O último comando imprime um link de convite: envie ao master, que cria a própr
 
 ## Exigências
 
-- **HTTPS** (os cookies de sessão são `Secure`): na AWS, o Caddy do `deploy/` emite o certificado;
+- **HTTPS** (os cookies de sessão são `Secure`): na AWS, o Nginx da `zeca-server` com Certbot;
   em outro provedor, use o HTTPS dele.
 - Saída para a internet. A rotina chama `innoaseguros.pipedrive.com`, `api.linkedapi.io`,
   `graph.microsoft.com`, `login.microsoftonline.com`, `api.anthropic.com`, `news.google.com` e

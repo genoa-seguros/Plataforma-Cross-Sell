@@ -1,5 +1,8 @@
-# Produção num servidor (ex.: AWS Lightsail/EC2): plataforma + HTTPS automático (Caddy).
-# O banco é um PostgreSQL gerenciado (DATABASE_URL no .env). Uso: ver deploy/LEIA-ME.md
+# Produção na EC2 zeca-server, ao lado da API do Zeca: plataforma + Postgres + backup diário.
+# O HTTPS é do Nginx que já existe no servidor (deploy/nginx-crosssell.conf). Uso: ver deploy/LEIA-ME.md
+
+name: crosssell   # containers crosssell-web-1 etc., sem depender do nome da pasta
+
 # Logs do Docker com limite (sem isso crescem até encher o disco): até 5 arquivos de 10 MB por serviço
 x-logs: &logs
   driver: json-file
@@ -11,21 +14,59 @@ services:
     env_file: .env
     environment:
       ROTINA_INTERNA: "true"   # rotina de hora em hora dentro do próprio container
+      DATABASE_URL: postgresql://crosssell:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em deploy/.env}@postgres:5432/crosssell
+    # Só para o Nginx do próprio servidor (127.0.0.1); a 3333 é da API do Zeca
+    ports: ["127.0.0.1:${PORTA_LOCAL:-8000}:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 512m            # se passar disso, só a plataforma reinicia; a API do Zeca não é afetada
     restart: unless-stopped
-    expose: ["8000"]
     logging: *logs
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    ports: ["80:80", "443:443"]
+
+  postgres:
+    image: postgres:16-alpine
     environment:
-      DOMINIO: ${DOMINIO}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [web]
+      POSTGRES_DB: crosssell
+      POSTGRES_USER: crosssell
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em deploy/.env}
+    volumes: [dados:/var/lib/postgresql/data]   # sem porta publicada: só a plataforma enxerga o banco
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crosssell -d crosssell"]
+      interval: 10s
+      retries: 10
+    mem_limit: 512m
+    restart: unless-stopped
     logging: *logs
+
+  # Uma cópia do banco por dia em PASTA_BACKUP (no disco do servidor), guardando as dos últimos 7 dias
+  backup:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: crosssell
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em deploy/.env}
+      PGDATABASE: crosssell
+    volumes: ["${PASTA_BACKUP:-/opt/crosssell-backups}:/backups"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          arquivo=/backups/crosssell-$$(date +%Y-%m-%d).sql.gz
+          if pg_dump --no-owner | gzip > "$$arquivo.tmp"; then
+            mv "$$arquivo.tmp" "$$arquivo"
+            echo "backup gravado: $$arquivo"
+          else
+            rm -f "$$arquivo.tmp"
+            echo "backup FALHOU" >&2
+          fi
+          find /backups -name 'crosssell-*.sql.gz' -mtime +7 -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 128m
+    restart: unless-stopped
+    logging: *logs
+
 volumes:
-  caddy_data:
-  caddy_config:
+  dados:

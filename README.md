@@ -171,4 +171,4 @@ execução, sem perder dados.
       `Mail.Send`, com `EMAIL_REMETENTE` para o link de nova senha) e chave da Claude API.
 - [ ] Tokens da Linked API (gerar novos antes de produção; os de teste foram expostos).
 - [ ] Exportação real do Zeca para ajustar os cabeçalhos em `config/verticais.yaml`.
-- [ ] Hospedagem (Postgres + container com HTTPS).
+- [ ] Hospedagem: EC2 `zeca-server`, com Postgres no Docker (roteiro em [`deploy/LEIA-ME.md`](deploy/LEIA-ME.md)).

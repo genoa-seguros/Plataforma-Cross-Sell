@@ -164,8 +164,9 @@ execução, sem perder dados.
 
 ## Pendências para produção
 
-- [ ] Liberar a rede do ambiente para `api.pipedrive.com`, `graph.microsoft.com`,
-      `api.anthropic.com`, `api.linkedapi.io`, `news.google.com` e `brasilapi.com.br`.
+- [ ] Saída do servidor para a internet: `innoaseguros.pipedrive.com`, `graph.microsoft.com`,
+      `login.microsoftonline.com`, `api.anthropic.com`, `api.linkedapi.io`, `news.google.com`,
+      `brasilapi.com.br` e o site de cada empresa (a rotina procura nele o link do LinkedIn).
 - [ ] Token de API do Pipedrive (usuário admin), app registration no Microsoft 365 (`Mail.Read` e
       `Mail.Send`, com `EMAIL_REMETENTE` para o link de nova senha) e chave da Claude API.
 - [ ] Tokens da Linked API (gerar novos antes de produção; os de teste foram expostos).

@@ -15,7 +15,8 @@ roda dentro do container (`ROTINA_INTERNA=true`).
 
 - Ubuntu 24.04 LTS, `t3.small` (2 GB RAM), disco 20 GB gp3, **Elastic IP**.
 - Security group: **80 e 443** abertos para a internet; **22** só do IP da TI.
-- Saída para a internet liberada (Pipedrive, Linked API, Microsoft Graph, Anthropic, Google Notícias, BrasilAPI).
+- Saída para a internet liberada (Pipedrive, Linked API, Microsoft Graph, Anthropic, Google Notícias, BrasilAPI
+  e o site de cada empresa, onde a rotina procura o link do LinkedIn).
 
 ## 3. Código (GitHub, leitura)
 

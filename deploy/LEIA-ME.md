@@ -29,7 +29,7 @@ Cadastre a chave pública em **GitHub → genoaseguros/Plataforma-Cross-Sell →
 Add deploy key** (sem "Allow write access"). Depois:
 
 ```bash
-GIT_SSH_COMMAND="ssh -i ~/.ssh/crosssell" git clone -b feat/plataforma-cross-sell-mvp \
+GIT_SSH_COMMAND="ssh -i ~/.ssh/crosssell" git clone -b main \
   git@github.com:genoaseguros/Plataforma-Cross-Sell.git crosssell
 cd crosssell && git config core.sshCommand "ssh -i ~/.ssh/crosssell"
 ```
@@ -83,7 +83,8 @@ Em console.anthropic.com → API Keys, crie uma chave para a Innoa e coloque em 
 
 ## Operação
 
-- Atualizar para a versão mais nova: `bash deploy/atualizar.sh`
+- Atualizar para a versão mais nova: `bash deploy/atualizar.sh`. Servidor clonado da antiga branch
+  `feat/plataforma-cross-sell-mvp` (apagada): rode uma vez `git fetch origin && git checkout main` antes.
 - Logs: `cd deploy && sudo docker compose logs -f web`
 - Rodar a rotina na hora: `sudo docker compose exec web crosssell rotina`
 - Backup: automático no RDS (7 dias). Os segredos ficam só em `deploy/.env` no servidor.

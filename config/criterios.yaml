@@ -1,7 +1,8 @@
 # Critérios de um bom negócio por vertical (Potencial, 0–100).
 # Pesos somam 100 em cada vertical. As listas são palavras procuradas (sem acento, minúsculas)
 # no setor do LinkedIn, no CNAE da Receita, na descrição da empresa no LinkedIn e no nome.
-# Edite à vontade: vale na próxima abertura da tabela.
+# Edite à vontade. Rodando local, vale na próxima abertura da tela. Em produção o arquivo vai dentro
+# da imagem do Docker: faça o commit e rode `bash deploy/atualizar.sh` no servidor.
 
 influencia:
   # Score de Influência = relacionamento (e-mails, ajustado pela temperatura) + hierarquia do cargo

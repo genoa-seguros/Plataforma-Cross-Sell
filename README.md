@@ -49,7 +49,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   reciprocidade e amplitude, ajustado pela temperatura) + 50% hierarquia do cargo (sócio/C-level 1,0;
   diretor/head 0,8; gerente/coordenador 0,55; demais 0,3).
 - **Potencial** (0–100), pesos e palavras em [`config/criterios.yaml`](config/criterios.yaml)
-  (editável; vale sem reiniciar):
+  (editável. Rodando local, vale na próxima abertura da tela, sem reiniciar. Em produção, o arquivo vai
+  dentro da imagem do Docker: faça o commit da mudança e rode `bash deploy/atualizar.sh` no servidor;
+  editar a cópia do servidor não muda nada. Assim o git guarda quem mudou cada critério e quando):
   - *Saúde*: influência 30, funcionários (ou vidas) 25, qualificação do time 20 (startups,
     fintechs, fundos, multinacionais, tecnologia, farmacêuticas × indústria, transporte, varejo,
     restaurantes), localização 15 (interior perde para a Unimed local) e RH estruturado 10.

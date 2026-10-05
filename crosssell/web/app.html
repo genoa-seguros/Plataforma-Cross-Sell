@@ -15,20 +15,11 @@
   --accent:#0554F2; --accent-ink:#ffffff; --warn:#a15c00; --good:#1d7a46; --bad:#b42318;
   --lf:#6a3fd1; --saude:#12805c; --re:#b86a00; --canal:#4a5a6a;
   --quente:#c2410c; --morna:#a16207; --fria:#0554F2;
+  color-scheme:light;
   --f-display:"Montserrat",ui-sans-serif,system-ui,sans-serif;
   --f-body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-data:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0b0c26; --surface:#13153a; --ink:#e6e8f6; --mute:#9a9dc2; --line:#262a5a; --soft:#1a1d48;
-  --accent:#5b8cff; --accent-ink:#04052a; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
-  --lf:#a58cf5; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd; --brand:#05062f; --brand-ink:#ffffff;
-  --quente:#fb923c; --morna:#facc15; --fria:#7ea6ff; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0b0c26; --surface:#13153a; --ink:#e6e8f6; --mute:#9a9dc2; --line:#262a5a; --soft:#1a1d48;
-  --accent:#5b8cff; --accent-ink:#04052a; --warn:#e3a14a; --good:#5cc78d; --bad:#f97066;
-  --lf:#a58cf5; --saude:#4cc59a; --re:#e6a243; --canal:#9aabbd; --brand:#05062f; --brand-ink:#ffffff;
-  --quente:#fb923c; --morna:#facc15; --fria:#7ea6ff; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body)}
@@ -43,9 +34,6 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .top nav.abas a{color:var(--mute)}
 .top nav.abas a:hover{color:var(--ink)}
 .top nav.abas a[aria-current="page"]{color:var(--brand);font-weight:600;border-bottom-color:var(--accent);border-bottom-width:3px}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .brand .logo-claro{display:none}:root:not([data-theme="light"]) .brand .logo-escuro{display:block}
-  :root:not([data-theme="light"]) .top nav.abas a[aria-current="page"]{color:var(--ink)}}
-:root[data-theme="dark"] .brand .logo-claro{display:none} :root[data-theme="dark"] .brand .logo-escuro{display:block}
 nav.abas{display:flex;gap:2px;align-self:stretch}
 nav.abas a{display:flex;align-items:center;padding:0 12px;color:var(--mute);text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
 nav.abas a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}

@@ -7,6 +7,10 @@ COPY crosssell ./crosssell
 COPY config ./config
 RUN pip install --no-cache-dir .
 
+# A plataforma não precisa de root: roda com um usuário sem privilégios
+RUN useradd --system --no-create-home --uid 10001 crosssell
+USER crosssell
+
 # Web: crosssell serve. A rotina (Pipedrive, e-mails, LinkedIn, notícias, Receita, qualidade)
 # roda à parte, de hora em hora: `crosssell rotina` (cron do provedor ou um segundo serviço).
 ENV PORT=8000

@@ -59,6 +59,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
   master-only routes use `somente_master`.
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
+- **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
+  screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group
+  `crosssell-equipe`. `email_m365.sincronizar` records `leitura_em` / `leitura_erro` ("recusada" = 403).
 - **Config:** `config.py` `Settings` (pydantic-settings, `.env`), cached by `get_settings()` (lru_cache).
   `db.py` creates the engine at import time from `DATABASE_URL` (SQLite locally, Postgres in prod;
   `postgres://` URLs are rewritten to `postgresql+psycopg://`).

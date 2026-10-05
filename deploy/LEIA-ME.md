@@ -91,17 +91,26 @@ O último comando imprime um link: envie ao Rodrigo; ele cria a senha nele (vale
 2. **API permissions → Microsoft Graph → Application permissions**: `Mail.Read` e `Mail.Send` →
    **Grant admin consent**.
 3. **Certificates & secrets → New client secret** (24 meses). Anote *Tenant ID*, *Client ID* e o *secret*.
-4. Caixa remetente: crie a caixa compartilhada `crosssell@innoaseguros.com.br`.
-5. Restrinja o app às caixas da equipe (obrigatório; sem isso o app enxerga todas as caixas):
-   crie o grupo de segurança habilitado para e-mail `crosssell-equipe@innoaseguros.com.br` com as
-   pessoas que usarão a plataforma + a caixa `crosssell@`, e no Exchange Online PowerShell:
+4. Caixa remetente do "esqueci minha senha": `oi@innoaseguros.com.br` (caixa existente). Nunca convide
+   essa caixa como usuária da plataforma: ela passaria a poder ser lida.
+5. Restrinja o app às caixas da equipe (obrigatório; sem isso o app enxerga todas as caixas). No
+   Exchange admin center, **Recipients → Groups → Add a group**, tipo **Segurança habilitada para email**
+   (*Mail-enabled security*; o tipo "Microsoft 365" não serve): `crosssell-equipe@innoaseguros.com.br`,
+   comunicação externa desligada, proprietários = os masters da plataforma. Membros: a caixa
+   remetente + quem deve ter a caixa lida. Depois, no Exchange Online PowerShell
+   (`Install-Module ExchangeOnlineManagement`, `Connect-ExchangeOnline`):
    ```powershell
    New-ApplicationAccessPolicy -AppId <CLIENT_ID> -PolicyScopeGroupId crosssell-equipe@innoaseguros.com.br `
      -AccessRight RestrictAccess -Description "Innoa Cross Sell"
-   Test-ApplicationAccessPolicy -Identity rodrigo.pedroni@innoaseguros.com.br -AppId <CLIENT_ID>
+   Test-ApplicationAccessPolicy -Identity oi@innoaseguros.com.br -AppId <CLIENT_ID>   # Granted
+   Test-ApplicationAccessPolicy -Identity <alguém-fora-do-grupo>@innoaseguros.com.br -AppId <CLIENT_ID>   # Denied
    ```
 6. Preencha `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` e `EMAIL_REMETENTE` em `deploy/.env` e
    rode `docker compose up -d web` (na pasta `deploy`).
+7. **Para cada pessoa cuja caixa deve ser lida**, são duas chaves: (a) no Microsoft 365, pôr no grupo
+   `crosssell-equipe`; (b) na plataforma, tela **Equipe**, ligar "Leitura de e-mails" (só depois que a
+   pessoa entrar; vem desligada). Se faltar (a), a tela mostra "recusada pelo Microsoft 365". Ao remover
+   o acesso de alguém, tire a pessoa do grupo também.
 
 ## 8. Claude API (temperatura dos e-mails)
 

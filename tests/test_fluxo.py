@@ -186,8 +186,16 @@ def test_temperatura_pelos_emails_do_contato(db, settings):
     relacionamento.calcular(db)
 
 
+def ligar_leitura(db, *emails):
+    """Simula quem já entrou na plataforma (tem senha) e teve a leitura ligada pelo master."""
+    for u in db.scalars(select(Usuario).where(Usuario.email.in_(emails))):
+        u.senha_hash, u.le_emails = "x", True
+    db.commit()
+
+
 def test_caixa_com_erro_nao_impede_as_outras(db, settings):
     carregar(db, settings)
+    ligar_leitura(db, *[u.email for u in db.scalars(select(Usuario))])
     agora = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def msg(id_, de, para, texto):
@@ -220,6 +228,44 @@ def test_caixa_com_erro_nao_impede_as_outras(db, settings):
     assert db.scalars(select(Interacao).where(Interacao.pessoa_id == ana.id)).first() is not None
     assert ana.temperatura == "muita"  # a temperatura das outras caixas é calculada mesmo assim
     assert db.scalar(select(Pessoa).where(Pessoa.email == "novo@gama.com.br")) is None
+    db.expire_all()
+    bruno = db.scalar(select(Usuario).where(Usuario.email.like("bruno%")))
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    assert bruno.leitura_erro == "recusada"  # 403: o Microsoft 365 negou o acesso à caixa
+    assert victor.leitura_erro is None and victor.leitura_em is not None
+
+
+def test_le_so_quem_entrou_e_teve_a_leitura_ligada(db, settings):
+    carregar(db, settings)  # equipe inicial: convites pendentes, leitura desligada
+    lidas = []
+
+    def graph(req: httpx.Request):
+        if "oauth2" in req.url.path:
+            return httpx.Response(200, json={"access_token": "tok"})
+        caixa = req.url.path.split("/users/")[1].split("/")[0]
+        lidas.append(caixa)
+        if caixa.startswith("pedro"):  # fora do grupo da Access Policy
+            return httpx.Response(403, json={"error": {"code": "ErrorAccessDenied"}})
+        return httpx.Response(200, json={"value": []})
+
+    client = email_m365.GraphClient(settings, transport=httpx.MockTransport(graph))
+    assert email_m365.sincronizar(db, settings, client=client) == {}  # ninguém entrou: nenhuma caixa lida
+    assert lidas == []
+
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    victor.le_emails = True  # leitura ligada, mas o convite segue pendente: continua sem ler
+    ligar_leitura(db, "bruno.rodrigues@innoaseguros.com.br", "pedro.acciari@innoaseguros.com.br")
+    pamela = db.scalar(select(Usuario).where(Usuario.email.like("pamela%")))
+    pamela.senha_hash = "x"  # entrou, mas a leitura está desligada
+    db.commit()
+    try:
+        email_m365.sincronizar(db, settings, client=client)
+    except RuntimeError as exc:
+        assert "1 de 2 caixas" in str(exc)
+    assert sorted(c.split("@")[0] for c in lidas) == ["bruno.rodrigues", "pedro.acciari"]
+    db.expire_all()
+    pedro = db.scalar(select(Usuario).where(Usuario.email.like("pedro%")))
+    assert pedro.leitura_erro == "recusada" and pedro.leitura_em is None
 
 
 def test_chave_da_claude_vem_do_arquivo_env(tmp_path, monkeypatch):

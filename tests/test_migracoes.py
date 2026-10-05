@@ -1,12 +1,13 @@
 """Migrações (Alembic): o banco que elas criam é o que crosssell/models.py descreve."""
 
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
 import crosssell.models  # noqa: F401
-from crosssell.db import ESQUEMA_INICIAL, Base, init_db
+from crosssell.db import ESQUEMA_INICIAL, Base, config_alembic, init_db
 
 
 def _banco():
@@ -29,11 +30,16 @@ def test_migracoes_batem_com_os_modelos():
 
 def test_banco_criado_antes_das_migracoes_e_marcado_sem_perder_dados():
     eng = _banco()
-    Base.metadata.create_all(eng)  # como os bancos eram criados antes
+    # Como os bancos eram criados antes (create_all, sem controle de versão): o esquema da 0001
+    with eng.begin() as con:
+        command.upgrade(config_alembic(con), ESQUEMA_INICIAL)
+        con.execute(text("DROP TABLE alembic_version"))
     with eng.begin() as con:
         con.execute(text("INSERT INTO sync_log (fonte, inicio, registros) VALUES ('pipedrive', '2026-10-01', 7)"))
     init_db(eng)
-    assert _versao(eng) == ESQUEMA_INICIAL
+    assert _versao(eng) != ESQUEMA_INICIAL  # marcado como 0001 e atualizado até a última migração
+    with eng.connect() as con:
+        assert con.scalar(text("SELECT le_emails FROM usuarios LIMIT 1")) is None  # coluna da 0002 existe
     with eng.connect() as con:
         assert con.scalar(text("SELECT registros FROM sync_log")) == 7
 

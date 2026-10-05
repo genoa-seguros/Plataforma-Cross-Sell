@@ -76,6 +76,31 @@ def test_convite_desconvite_e_permissoes(cenario, db):
     assert "nova@innoaseguros.com.br" not in ativos  # e-mails deixam de ser lidos
 
 
+def test_chave_de_leitura_de_emails_na_equipe(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    r = c.post("/api/equipe/convidar", headers=H, json={"email": "nova@innoaseguros.com.br", "nome": "Nova"}).json()
+    uid, token = r["usuario"]["id"], re.search(r"/convite/(.+)$", r["link"]).group(1)
+    assert r["usuario"]["leEmails"] is False  # desligada por padrão
+
+    # Convite pendente: a leitura não pode ser ligada
+    assert c.post(f"/api/equipe/{uid}/emails", headers=H, json={"ler": True}).status_code == 400
+
+    convidada = TestClient(webapp.app)
+    convidada.post(f"/convite/{token}", data={"senha": "senha-nova-123", "confirmacao": "senha-nova-123"})
+    assert entrar(convidada, "nova@innoaseguros.com.br", "senha-nova-123").status_code == 303
+    assert convidada.post(f"/api/equipe/{uid}/emails", headers=H, json={"ler": True}).status_code == 403  # só master
+
+    u = c.post(f"/api/equipe/{uid}/emails", headers=H, json={"ler": True}).json()
+    assert u["leEmails"] is True and u["pendente"] is False
+    assert next(x for x in c.get("/api/equipe").json() if x["id"] == uid)["leEmails"] is True
+
+    # Remover o acesso desliga a leitura; convidado de novo, o master liga outra vez
+    c.post(f"/api/equipe/{uid}/desconvidar", headers=H)
+    db.expire_all()
+    assert db.get(Usuario, uid).le_emails is False
+
+
 def test_criar_atividade_e_marcar_saude_pela_api(cenario):
     c, fake = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")

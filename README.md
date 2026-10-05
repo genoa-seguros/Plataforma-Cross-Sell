@@ -27,7 +27,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta.
   *Razão social*: nome da organização × razão social da Receita (pelo CNPJ), editável, com
   *Atualizar no Pipedrive*. Nada muda no Pipedrive sem aprovação.
-- **Equipe** (só o master): convidar e remover pessoas. Usuário ativo tem os e-mails lidos.
+- **Equipe** (só o master): convidar e remover pessoas e ligar a **leitura de e-mails** de cada uma
+  (desligada por padrão; só para quem já entrou). A caixa também precisa estar no grupo
+  `crosssell-equipe` do Microsoft 365; a tela mostra o resultado da última leitura.
 - **Ficha da empresa**: seguros vigentes, pessoas e temperatura, histórico de produtos e notícias.
 
 ## Regras

@@ -38,6 +38,15 @@ def test_regra_de_vigencia(db, settings):
     assert neg(db, 9) is None                      # funil 31 não configurado
 
 
+def test_falha_nos_usuarios_do_pipedrive_mantem_o_responsavel(db, settings):
+    fake = FakePipedrive()
+    client = carregar(db, settings, fake)
+    assert neg(db, 4).responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
+    fake.falhar_usuarios = True
+    pipedrive.sincronizar(db, settings, client)  # o resto da sincronização segue
+    assert neg(db, 4).responsavel_email == "bruno.rodrigues@innoaseguros.com.br"
+
+
 def test_tabela_so_negocios_abertos_dos_funis_escolhidos(db, settings):
     carregar(db, settings)
     linhas = tabela.montar(db, settings)

@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# "Hoje" é o de Brasília (vigência, semana dos to-dos); os horários gravados no banco seguem em UTC
+ENV TZ=America/Sao_Paulo
 COPY pyproject.toml README.md ./
 COPY crosssell ./crosssell
 COPY config ./config

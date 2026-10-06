@@ -2,12 +2,12 @@ import os
 from datetime import datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from crosssell import tabela
 from crosssell.config import Settings
 from crosssell.connectors import email_m365, noticias, pipedrive, planilhas
-from crosssell.models import Empresa, Interacao, Negocio, Pessoa, Usuario
+from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.pipeline import carregar_usuarios
 from crosssell.scoring import relacionamento
 from crosssell.temperatura import Classificador, atualizar
@@ -319,6 +319,49 @@ def test_oportunidades_incluem_leads_em_negociacao(db, settings):
     assert saude["cliente"] is False and [n["produto"] for n in saude["negociando"]] == ["D&O"]
     assert any("time qualificado" in m["texto"] for m in saude["motivos"])
     assert not any(nome == "Corretora Parceira" for nome, _ in ops)  # canal de parceria não é lead de seguro
+
+
+def test_oportunidades_sem_uma_consulta_por_empresa(db, engine, settings):
+    """Montar as Oportunidades custa o mesmo número de consultas com 1 ou 30 empresas a mais."""
+    carregar(db, settings)
+    dono = db.scalars(select(Usuario)).first()
+
+    def novas(n, inicio):
+        for i in range(inicio, inicio + n):
+            e = Empresa(razao_social=f"Lead {i} SA", nome_normalizado=f"lead {i}")
+            p = Pessoa(nome=f"Ana {i}", nome_normalizado=f"ana {i}", cargo="Gerente de RH", email=f"ana{i}@lead{i}.com.br", empresa=e)
+            db.add_all([e, p, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo=f"9{i}",
+                                      pipeline_id=1, status="aberto", titulo="D&O")])
+            db.flush()
+            db.add_all([Interacao(message_id=f"m{i}", data=datetime(2026, 9, 1), usuario_email=dono.email,
+                                  email_externo=p.email, direcao="enviado", pessoa_id=p.id, empresa_id=e.id),
+                        Atividade(empresa_id=e.id, assunto=f"Ligar {i}", vencimento=HOJE, responsavel_id=dono.id,
+                                  criada_por_id=dono.id)])
+        db.commit()
+
+    def consultas():
+        n = 0
+
+        def contar(*_):
+            nonlocal n
+            n += 1
+        event.listen(engine, "before_cursor_execute", contar)
+        try:
+            db.expire_all()
+            ops = tabela.oportunidades(db, settings)
+        finally:
+            event.remove(engine, "before_cursor_execute", contar)
+        return n, ops
+
+    novas(1, 0)
+    poucas, _ = consultas()
+    novas(30, 1)
+    muitas, ops = consultas()
+    assert muitas == poucas
+    op = next(o for o in ops if o["empresa"]["nome"] == "Lead 7 SA" and o["vertical"] == "saude")
+    assert op["relacoes"] == [dono.email]
+    assert op["quemDecide"]["pessoas"][0]["quemFala"] == dono.nome
+    assert op["proximaAtividade"]["assunto"] == "Ligar 7"
 
 
 def test_empresa_interna_fica_fora_e_cancelamento_vira_reconquista(db, settings):

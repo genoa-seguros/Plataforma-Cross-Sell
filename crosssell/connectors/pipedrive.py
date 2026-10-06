@@ -70,6 +70,10 @@ class PipedriveClient:
             saida |= {o["id"]: o for o in r.json().get("data") or [] if not o.get("is_deleted")}
         return saida
 
+    def ids_organizacoes(self) -> set[int]:
+        """Ids de todas as organizações que existem no Pipedrive (a lista não traz as excluídas)."""
+        return {o["id"] for o in self.paginar("organizations") if not o.get("is_deleted")}
+
     def excluir_organizacao(self, org_id: int) -> None:
         """Exclui a organização no Pipedrive (negócios e pessoas ficam, sem a organização)."""
         r = self.http.delete(f"/v2/organizations/{org_id}")

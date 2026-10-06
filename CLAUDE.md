@@ -19,7 +19,7 @@ pytest                                       # all tests (tests/)
 pytest tests/test_fluxo.py::test_regra_de_vigencia   # single test
 crosssell initdb                             # apply DB migrations only; users are created by a master on the Equipe screen
 crosssell serve                              # web app at http://localhost:8000 (set COOKIE_SEGURO=false locally)
-crosssell rotina                             # hourly job: pipedrive, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
+crosssell rotina                             # hourly job: pipedrive, pipedrive-excluidas, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
 DATABASE_URL=sqlite:///demo.db python scripts/demo.py                         # fake demo data
 DATABASE_URL=sqlite:///demo.db python scripts/exportar_preview.py preview.html --exemplo   # static single-file preview
 ```

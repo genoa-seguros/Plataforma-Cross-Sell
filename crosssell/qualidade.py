@@ -320,6 +320,27 @@ def excluir(db: Session, client, ids: list[int]) -> dict:
     return {**cont, "erros": erros}
 
 
+# --- Excluídas direto no Pipedrive ---------------------------------------------------
+# Mais de 30% (e mais de 20) de uma vez parece falha da consulta, não exclusão de verdade
+LIMITE_REMOCAO, MINIMO_SUSPEITO = 0.3, 20
+
+
+def remover_excluidas(db: Session, client) -> dict:
+    """Tira da plataforma as organizações que não existem mais no Pipedrive (excluídas ou mescladas lá).
+    Negócios, pessoas, atividades e e-mails ficam, sem a organização, como no Pipedrive; a sincronização
+    seguinte religa o que o Pipedrive mudou de organização. Roda de hora em hora, depois do Pipedrive."""
+    existem = client.ids_organizacoes()
+    locais = db.scalars(select(Empresa).where(Empresa.pipedrive_org_id.is_not(None))).all()
+    sumiram = [e for e in locais if e.pipedrive_org_id not in existem]
+    if sumiram and (not existem or len(sumiram) > max(MINIMO_SUSPEITO, LIMITE_REMOCAO * len(locais))):
+        raise RuntimeError(f"{len(sumiram)} de {len(locais)} organizações sumiram do Pipedrive de uma vez; "
+                           "nada foi removido (parece falha na consulta). Confira no Pipedrive.")
+    for e in sumiram:
+        _apagar_na_plataforma(db, e)
+    db.commit()
+    return {"removidas": len(sumiram)}
+
+
 # --- Razão social ----------------------------------------------------------------
 
 _MINUSCULAS = {"de", "da", "do", "das", "dos", "e", "em", "para", "com"}

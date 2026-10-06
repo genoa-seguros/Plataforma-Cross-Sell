@@ -4,7 +4,7 @@ import json
 
 import httpx
 import pytest
-from sqlalchemy import event, select
+from sqlalchemy import event, func, select
 
 from crosssell import qualidade, tabela
 from crosssell.connectors.pipedrive import PipedriveClient
@@ -232,3 +232,26 @@ def test_cadastros_suspeitos_e_exclusao(db, settings):
     assert db.scalar(select(Negocio.empresa_id).where(Negocio.id_externo == "800")) is None
     assert db.scalar(select(Pessoa.empresa_id).where(Pessoa.nome == "Ana Teste")) is None
     assert db.scalar(select(Atividade.empresa_id)) is None and db.scalar(select(Noticia.id)) is None
+
+
+def test_organizacao_excluida_no_pipedrive_sai_da_plataforma(db, settings, monkeypatch):
+    fake = PipedriveEscrita()
+    client = carregar(db, settings, fake)
+    sumiu = Empresa(razao_social="Excluída Lá", nome_normalizado="excluida la", pipedrive_org_id=777)
+    db.add(sumiu)
+    db.flush()
+    db.add(Negocio(empresa=sumiu, vertical="saude", fonte="pipedrive", id_externo="901", pipeline_id=23,
+                   status="aberto", titulo="Saúde"))
+    db.commit()
+    assert qualidade.remover_excluidas(db, client) == {"removidas": 1}
+    db.expire_all()
+    assert db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 777)) is None
+    assert db.scalar(select(Negocio.empresa_id).where(Negocio.id_externo == "901")) is None  # o negócio fica, sem ela
+    assert qualidade.remover_excluidas(db, client) == {"removidas": 0}
+
+    # Se a consulta vier vazia ou faltando muitas de uma vez, é falha da API: nada é removido
+    monkeypatch.setitem(DADOS, "organizations", [])
+    antes = db.scalar(select(func.count()).select_from(Empresa))
+    with pytest.raises(RuntimeError, match="nada foi removido"):
+        qualidade.remover_excluidas(db, client)
+    assert db.scalar(select(func.count()).select_from(Empresa)) == antes

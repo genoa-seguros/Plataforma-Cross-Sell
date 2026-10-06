@@ -25,7 +25,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
-  e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal do cadastro), o que cada um faz,
+  organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal
+  do cadastro), o que cada um faz,
   os limites em vigor (consultas do LinkedIn por rodada e por dia, prazo para reler perfis, janela de
   e-mails) e a última execução de cada passo, com o erro quando falhou.
 - **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Cadastros suspeitos*: organizações

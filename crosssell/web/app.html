@@ -860,7 +860,7 @@ async function telaRotina() {
   const cad = txt => `<span class="chip" style="--c:var(--accent)">${txt}</span>`;
   const passos = [
     ["var(--brand)", "Pipedrive", cad("toda hora"),
-     `Traz organizações, pessoas e negócios alterados nos últimos ${r.dias} dias e o status das atividades. É a fonte principal: cards abertos, ganhos e perdidos.`, U.pipedrive],
+     `Traz organizações, pessoas e negócios alterados nos últimos ${r.dias} dias e o status das atividades, e tira daqui as organizações excluídas ou mescladas direto no Pipedrive. É a fonte principal: cards abertos, ganhos e perdidos.`, U.pipedrive],
     ["var(--saude)", "E-mails", E.configurado ? cad("toda hora") : desligado("desligado"),
      `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}). Mede o relacionamento e a temperatura de cada contato.`, U.email],
     ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),

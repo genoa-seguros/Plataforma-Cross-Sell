@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Cross Sell: roda deploy/atualizar.sh como ubuntu (git pull + rebuild do container web). Sem parâmetros.",
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "atualizar",
+      "inputs": {
+        "timeoutSeconds": "900",
+        "runCommand": ["sudo -u ubuntu -H bash -c 'cd /opt/crosssell/deploy && bash atualizar.sh'"]
+      }
+    }
+  ]
+}

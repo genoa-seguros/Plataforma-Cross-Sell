@@ -1,0 +1,64 @@
+# Deploy na EC2 zeca-server a cada merge na main, depois dos testes.
+# O GitHub assume o papel github-crosssell-deploy da AWS (OIDC, sem senha guardada) e manda a instância
+# rodar o documento do SSM CrossSell-Atualizar, que só executa deploy/atualizar.sh. Ver deploy/LEIA-ME.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-producao
+  cancel-in-progress: false   # um deploy por vez; o seguinte espera
+
+env:
+  AWS_REGION: us-east-1
+  PAPEL_AWS: arn:aws:iam::483291753480:role/github-crosssell-deploy
+  INSTANCIA: i-0f9625ef9d89d8b65   # zeca-server
+  SITE: https://crosssell.coinsure.com.br
+
+jobs:
+  testes:
+    uses: ./.github/workflows/testes.yml
+
+  deploy:
+    needs: testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write   # token OIDC para entrar na AWS
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.PAPEL_AWS }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rodar atualizar.sh na zeca-server
+        run: |
+          id=$(aws ssm send-command --document-name CrossSell-Atualizar --instance-ids "$INSTANCIA" \
+            --comment "deploy ${GITHUB_SHA::7}" --query Command.CommandId --output text)
+          echo "Comando do SSM: $id"
+          # O build leva alguns minutos; o "aws ssm wait" desiste antes disso
+          for _ in $(seq 1 120); do
+            status=$(aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in Pending|InProgress|Delayed) sleep 5 ;; *) break ;; esac
+          done
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+            --query StandardOutputContent --output text
+          aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCIA" \
+            --query StandardErrorContent --output text >&2
+          echo "Resultado: $status"
+          test "$status" = Success
+
+      - name: Conferir se o site responde
+        run: |
+          for _ in $(seq 1 12); do
+            codigo=$(curl -s -o /dev/null -w "%{http_code}" "$SITE/login" || true)
+            [ "$codigo" = 200 ] && echo "$SITE/login respondeu 200" && exit 0
+            sleep 5
+          done
+          echo "$SITE/login não respondeu 200 (último: $codigo)" >&2
+          exit 1

@@ -90,3 +90,6 @@ clients the same way (connectors accept a `transport`/client) rather than hittin
 - Deployment: `Dockerfile` (runs `initdb` then uvicorn) and `deploy/` (MVP on the existing EC2 `zeca-server`,
   next to the Zeca API: `web` + `postgres` + daily local `backup` containers in `/opt/crosssell`, behind the host
   Nginx with Certbot at crosssell.coinsure.com.br; see `deploy/LEIA-ME.md`).
+- CI/CD: `.github/workflows/testes.yml` runs pytest on every PR; `deploy.yml` runs it again on each push to
+  `main` and then deploys through AWS SSM (OIDC role `github-crosssell-deploy`, SSM document `CrossSell-Atualizar`,
+  which only runs `deploy/atualizar.sh`). Files for the one-time AWS setup are in `deploy/aws/`.

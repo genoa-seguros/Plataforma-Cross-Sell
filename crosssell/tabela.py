@@ -12,7 +12,7 @@ reconquista e contato que mudou de empresa.
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
@@ -204,19 +204,18 @@ def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[di
 
 
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
-    """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente)
-    e para leads que já estão sendo trabalhados em outra vertical (negócio aberto nos funis da tabela).
+    """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente) e
+    leads com algum card aberto no Pipedrive (negócio aberto com vertical, em qualquer funil).
+    Quem não tem nada aberto fica de fora (vai para uma tela própria, ainda a desenhar).
     Ordenadas pelo Potencial na vertical da oportunidade."""
     hoje = hoje or date.today()
     funis = settings.pipelines()
-    da_tabela = [pid for pid, f in funis.items() if f["tabela"]]
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
-    # Só empresas que podem passar no filtro abaixo: algum negócio com vertical que esteja ganho/ativo
-    # (só esses podem estar vigentes) ou aberto no Pipedrive num funil da tabela
+    # Só empresas com algum card aberto no Pipedrive. Canais Parceria (sem vertical) são parceiros,
+    # não leads de seguro: não contam
     ids = select(Negocio.empresa_id).where(
         Negocio.empresa_id.is_not(None), Negocio.vertical.is_not(None),
-        or_(Negocio.status.in_(("ganho", "ativo")),
-            and_(Negocio.status == "aberto", Negocio.fonte == "pipedrive", Negocio.pipeline_id.in_(da_tabela)))).distinct()
+        Negocio.status == "aberto", Negocio.fonte == "pipedrive").distinct()
     # Tudo de uma vez (antes eram milhares de consultas, uma por empresa, vertical e pessoa)
     empresas = db.scalars(select(Empresa).where(Empresa.id.in_(ids)).options(
         selectinload(Empresa.negocios), selectinload(Empresa.pessoas), selectinload(Empresa.noticias))).all()
@@ -233,12 +232,10 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     for e in empresas:
         if interna(e, settings):
             continue
-        vigentes = seguros_vigentes(e)
-        # Canais Parceria (sem vertical) são parceiros, não leads de seguro: não geram oportunidade
-        abertos_tabela = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive"
-                          and n.pipeline_id in da_tabela and n.vertical]
-        if not vigentes and not abertos_tabela:
+        abertos = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive" and n.vertical]
+        if not abertos:
             continue
+        vigentes = seguros_vigentes(e)
         tem = {v.vertical for v in vigentes}
         negociando = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
         # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
@@ -264,7 +261,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
                 "relacoes": relacoes,
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
-                                "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos_tabela],
+                                "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos],
                 "quemDecide": decide, "motivos": _extras(e, None, v, vigentes) + motivos_potencial(pot),
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),

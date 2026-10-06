@@ -323,6 +323,25 @@ def test_oportunidades_incluem_leads_em_negociacao(db, settings):
     assert not any(nome == "Corretora Parceira" for nome, _ in ops)  # canal de parceria não é lead de seguro
 
 
+def test_oportunidades_so_com_card_aberto(db, settings):
+    """Cliente sem nenhum negócio aberto no Pipedrive não aparece; com um card aberto em qualquer funil, aparece."""
+    carregar(db, settings)
+    parado = Empresa(razao_social="Cliente Parado SA", nome_normalizado="cliente parado")
+    ativo = Empresa(razao_social="Cliente Ativo SA", nome_normalizado="cliente ativo")
+    db.add_all([parado, ativo])
+    db.flush()
+    for e, i in ((parado, 970), (ativo, 972)):
+        db.add(Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo=str(i), pipeline_id=1,
+                       status="ganho", titulo="D&O 2026", produto="D&O", fim_vigencia=HOJE + timedelta(days=200)))
+    db.add(Negocio(empresa=ativo, vertical="linhas_financeiras", fonte="pipedrive", id_externo="973", pipeline_id=40,
+                   status="aberto", titulo="Garantia Judicial", produto="Garantia"))  # funil fora da tabela
+    db.commit()
+    ops = {(o["empresa"]["nome"], o["vertical"]): o for o in tabela.oportunidades(db, settings)}
+    assert not any(nome == "Cliente Parado SA" for nome, _ in ops)
+    assert ops[("Cliente Ativo SA", "saude")]["cliente"] is True
+    assert [n["produto"] for n in ops[("Cliente Ativo SA", "saude")]["negociando"]] == ["Garantia"]
+
+
 def test_oportunidades_sem_uma_consulta_por_empresa(db, engine, settings):
     """Montar as Oportunidades custa o mesmo número de consultas com 1 ou 30 empresas a mais."""
     carregar(db, settings)

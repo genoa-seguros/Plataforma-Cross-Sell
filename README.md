@@ -10,8 +10,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Login**: e-mail e senha, com *Esqueci minha senha* (link de uso único por e-mail, vale 1 hora;
   o master também gera esse link na tela Equipe).
 - **Oportunidades** (tela inicial): o cross sell que **ninguém está trabalhando**. Clientes
-  (seguro vigente) e leads em negociação numa vertical que ainda não têm seguro nem negócio aberto
-  em outra (ex.: tem D&O, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade.
+  (seguro vigente) e leads com **algum card aberto** no Pipedrive (negócio aberto com vertical, em
+  qualquer funil) que ainda não têm seguro nem negócio aberto em outra vertical (ex.: tem D&O e está
+  renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
+  nada aberto fica de fora (terá uma tela própria, ainda a desenhar).
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas: Potencial (e Score de Influência), Empresa (Cliente/Lead), Oportunidade,
   Quem decide e a ponte, Por quê (+ a favor, − contra, ? falta informação), Notícias, Já tem
@@ -22,6 +24,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
+- **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
+  e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal do cadastro), o que cada um faz,
+  os limites em vigor (consultas do LinkedIn por rodada e por dia, prazo para reler perfis, janela de
+  e-mails) e a última execução de cada passo, com o erro quando falhou.
 - **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Organizações
   duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
   botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta.

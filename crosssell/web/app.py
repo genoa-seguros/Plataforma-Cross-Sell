@@ -2,7 +2,7 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -22,7 +22,8 @@ from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, SyncLog, Usuario
-from crosssell.pipeline import recalcular, registrar
+from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
+                                registrar)
 
 AQUI = Path(__file__).parent
 log = logging.getLogger(__name__)
@@ -644,6 +645,31 @@ def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_ma
     return {"configurado": lk.configurado(s), "lote": s.linkedin_lote, **lk.situacao(db, s),
             "disparado": _ultimo(db, "linkedin" if direto else "linkedin-disparo"),
             "recebido": _ultimo(db, "linkedin" if direto else "linkedin-retorno")}
+
+
+@app.get("/api/rotina")
+def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Como a rotina funciona (frequências e limites em vigor) e a última execução de cada passo, para a aba Rotina."""
+    s = get_settings()
+    direto = lk.direto(s)
+    fontes = {"pipedrive": "pipedrive", "email": "email", "noticias": "noticias", "receita": "receita",
+              "linkedinSites": "linkedin-sites", "linkedin": "linkedin" if direto else "linkedin-disparo",
+              "qualidade": "qualidade"}
+    caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
+                                              Usuario.senha_hash.is_not(None))).all()
+    return {
+        "minutos": s.rotina_minutos, "interna": s.rotina_interna, "dias": ROTINA_DIAS,
+        "noticiasHoras": NOTICIAS_HORAS, "receitaLote": RECEITA_LOTE, "sitesLote": SITES_LOTE,
+        "qualidadeDias": QUALIDADE_DIAS,
+        "email": {"configurado": bool(s.ms_tenant_id and s.ms_client_id), "temperatura": bool(s.anthropic_api_key),
+                  "maxEmails": s.temperatura_max_emails, "caixas": len(caixas),
+                  "recusadas": sum(u.leitura_erro == "recusada" for u in caixas)},
+        "linkedin": {"configurado": lk.configurado(s), "direto": direto, "lote": s.linkedin_lote,
+                     "limiteDia": s.linkedin_limite_dia, "validadeDias": s.linkedin_validade_dias,
+                     "buscaDias": lk.BUSCA_VALIDADE.days, "prazoHoras": int(lk.PRAZO_PEDIDO.total_seconds() // 3600),
+                     "ultimas24h": lk._pedidos_24h(db, datetime.utcnow())},
+        "ultimos": {k: _ultimo(db, f) for k, f in fontes.items()},
+    }
 
 
 class EnderecoIn(BaseModel):

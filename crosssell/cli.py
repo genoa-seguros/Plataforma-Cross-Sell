@@ -5,6 +5,7 @@ import typer
 
 from crosssell.config import get_settings
 from crosssell.db import SessionLocal, init_db
+from crosssell.pipeline import NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE
 
 app = typer.Typer(help="Plataforma de Cross Sell Innoa")
 
@@ -152,7 +153,7 @@ def _ultima_ha_dias(fonte: str) -> float:
 
 
 @app.command()
-def rotina(dias: int = 2):
+def rotina(dias: int = ROTINA_DIAS):
     """Roda tudo em sequência (para o agendador): Pipedrive, e-mails, notícias, LinkedIn e scores."""
     from crosssell.db import trava
 
@@ -169,11 +170,11 @@ def _rodar_rotina(dias: int) -> None:
     from crosssell.connectors import linkedin as lk
 
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("emails", lambda: emails(dias=dias, temperatura=True)),
-              ("noticias", lambda: noticias(horas=24)), ("receita", lambda: enriquecer(limite=50)),
-              ("linkedin-sites", linkedin_sites), ("recalcular", recalcular)]
+              ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
+              ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
         passos.insert(5, ("linkedin", linkedin))
-    if _ultima_ha_dias("qualidade") >= 7:  # revisão do cadastro: semanal
+    if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal
         passos.append(("qualidade", qualidade))
     for nome, fn in passos:
         try:

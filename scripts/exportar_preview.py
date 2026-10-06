@@ -25,6 +25,18 @@ from crosssell.web import app as webapp
 APP = Path(__file__).resolve().parents[1] / "crosssell" / "web" / "app.html"
 
 
+def _rotina_exemplo(r: dict, hoje: date) -> dict:
+    """Aba Rotina na prévia: últimas execuções fictícias de uma rodada das 9h."""
+    dia = hoje.isoformat()
+    ok = lambda minuto, n: {"em": f"{dia}T09:{minuto:02d}", "registros": n, "erro": None}  # noqa: E731
+    r["ultimos"] = {"pipedrive": ok(0, 128), "email": ok(2, 46), "noticias": ok(4, 12), "receita": ok(6, 9),
+                    "linkedinSites": ok(7, 3), "linkedin": ok(8, 10), "qualidade": ok(10, 57)}
+    r["interna"] = True
+    r["email"].update(configurado=True, temperatura=True, caixas=4)
+    r["linkedin"].update(configurado=True, ultimas24h=18)
+    return r
+
+
 def exportar(como: str | None) -> dict:
     init_db()
     db = SessionLocal()
@@ -48,6 +60,7 @@ def exportar(como: str | None) -> dict:
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
         "oportunidades": tabela.oportunidades(db, s),
         "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db)},
+        "rotina": _rotina_exemplo(webapp.api_rotina(db=db, _u=None), hoje),
         "linkedin": {"configurado": True, "lote": s.linkedin_lote, **lk.situacao(db, s), "ultimas24h": 18,
                      "disparado": {"em": hoje.isoformat() + "T09:30", "registros": 10, "erro": None},
                      "recebido": {"em": hoje.isoformat() + "T09:52", "registros": 10, "erro": None}},

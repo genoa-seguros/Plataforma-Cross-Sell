@@ -34,7 +34,8 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .top nav.abas a{color:var(--mute)}
 .top nav.abas a:hover{color:var(--ink)}
 .top nav.abas a[aria-current="page"]{color:var(--brand);font-weight:600;border-bottom-color:var(--accent);border-bottom-width:3px}
-nav.abas{display:flex;gap:2px;align-self:stretch}
+nav.abas{display:flex;gap:2px;align-self:stretch;max-width:100%;overflow-x:auto;scrollbar-width:none}
+nav.abas a{flex:none}
 nav.abas a{display:flex;align-items:center;padding:0 12px;color:var(--mute);text-decoration:none;font-weight:500;border-bottom:2px solid transparent}
 nav.abas a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
 .top .dir{margin-left:auto;display:flex;gap:12px;align-items:center;font-size:13px;color:var(--mute)}
@@ -128,6 +129,32 @@ fieldset label{display:flex;gap:4px;align-items:center}
 .ficha-head{display:grid;gap:8px}
 a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-radius:3px;background:var(--accent);color:var(--accent-ink);text-decoration:none;vertical-align:1px}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s}}
+/* Aba Rotina: passos da rodada em linha do tempo e os painéis de e-mail e LinkedIn */
+.rot-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--brand);color:var(--brand-ink);border-radius:10px;padding:18px 20px}
+.rot-relogio{flex:none;width:92px;height:92px;border-radius:50%;display:grid;place-content:center;text-align:center;border:3px solid color-mix(in srgb,var(--brand-ink) 35%,transparent);background:color-mix(in srgb,var(--accent) 45%,var(--brand))}
+.rot-relogio b{font:800 30px/1 var(--f-display)} .rot-relogio span{font-size:11px;opacity:.85}
+.rot-hero h2{font:700 18px/1.25 var(--f-display);margin:0 0 4px} .rot-hero p{margin:0;opacity:.88;max-width:760px}
+.rot-passos{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.rot-passo{display:grid;grid-template-columns:44px 1fr;gap:14px;position:relative;padding-bottom:14px}
+.rot-passo:not(:last-child)::before{content:"";position:absolute;left:21px;top:44px;bottom:0;width:2px;background:var(--line)}
+.rot-num{width:44px;height:44px;border-radius:50%;display:grid;place-content:center;font:800 17px/1 var(--f-display);color:#fff;background:var(--c)}
+.rot-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:8px;padding:10px 14px;display:grid;gap:4px}
+.rot-card h3{font:700 15px/1.2 var(--f-display);margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rot-card p{margin:0}
+.rot-st{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mute)}
+.rot-st i{width:8px;height:8px;border-radius:50%;background:var(--mute);flex:none} .rot-st.ok i{background:var(--good)} .rot-st.erro i{background:var(--bad)} .rot-st.erro{color:var(--bad)}
+.rot-paineis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:14px}
+.rot-painel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;display:grid;gap:12px;align-content:start}
+.rot-painel h2{font:700 16px/1.2 var(--f-display);margin:0}
+.rot-fluxo{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+.rot-fluxo div{flex:1 1 120px;background:var(--soft);border-radius:8px;padding:8px 10px;font-size:12px;display:grid;gap:2px;align-content:start}
+.rot-fluxo div b{font-size:13px;color:var(--ink)}
+.rot-fluxo .seta{flex:none;align-self:center;color:var(--accent);font-weight:700;background:none;padding:0}
+.rot-fatos{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.rot-fatos li{display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:center}
+.rot-fatos li>b{font:800 20px/1 var(--f-display);color:var(--accent);text-align:center}
+.rot-fatos li>b small{display:block;font:600 10px/1.2 var(--f-body);color:var(--mute);margin-top:2px}
+.rot-medidor{height:10px;border-radius:99px;background:var(--soft);overflow:hidden} .rot-medidor i{display:block;height:100%;background:var(--accent);border-radius:99px}
 </style>
 </head>
 <body>
@@ -284,6 +311,7 @@ const previa = {
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
+    if (path === "/api/rotina") return D.rotina;
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
     m = path.match(/^\/api\/qualidade(\/sugestoes|\/duplicadas)?(?:\?pagina=(\d+))?$/);
     if (m) {
@@ -360,7 +388,7 @@ function todosLocal(refIso) {
 
 /* ---------- Abas ---------- */
 function abas(ativa) {
-  const itens = [["oportunidades","Oportunidades"],["todos","To-dos da semana"],["melhorias","Melhorias"]];
+  const itens = [["oportunidades","Oportunidades"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
   if (EU?.papel === "master") itens.push(["qualidade","Qualidade"], ["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
 }
@@ -520,7 +548,7 @@ function desenharOportunidades() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Potencial</th><th>Empresa</th><th>Oportunidade</th><th>Quem decide · ponte</th><th>Por quê</th><th>Notícias</th><th>Já tem conosco</th><th>Em negociação</th><th>Próximo passo</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: empresas que já são clientes ou que estamos negociando em uma vertical e que ainda não têm seguro nem negócio aberto em outra. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -604,6 +632,7 @@ function qualOrg(x) {
 }
 async function qualPaginaDup(n) {
   Object.assign(QUAL, await api.get(`/api/qualidade/duplicadas?pagina=${n}`));
+  QUAL.selDup = new Set();  // a seleção vale para a página aberta
   qualKpis(); qualDuplicadas();
 }
 function qualTirarDuplicadas(fora) {
@@ -614,27 +643,66 @@ function qualTirarDuplicadas(fora) {
   if (!QUAL.duplicadas.length && QUAL.duplicadasPagina.total > 0) qualPaginaDup(QUAL.duplicadasPagina.pagina).catch(err => aviso(err.message));
   else qualDuplicadas();
 }
+/* Mescla um grupo no Pipedrive; devolve as organizações que deixaram de existir. */
+async function qualMesclar(g) {
+  await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
+  return g.mesclar.map(m => m.id);
+}
+function qualTirarMescladas(grupos, sumiram) {  // as mescladas deixam de existir: saem das sugestões também
+  qualTirarDuplicadas(x => grupos.has(x));
+  qualTirarSugestoes(x => sumiram.has(x.id));
+  qualKpis();
+}
 function qualDuplicadas() {
   const p = QUAL.duplicadasPagina, el = document.getElementById("q-dup");
-  el.innerHTML = QUAL.duplicadas.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
+  const sel = QUAL.selDup = new Set([...(QUAL.selDup || [])].filter(c => QUAL.duplicadas.some(g => g.chave === c)));
+  el.innerHTML = QUAL.duplicadas.length ? `<div class="semana" style="padding:8px 12px">
+      <button class="btn" id="q-dup-lote" ${sel.size ? "" : "disabled"}>Mesclar selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}</button>
+      <span class="sub">marque os grupos para mesclar vários de uma vez</span></div>
+    <div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th style="width:1%"><input type="checkbox" id="q-dup-todas" aria-label="Selecionar todos os grupos da página" ${sel.size === QUAL.duplicadas.length ? "checked" : ""}></th><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
       ${QUAL.duplicadas.map(g => `<tr>
+        <td><input type="checkbox" data-sel="${esc(g.chave)}" aria-label="Selecionar ${esc(g.manter.nome)}" ${sel.has(g.chave) ? "checked" : ""}></td>
         <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
         <td>${qualOrg(g.manter)}</td>
         <td>${g.mesclar.map(qualOrg).join('<div style="height:6px"></div>')}</td>
         <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
       </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
   ligarPaginacao("dup", async n => { try { await qualPaginaDup(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
+  const lote = document.getElementById("q-dup-lote");
+  const marcar = () => {  // atualiza o botão sem redesenhar a tabela; desfaz a confirmação pendente
+    lote.disabled = !sel.size; delete lote.dataset.confirmar;
+    lote.textContent = `Mesclar selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}`;
+    document.getElementById("q-dup-todas").checked = sel.size === QUAL.duplicadas.length;
+  };
+  el.querySelectorAll("[data-sel]").forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); marcar(); });
+  const todas = document.getElementById("q-dup-todas");
+  if (todas) todas.onchange = () => {
+    QUAL.duplicadas.forEach(g => todas.checked ? sel.add(g.chave) : sel.delete(g.chave));
+    el.querySelectorAll("[data-sel]").forEach(c => c.checked = todas.checked); marcar();
+  };
+  if (lote) lote.onclick = async () => {
+    const grupos = QUAL.duplicadas.filter(g => sel.has(g.chave));
+    if (lote.dataset.confirmar !== "1") { lote.dataset.confirmar = "1"; lote.textContent = `Confirmar ${grupos.length} mesclagens: não tem volta`; return; }
+    el.querySelectorAll("button, input").forEach(x => x.disabled = true);
+    const feitos = new Set(), sumiram = new Set(), erros = [];
+    for (const [i, g] of grupos.entries()) {  // um por vez: o Pipedrive mescla organização por organização
+      lote.textContent = `Mesclando ${i + 1} de ${grupos.length}…`;
+      try { (await qualMesclar(g)).forEach(id => sumiram.add(id)); feitos.add(g); sel.delete(g.chave); }
+      catch (err) { erros.push(`${g.manter.nome}: ${err.message}`); }
+    }
+    qualTirarMescladas(feitos, sumiram);
+    const prefixo = PREVIA ? "na prévia (nada foi enviado)" : "no Pipedrive";
+    aviso(erros.length ? `${feitos.size} de ${grupos.length} grupos mesclados ${prefixo}. Falharam: ${erros.join(" · ")}`
+                       : `${feitos.size} grupos mesclados ${prefixo}`);
+  };
   el.querySelectorAll("[data-mesclar]").forEach(b => b.onclick = async () => {
     const g = QUAL.duplicadas.find(x => x.chave === b.dataset.mesclar);
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: não tem volta"; return; }
     b.disabled = true;
     try {
-      await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
+      const sumiram = new Set(await qualMesclar(g));
       aviso(PREVIA ? "Mesclada na prévia (nada foi enviado)" : "Organizações mescladas no Pipedrive");
-      const sumiram = new Set(g.mesclar.map(m => m.id));  // as mescladas deixam de existir: saem das sugestões também
-      qualTirarDuplicadas(x => x === g);
-      qualTirarSugestoes(x => sumiram.has(x.id));
-      qualKpis();
+      qualTirarMescladas(new Set([g]), sumiram);
     } catch (err) { aviso(err.message); b.disabled = false; }
   });
   el.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => {
@@ -676,6 +744,85 @@ function qualRazao() {
     try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); qualTirarSugestoes(x => x.chave === b.dataset.ignorar); qualKpis(); }
     catch (err) { aviso(err.message); b.disabled = false; }
   });
+}
+
+/* ---------- Rotina: como a plataforma se atualiza sozinha ---------- */
+function rotStatus(u) {
+  if (!u) return '<span class="rot-st"><i></i>ainda não rodou</span>';
+  if (u.erro) return `<span class="rot-st erro" title="${esc(u.erro)}"><i></i>falhou em ${hora(u.em)}: ${esc(u.erro.length > 90 ? u.erro.slice(0, 90) + "…" : u.erro)}</span>`;
+  return `<span class="rot-st ok"><i></i>última: ${hora(u.em)} · ${u.registros.toLocaleString("pt-BR")} registros</span>`;
+}
+async function telaRotina() {
+  const r = await api.get("/api/rotina"), L = r.linkedin, E = r.email, U = r.ultimos;
+  const desligado = txt => `<span class="chip" style="--c:var(--mute)">${txt}</span>`;
+  const cad = txt => `<span class="chip" style="--c:var(--accent)">${txt}</span>`;
+  const passos = [
+    ["var(--brand)", "Pipedrive", cad("toda hora"),
+     `Traz organizações, pessoas e negócios alterados nos últimos ${r.dias} dias e o status das atividades. É a fonte principal: cards abertos, ganhos e perdidos.`, U.pipedrive],
+    ["var(--saude)", "E-mails", E.configurado ? cad("toda hora") : desligado("desligado"),
+     `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}). Mede o relacionamento e a temperatura de cada contato.`, U.email],
+    ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),
+     "Busca no Google Notícias as manchetes que citam as empresas da tabela.", U.noticias],
+    ["var(--lf)", "Receita Federal", cad("uma vez por empresa"),
+     `Porte, CNAE e sócios pelo CNPJ: até ${r.receitaLote} empresas novas por rodada.`, U.receita],
+    ["var(--canal)", "Site da empresa", cad("uma vez por empresa"),
+     `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada, sem gastar consulta do LinkedIn.`, U.linkedinSites],
+    ["var(--accent)", "LinkedIn", L.configurado ? cad(`toda hora · relê a cada ${L.validadeDias} dias`) : desligado("desligado"),
+     `Até ${L.lote} consultas por rodada e ${L.limiteDia} a cada 24 h. Atualiza funcionários, o título de cada pessoa no LinkedIn, decisores e posts.`, U.linkedin],
+    ["var(--good)", "Scores", cad("toda hora"),
+     "Recalcula o relacionamento por e-mail; o Potencial e a ordem das Oportunidades já saem com os dados novos.", null],
+    ["var(--warn)", "Qualidade do cadastro", cad(`1x a cada ${r.qualidadeDias} dias`),
+     "Procura organizações duplicadas e razão social incompleta. Nada muda no Pipedrive sem a aprovação do master.", U.qualidade],
+  ];
+  const pct = Math.min(100, Math.round(100 * L.ultimas24h / Math.max(1, L.limiteDia)));
+  document.getElementById("app").innerHTML = `
+  <section style="display:grid;gap:16px">
+    <h1>Rotina</h1>
+    <div class="rot-hero">
+      <div class="rot-relogio" aria-hidden="true"><b>${r.minutos}</b><span>minutos</span></div>
+      <div><h2>A cada ${r.minutos === 60 ? "hora" : `${r.minutos} minutos`}, a plataforma se atualiza sozinha</h2>
+        <p>Os passos abaixo rodam em sequência, sempre na mesma ordem. Se um falhar, os outros seguem, e a próxima rodada tenta de novo. Só uma rodada roda por vez.${r.interna ? "" : " (Neste ambiente a rodada é disparada por um agendador externo.)"}</p></div>
+    </div>
+    <ol class="rot-passos">
+      ${passos.map(([c, t, chip, txt, u], i) => `<li class="rot-passo" style="--c:${c}">
+        <span class="rot-num">${i < 7 ? i + 1 : "+"}</span>
+        <div class="rot-card"><h3>${t} ${chip}</h3><p>${txt}</p>${u === null ? '<span class="rot-st ok"><i></i>roda junto com a rodada</span>' : rotStatus(u)}</div></li>`).join("")}
+    </ol>
+    <div class="rot-paineis">
+      <div class="rot-painel">
+        <h2>E-mail: o que a plataforma lê</h2>
+        <div class="rot-fluxo">
+          <div><b>Caixa no Microsoft 365</b>só de quem tem a leitura ligada na tela Equipe</div><span class="seta" aria-hidden="true">→</span>
+          <div><b>Quem, para quem, quando</b>só os dados do envelope</div><span class="seta" aria-hidden="true">→</span>
+          <div><b>Relacionamento</b>frequência, recência, reciprocidade e amplitude</div>
+        </div>
+        <div class="rot-fluxo">
+          <div><b>Resposta de um contato</b>só o trecho novo, sem o histórico</div><span class="seta" aria-hidden="true">→</span>
+          <div><b>Claude lê os ${E.maxEmails} últimos</b>e classifica a abertura${E.temperatura ? "" : " (desligado: sem a chave da Claude API)"}</div><span class="seta" aria-hidden="true">→</span>
+          <div><b>Temperatura</b><span><span class="chip t-pouca">pouca</span> <span class="chip t-media">média</span> <span class="chip t-muita">muita</span></span></div>
+        </div>
+        <ul class="rot-fatos">
+          <li><b>${r.dias}<small>dias</small></b><span>A cada hora, relê os últimos ${r.dias} dias de cada caixa. O que já foi lido não conta duas vezes, e uma hora que falhar é coberta pela seguinte.</span></li>
+          <li><b>0<small>textos</small></b><span>O texto dos e-mails <b>nunca é guardado</b>. Ficam só os dados do envelope, o rótulo da temperatura e uma justificativa curta.</span></li>
+          <li><b>${E.caixas}<small>caixas</small></b><span>Leitura opcional por pessoa, ligada pelo master. A caixa também precisa estar no grupo <code>crosssell-equipe</code> do Microsoft 365; fora dele, a leitura aparece como recusada.</span></li>
+        </ul>
+      </div>
+      <div class="rot-painel">
+        <h2>LinkedIn: quem é consultado e quando</h2>
+        <div style="display:grid;gap:6px">
+          <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>Consultas nas últimas 24 h</b><span class="num">${L.ultimas24h} de ${L.limiteDia}</span></div>
+          <div class="rot-medidor" role="img" aria-label="${L.ultimas24h} de ${L.limiteDia} consultas"><i style="width:${pct}%"></i></div>
+          <span class="sub">O limite protege a conta do LinkedIn. Prioridade: as Oportunidades (pelo Potencial) e depois as empresas e os contatos dos negócios abertos.</span>
+        </div>
+        <ul class="rot-fatos">
+          <li><b>${L.validadeDias}<small>dias</small></b><span><b>Já tem endereço do LinkedIn:</b> a página da empresa ou o perfil da pessoa é relido. Atualiza o número de funcionários (vale mais que o do Pipedrive), o título e a empresa atual da pessoa, os decisores e os posts.</span></li>
+          <li><b>${L.buscaDias}<small>dias</small></b><span><b>Ainda não tem endereço:</b> procura pelo nome. Se não encontra, tenta de novo depois desse prazo.</span></li>
+          <li><b>${L.validadeDias}<small>dias</small></b><span><b>Falta alguém da área que decide</b> (ex.: RH para Saúde): lê a lista de funcionários da empresa para achar essa pessoa.</span></li>
+          <li><b>${L.prazoHoras}<small>horas</small></b><span><b>Consulta sem resposta:</b> espera esse tempo antes de pedir de novo.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>`;
 }
 
 /* ---------- To-dos da semana ---------- */
@@ -901,6 +1048,7 @@ async function render() {
     else if (h === "#todos") await telaTodos();
     else if (h === "#qualidade") await telaQualidade();
     else if (h === "#melhorias") await telaMelhorias();
+    else if (h === "#rotina") await telaRotina();
     else if (h === "#equipe") await telaEquipe();
     else await telaOportunidades();
   } catch (err) { if (err.message !== "login" && err.message !== OBSOLETA) document.getElementById("app").innerHTML = `<p class="vazio">${esc(err.message)}</p>`; }

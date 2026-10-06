@@ -17,7 +17,7 @@ or table logic.
 pip install -e ".[dev]"                      # installs the `crosssell` CLI (crosssell/cli.py)
 pytest                                       # all tests (tests/)
 pytest tests/test_fluxo.py::test_regra_de_vigencia   # single test
-crosssell initdb                             # create tables + initial team from config/verticais.yaml
+crosssell initdb                             # apply DB migrations only; users are created by a master on the Equipe screen
 crosssell serve                              # web app at http://localhost:8000 (set COOKIE_SEGURO=false locally)
 crosssell rotina                             # hourly job: pipedrive, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
 DATABASE_URL=sqlite:///demo.db python scripts/demo.py                         # fake demo data

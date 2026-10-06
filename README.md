@@ -103,7 +103,7 @@ antigo pelo n8n continua disponível se esses tokens não forem definidos
 ```bash
 pip install -e ".[dev]"
 cp .env.example .env              # tokens: Pipedrive, Microsoft 365, ANTHROPIC_API_KEY
-crosssell initdb                  # cria as tabelas e a equipe inicial do config
+crosssell initdb                  # aplica as migrações do banco (não cria usuários)
 crosssell criar-master rodrigo.pedroni@innoaseguros.com.br "Rodrigo Pedroni"
 crosssell serve                   # http://localhost:8000
 ```

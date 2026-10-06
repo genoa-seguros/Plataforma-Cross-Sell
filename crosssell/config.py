@@ -86,7 +86,7 @@ class Settings(BaseSettings):
         return (self.verticais_config().get("pipedrive") or {}).get("campos") or {}
 
     def usuarios_iniciais(self) -> list[dict]:
-        """Equipe inicial do config: email, nome, verticais, lider."""
+        """Equipe do config (só demonstração e testes): email, nome, verticais, lider."""
         saida = []
         for u in self.verticais_config().get("usuarios") or []:
             saida.append({

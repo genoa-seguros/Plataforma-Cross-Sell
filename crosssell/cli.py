@@ -16,10 +16,10 @@ def _db():
 
 @app.command()
 def initdb():
-    """Cria as tabelas e a equipe inicial do config (sem senha; cada um entra por convite)."""
-    from crosssell.pipeline import carregar_usuarios
-
-    typer.echo(f"{carregar_usuarios(_db(), get_settings())} usuários criados")
+    """Aplica as migrações do banco. Não cria usuários: o master convida cada pessoa pela tela Equipe
+    (o primeiro master: `crosssell convidar --master`). Roda a cada deploy (Dockerfile)."""
+    _db().close()
+    typer.echo("Banco atualizado")
 
 
 @app.command("criar-master")

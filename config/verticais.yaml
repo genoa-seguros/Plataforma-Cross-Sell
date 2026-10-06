@@ -30,7 +30,8 @@ pipedrive:
     # "Se empresa, já possui o seguro saúde na Genoa?" = Sim -> sinal de cliente Saúde
     possui_saude: dced275b9f49ad3ac158c4a961bc17920ad4de57
 
-# Equipe inicial (o usuário master convida e remove pessoas pela tela Equipe).
+# Equipe usada só pela demonstração (scripts/demo.py) e pelos testes. Em produção os usuários são criados
+# pelo master na tela Equipe; esta lista não é carregada no deploy.
 usuarios:
   - email: bruno.rodrigues@innoaseguros.com.br
     nome: Bruno Rodrigues

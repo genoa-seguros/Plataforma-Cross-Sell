@@ -9,11 +9,11 @@ Cada linha tem dois números (ver crosssell/potencial.py):
 reconquista e contato que mudou de empresa.
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
@@ -30,8 +30,8 @@ def area_pessoa(p: Pessoa) -> str | None:
     return classificar_area(p.cargo) or classificar_area(p.linkedin_headline)
 
 
-def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str]) -> dict:
-    proximo = _ponte(db, p.id, None)
+def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str], pontes: dict[int, str] | None = None) -> dict:
+    proximo = pontes.get(p.id) if pontes is not None else _ponte(db, p.id, None)
     area = area_pessoa(p)
     return {"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline, "area": area,
             "areaNome": AREA_LABEL.get(area or ""), "linkedin": p.linkedin_url, "fonte": p.fonte,
@@ -40,7 +40,8 @@ def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str]) -> dict:
             "influencia": influencia(p)["score"]}
 
 
-def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str]) -> dict | None:
+def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str],
+                pontes: dict[int, str] | None = None) -> dict | None:
     """Pessoas da área que costuma decidir a vertical e, se ninguém dela tem relação, a ponte:
     o contato da empresa com relação mais forte com alguém da equipe."""
     if e is None or vertical not in AREAS_VERTICAL:
@@ -53,8 +54,8 @@ def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dic
     ponte = None
     if not any((p.score_relacionamento or 0) >= 20 for p in pessoas):
         rel = sorted((p for p in e.pessoas if (p.score_relacionamento or 0) >= 20 and p not in pessoas), key=chave)
-        ponte = _pessoa_json(db, rel[0], nomes) if rel else None
-    return {"areas": [AREA_LABEL[a] for a in areas], "pessoas": [_pessoa_json(db, p, nomes) for p in pessoas],
+        ponte = _pessoa_json(db, rel[0], nomes, pontes) if rel else None
+    return {"areas": [AREA_LABEL[a] for a in areas], "pessoas": [_pessoa_json(db, p, nomes, pontes) for p in pessoas],
             "daArea": bool(da_area), "ponte": ponte}
 
 
@@ -98,6 +99,16 @@ def _ponte(db: Session, pessoa_id: int | None, empresa_id: int | None) -> str | 
         return None
     cont = Counter(db.scalars(q))
     return cont.most_common(1)[0][0] if cont else None
+
+
+def _pontes(db: Session, empresas) -> dict[int, str]:
+    """_ponte de todas as pessoas dessas empresas numa consulta só."""
+    cont: dict[int, Counter] = defaultdict(Counter)
+    q = (select(Interacao.pessoa_id, Interacao.usuario_email).join(Pessoa, Pessoa.id == Interacao.pessoa_id)
+         .where(Pessoa.empresa_id.in_(empresas)).order_by(Interacao.id))
+    for pessoa_id, email in db.execute(q):
+        cont[pessoa_id][email] += 1
+    return {pid: c.most_common(1)[0][0] for pid, c in cont.items()}
 
 
 def _proxima_atividade(db: Session, negocio_id: int) -> Atividade | None:
@@ -200,9 +211,26 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     funis = settings.pipelines()
     da_tabela = [pid for pid, f in funis.items() if f["tabela"]]
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
-    ids = set(db.scalars(select(Negocio.empresa_id).where(Negocio.empresa_id.is_not(None))))
+    # Só empresas que podem passar no filtro abaixo: algum negócio com vertical que esteja ganho/ativo
+    # (só esses podem estar vigentes) ou aberto no Pipedrive num funil da tabela
+    ids = select(Negocio.empresa_id).where(
+        Negocio.empresa_id.is_not(None), Negocio.vertical.is_not(None),
+        or_(Negocio.status.in_(("ganho", "ativo")),
+            and_(Negocio.status == "aberto", Negocio.fonte == "pipedrive", Negocio.pipeline_id.in_(da_tabela)))).distinct()
+    # Tudo de uma vez (antes eram milhares de consultas, uma por empresa, vertical e pessoa)
+    empresas = db.scalars(select(Empresa).where(Empresa.id.in_(ids)).options(
+        selectinload(Empresa.negocios), selectinload(Empresa.pessoas), selectinload(Empresa.noticias))).all()
+    relacoes_de: dict[int, set[str]] = defaultdict(set)
+    for empresa_id, email in db.execute(select(Interacao.empresa_id, Interacao.usuario_email)
+                                        .where(Interacao.empresa_id.in_(ids))):
+        relacoes_de[empresa_id].add(email)
+    pontes = _pontes(db, ids)
+    proxima_de: dict[int, Atividade] = {}
+    for a in db.scalars(select(Atividade).where(Atividade.empresa_id.in_(ids), Atividade.negocio_id.is_(None),
+                                                Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
+        proxima_de.setdefault(a.empresa_id, a)
     saida = []
-    for e in db.scalars(select(Empresa).where(Empresa.id.in_(ids))):
+    for e in empresas:
         if interna(e, settings):
             continue
         vigentes = seguros_vigentes(e)
@@ -214,16 +242,15 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         tem = {v.vertical for v in vigentes}
         negociando = {n.vertical for n in e.negocios if n.status == "aberto" and n.vertical}
         # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
-        relacoes = sorted(set(db.scalars(select(Interacao.usuario_email).where(Interacao.empresa_id == e.id))))
+        relacoes = sorted(relacoes_de[e.id])
         for v in VERTICAIS:
             if v in tem or v in negociando:
                 continue
-            decide = quem_decide(db, e, v, nomes)
+            decide = quem_decide(db, e, v, nomes, pontes)
             alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
             contato = alvo or melhor_contato(e)
             pot = potencial(v, e, contato)
-            prox = db.scalar(select(Atividade).where(Atividade.empresa_id == e.id, Atividade.negocio_id.is_(None),
-                                                     Atividade.concluida.is_(False)).order_by(Atividade.vencimento))
+            prox = proxima_de.get(e.id)
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
             saida.append({

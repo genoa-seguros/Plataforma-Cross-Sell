@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -57,6 +58,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # o JSON das Oportunidades passa de 1 MB
 app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")  # logo e favicon
 
 

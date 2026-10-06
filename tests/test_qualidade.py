@@ -3,7 +3,7 @@
 import json
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from crosssell import qualidade, tabela
 from crosssell.models import Empresa, Negocio
@@ -71,3 +71,34 @@ def test_ignorar_duplicada_e_razao_social(db, settings):
     assert fake.escritas[-1] == ("PATCH", "/api/v2/organizations/20", {"name": "Beta Serviços de Limpeza e Conservacao Ltda"})
     assert not any(s["id"] == beta.id for s in qualidade.razao_social(db)["sugestoes"])
     assert any(x["empresa"] and x["empresa"]["nome"].startswith("Beta Serviços de") for x in tabela.montar(db, settings))
+
+
+def test_paginas_de_20_e_consultas_fixas(db, settings, engine):
+    carregar(db, settings, PipedriveEscrita())
+    for i in range(45):
+        e = Empresa(razao_social=f"Loja {i}", nome_normalizado=f"loja {i}", pipedrive_org_id=1000 + i,
+                    cnpj=f"{i:014d}", razao_receita=f"LOJA {i} COMERCIO DE ROUPAS LTDA")
+        db.add(e)
+        db.add(Negocio(empresa=e, fonte="pipedrive", id_externo=f"x{i}", status="ganho", vertical="saude", titulo="Saúde"))
+    db.commit()
+    db.expire_all()
+
+    consultas = []
+
+    def contar(*_):
+        consultas.append(1)
+
+    event.listen(engine, "before_cursor_execute", contar)
+    try:
+        p3 = qualidade.razao_social(db, 3)
+        qualidade.duplicadas(db)
+    finally:
+        event.remove(engine, "before_cursor_execute", contar)
+    assert len(consultas) <= 10  # antes: uma consulta por organização
+    total = p3["sugestoesPagina"]["total"]
+    assert total >= 45 and p3["sugestoesPagina"]["paginas"] == -(-total // 20) and p3["sugestoesPagina"]["pagina"] == 3
+    assert len(p3["sugestoes"]) == total - 40
+    todas = qualidade.razao_social(db)["sugestoes"]
+    assert [s["id"] for s in p3["sugestoes"]] == [s["id"] for s in todas[40:60]]
+    assert qualidade.razao_social(db, 99)["sugestoesPagina"]["pagina"] == 3  # além da última vai para a última
+    assert qualidade.pagina([], 5) == {"itens": [], "total": 0, "pagina": 1, "paginas": 1}

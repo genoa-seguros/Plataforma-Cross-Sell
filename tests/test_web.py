@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from crosssell import auth
 from crosssell.connectors import pipedrive
-from crosssell.models import Usuario
+from crosssell.models import Empresa, Usuario
 from crosssell.web import app as webapp
 from tests.fakes import FakePipedrive
 from tests.test_fluxo import carregar
@@ -227,3 +227,17 @@ def test_rotina_interna_encerra_rodada_travada(monkeypatch):
 
     webapp._rotina_interna(Evento(), minutos=60, limite_minutos=90)
     assert chamadas == [90 * 60, 90 * 60]  # a rodada travada não impede a seguinte
+
+
+def test_qualidade_paginada(cenario, db):
+    c, _ = cenario
+    for i in range(25):
+        db.add(Empresa(razao_social=f"Loja {i}", nome_normalizado=f"loja {i}", pipedrive_org_id=1000 + i,
+                       cnpj=f"{i:014d}", razao_receita=f"LOJA {i} COMERCIO LTDA"))
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    q = c.get("/api/qualidade").json()
+    assert "duplicadas" in q and len(q["sugestoes"]) == 20 and q["sugestoesPagina"]["pagina"] == 1
+    p2 = c.get("/api/qualidade/sugestoes?pagina=2").json()
+    assert "duplicadas" not in p2 and p2["sugestoesPagina"]["pagina"] == 2
+    assert len(p2["sugestoes"]) == q["sugestoesPagina"]["total"] - 20

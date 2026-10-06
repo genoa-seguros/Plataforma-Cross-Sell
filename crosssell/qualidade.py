@@ -7,22 +7,26 @@
    passam para a que fica. Mesclar não tem volta, por isso nada é automático.
 2. Razão social: compara o nome da organização com a razão social da Receita (pelo CNPJ)
    e sugere o nome completo. Atualizar também depende de aprovação.
+
+Desempenho: as contagens de negócios e pessoas vêm de duas consultas agrupadas e as empresas
+são carregadas só com os campos usados aqui (antes era uma consulta por organização).
 """
 
 import re
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, load_only
 
-from crosssell.models import Empresa, QualidadeIgnorada
+from crosssell.models import Empresa, Negocio, Pessoa, QualidadeIgnorada
 from crosssell.normalize import normalizar_nome_empresa, sem_acento
 
 DOMINIOS_GENERICOS = {"gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.com.br", "uol.com.br",
                       "bol.com.br", "terra.com.br", "icloud.com", "live.com", "linkedin.com", "facebook.com",
                       "instagram.com", "wixsite.com", "google.com", "sites.google.com"}
 MOTIVOS = {"cnpj": "mesmo CNPJ", "nome": "mesmo nome", "dominio": "mesmo site"}
+POR_PAGINA = 20
 
 
 def _ignoradas(db: Session) -> set[str]:
@@ -33,21 +37,44 @@ def chave_grupo(ids: list[int]) -> str:
     return "dup:" + ",".join(str(i) for i in sorted(ids))
 
 
-def _resumo(e: Empresa) -> dict:
-    negs = [n for n in e.negocios if n.fonte == "pipedrive"]
+def _contagens(db: Session) -> dict[int, tuple[int, int, int]]:
+    """empresa_id -> (negócios do Pipedrive, ganhos, pessoas), em duas consultas."""
+    negs = {i: (n, g or 0) for i, n, g in db.execute(
+        select(Negocio.empresa_id, func.count(), func.sum(case((Negocio.status == "ganho", 1), else_=0)))
+        .where(Negocio.fonte == "pipedrive", Negocio.empresa_id.is_not(None)).group_by(Negocio.empresa_id))}
+    pessoas = dict(db.execute(select(Pessoa.empresa_id, func.count()).where(Pessoa.empresa_id.is_not(None))
+                              .group_by(Pessoa.empresa_id)).all())
+    return {i: (*negs.get(i, (0, 0)), pessoas.get(i, 0)) for i in negs.keys() | pessoas.keys()}
+
+
+def _empresas(db: Session) -> list[Empresa]:
+    """Organizações do Pipedrive, só com os campos que a revisão usa."""
+    return db.scalars(select(Empresa).options(load_only(
+        Empresa.id, Empresa.pipedrive_org_id, Empresa.razao_social, Empresa.nome_normalizado, Empresa.cnpj,
+        Empresa.website, Empresa.dominio, Empresa.razao_receita)).where(Empresa.pipedrive_org_id.is_not(None))).all()
+
+
+def _resumo(e: Empresa, cont: dict) -> dict:
+    negocios, ganhos, pessoas = cont.get(e.id, (0, 0, 0))
     return {"id": e.id, "orgId": e.pipedrive_org_id, "nome": e.razao_social, "cnpj": e.cnpj,
-            "site": e.website or e.dominio, "negocios": len(negs), "ganhos": sum(n.status == "ganho" for n in negs),
-            "pessoas": len(e.pessoas)}
+            "site": e.website or e.dominio, "negocios": negocios, "ganhos": ganhos, "pessoas": pessoas}
 
 
-def _ordem_manter(e: Empresa) -> tuple:
-    negs = [n for n in e.negocios if n.fonte == "pipedrive"]
-    return (-sum(n.status == "ganho" for n in negs), -len(negs), e.cnpj is None, e.pipedrive_org_id or 0)
+def _ordem_manter(e: Empresa, cont: dict) -> tuple:
+    negocios, ganhos, _ = cont.get(e.id, (0, 0, 0))
+    return (-ganhos, -negocios, e.cnpj is None, e.pipedrive_org_id or 0)
+
+
+def pagina(itens: list, n: int | None, por_pagina: int = POR_PAGINA) -> dict:
+    """Recorte de uma lista: {itens, total, pagina, paginas}. Página fora do intervalo vai para a mais próxima."""
+    paginas = max(1, -(-len(itens) // por_pagina))
+    n = min(max(1, n or 1), paginas)
+    return {"itens": itens[(n - 1) * por_pagina:n * por_pagina], "total": len(itens), "pagina": n, "paginas": paginas}
 
 
 def duplicadas(db: Session) -> list[dict]:
     """Grupos de organizações do Pipedrive que parecem ser a mesma empresa."""
-    empresas = db.scalars(select(Empresa).where(Empresa.pipedrive_org_id.is_not(None))).all()
+    empresas = _empresas(db)
     pai = {e.id: e.id for e in empresas}
     motivo: dict[int, set] = defaultdict(set)
 
@@ -77,6 +104,7 @@ def duplicadas(db: Session) -> list[dict]:
     for e in empresas:
         grupos[raiz(e.id)].append(e)
     ignoradas = _ignoradas(db)
+    cont = _contagens(db) if any(len(m) > 1 for m in grupos.values()) else {}
     saida = []
     for membros in grupos.values():
         if len(membros) < 2:
@@ -84,14 +112,14 @@ def duplicadas(db: Session) -> list[dict]:
         ids = [e.id for e in membros]
         if chave_grupo(ids) in ignoradas:
             continue
-        membros.sort(key=_ordem_manter)
+        membros.sort(key=lambda e: _ordem_manter(e, cont))
         tipos = set().union(*(motivo[e.id] for e in membros))
         # CNPJs diferentes com o mesmo nome: matriz e filial ou homônimas; fica, mas avisado
         cnpjs = {e.cnpj for e in membros if e.cnpj}
         saida.append({"chave": chave_grupo(ids), "motivos": [MOTIVOS[t] for t in ("cnpj", "nome", "dominio") if t in tipos],
                       "certeza": "alta" if "cnpj" in tipos or ({"nome", "dominio"} <= tipos) else "média",
                       "cnpjsDiferentes": len(cnpjs) > 1,
-                      "manter": _resumo(membros[0]), "mesclar": [_resumo(e) for e in membros[1:]]})
+                      "manter": _resumo(membros[0], cont), "mesclar": [_resumo(e, cont) for e in membros[1:]]})
     ordem = {"alta": 0, "média": 1}
     return sorted(saida, key=lambda g: (ordem[g["certeza"]], g["cnpjsDiferentes"], -g["manter"]["negocios"]))
 
@@ -150,11 +178,13 @@ def _comparavel(nome: str) -> str:
     return re.sub(r"[^a-z0-9]", "", sem_acento(nome or "").lower())
 
 
-def razao_social(db: Session) -> dict:
-    """Organizações cujo nome no Pipedrive não é a razão social completa da Receita."""
+def razao_social(db: Session, n_pagina: int | None = None) -> dict:
+    """Organizações cujo nome no Pipedrive não é a razão social completa da Receita.
+    Com `n_pagina`, devolve só aquela página (POR_PAGINA sugestões) e o total."""
     ignoradas = _ignoradas(db)
+    cont = _contagens(db)
     sugestoes, sem_cnpj, aguardando = [], 0, 0
-    for e in db.scalars(select(Empresa).where(Empresa.pipedrive_org_id.is_not(None))):
+    for e in _empresas(db):
         if not e.cnpj:
             sem_cnpj += 1
             continue
@@ -166,9 +196,12 @@ def razao_social(db: Session) -> dict:
             continue
         sugestoes.append({"chave": f"razao:{e.id}", "id": e.id, "orgId": e.pipedrive_org_id, "atual": e.razao_social,
                           "sugerida": nova, "cnpj": e.cnpj,
-                          "negocios": sum(1 for n in e.negocios if n.fonte == "pipedrive")})
+                          "negocios": cont.get(e.id, (0, 0, 0))[0]})
     sugestoes.sort(key=lambda s: -s["negocios"])
-    return {"sugestoes": sugestoes, "semCnpj": sem_cnpj, "aguardandoReceita": aguardando}
+    if n_pagina is None:
+        return {"sugestoes": sugestoes, "semCnpj": sem_cnpj, "aguardandoReceita": aguardando}
+    p = pagina(sugestoes, n_pagina)
+    return {"sugestoes": p.pop("itens"), "sugestoesPagina": p, "semCnpj": sem_cnpj, "aguardandoReceita": aguardando}
 
 
 def aplicar_razao(db: Session, client, empresa_id: int, nome: str) -> None:

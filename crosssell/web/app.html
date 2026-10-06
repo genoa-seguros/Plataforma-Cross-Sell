@@ -104,6 +104,7 @@ ul.motivos li.falta{color:var(--mute)}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px;display:grid}
 .kpi b{font:700 22px/1.1 var(--f-display)}
 .kpi span{font-size:12px;color:var(--mute)}
+.paginas{display:flex;gap:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;padding:8px 14px}
 .grupo{background:var(--surface);border:1px solid var(--line);border-radius:8px}
 .grupo h3{font:700 14px/1.2 var(--f-display);margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .grupo ul{list-style:none;margin:0;padding:0}
@@ -153,7 +154,23 @@ async function carregarBase() {
   const b = await api.get("/api/base"); USUARIOS = b.usuarios; V = b.verticais;
 }
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
-const filtroOp = {vertical:"", q:"", tipo:"", rel:""};
+const filtroOp = {vertical:"", q:"", tipo:"", rel:"", pagina:1};
+const POR_PAGINA = 20;
+/* Recorte de uma lista no navegador, no mesmo formato que o servidor devolve ({itens, total, pagina, paginas}). */
+function pagLocal(lista, n) {
+  const paginas = Math.max(1, Math.ceil(lista.length / POR_PAGINA)), pagina = Math.min(Math.max(1, n || 1), paginas);
+  return {itens: lista.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA), total: lista.length, pagina, paginas};
+}
+function paginacao(p, alvo) {
+  if (p.paginas <= 1) return "";
+  return `<nav class="paginas" data-pag="${alvo}" aria-label="Páginas">
+    <button class="btn sec" data-ir="${p.pagina - 1}" ${p.pagina <= 1 ? "disabled" : ""}>‹ Anterior</button>
+    <span class="sub">Página ${p.pagina} de ${p.paginas}</span>
+    <button class="btn sec" data-ir="${p.pagina + 1}" ${p.pagina >= p.paginas ? "disabled" : ""}>Próxima ›</button></nav>`;
+}
+function ligarPaginacao(alvo, ir) {
+  document.querySelectorAll(`[data-pag="${alvo}"] [data-ir]`).forEach(b => b.onclick = () => ir(+b.dataset.ir));
+}
 let refSemana = new Date();
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -250,8 +267,13 @@ const previa = {
     if (path === "/api/linkedin") return D.linkedin;
     if (path === "/api/oportunidades") return {itens: D.oportunidades || []};
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
-    if (path === "/api/qualidade") return D.qualidade || {duplicadas: [], sugestoes: [], semCnpj: 0, aguardandoReceita: 0};
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
+    m = path.match(/^\/api\/qualidade(\/sugestoes)?(?:\?pagina=(\d+))?$/);
+    if (m) {
+      const q = D.qualidade || (D.qualidade = {duplicadas: [], sugestoes: [], semCnpj: 0, aguardandoReceita: 0});
+      const {itens, ...pag} = pagLocal(q.sugestoes, +m[2] || 1);
+      return {...(m[1] ? {} : {duplicadas: q.duplicadas}), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
+    }
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     throw new Error("rota desconhecida");
   },
@@ -432,8 +454,12 @@ function filtrarOps() {
   const ls = OPS.filter(o => (!filtroOp.vertical || o.vertical === filtroOp.vertical) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!filtroOp.tipo || (filtroOp.tipo === "cliente") === o.cliente)
     && (!filtroOp.rel || (filtroOp.rel === "-" ? !o.relacoes.length : o.relacoes.includes(filtroOp.rel))));
-  document.getElementById("ops").innerHTML = ls.length ? ls.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
+  const p = pagLocal(ls, filtroOp.pagina);
+  filtroOp.pagina = p.pagina;
+  document.getElementById("ops").innerHTML = ls.length ? p.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   document.getElementById("contagem-op").textContent = `${ls.length} de ${OPS.length} oportunidades`;
+  document.getElementById("pag-op").innerHTML = paginacao(p, "op");
+  ligarPaginacao("op", n => { filtroOp.pagina = n; filtrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); });
 }
 async function telaOportunidades() {
   await carregarBase();
@@ -450,15 +476,15 @@ async function telaOportunidades() {
     </div>
     <div class="tabela"><table class="larga">
       <thead><tr><th>Potencial</th><th>Empresa</th><th>Oportunidade</th><th>Quem decide · ponte</th><th>Por quê</th><th>Notícias</th><th>Já tem conosco</th><th>Em negociação</th><th>Próximo passo</th></tr></thead>
-      <tbody id="ops"></tbody></table></div>
+      <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
     <p class="nota">Cross sell que ninguém está trabalhando: empresas que já são clientes ou que estamos negociando em uma vertical e que ainda não têm seguro nem negócio aberto em outra. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   filtrarOps();
-  document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop;
+  document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
     document.querySelectorAll("[data-vop]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.vop === filtroOp.vertical))); filtrarOps(); });
-  document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtrarOps(); };
-  document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtrarOps(); };
-  document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtrarOps(); };
+  document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
 }
 
 /* ---------- Melhorias da plataforma ---------- */
@@ -506,48 +532,98 @@ async function telaMelhorias() {
 }
 
 /* ---------- Qualidade do cadastro (master) ---------- */
+/* Carrega uma vez ao abrir a aba; mesclar, atualizar e ignorar só tiram a linha da tela (sem recalcular tudo).
+   As duplicadas vêm inteiras e são paginadas aqui; as sugestões de razão social vêm uma página por vez. */
+let QUAL = null;
+const qualPag = {dup: 1};
 async function telaQualidade() {
   if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
-  const q = await api.get("/api/qualidade");
-  const org = x => `<div><b>${esc(x.nome)}</b> <span class="sub">· org ${x.orgId}</span></div>
-    <div class="sub">${[x.cnpj && x.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), x.site, `${x.negocios} negócios (${x.ganhos} ganhos)`, `${x.pessoas} pessoas`].filter(Boolean).map(esc).join(" · ")}</div>`;
+  QUAL = await api.get("/api/qualidade?pagina=1");
+  qualPag.dup = 1;
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:14px">
     <h1>Qualidade do cadastro</h1>
-    <div class="kpi-row">
-      <div class="kpi"><b class="num">${q.duplicadas.length}</b><span>grupos de organizações duplicadas</span></div>
-      <div class="kpi"><b class="num">${q.sugestoes.length}</b><span>sem a razão social completa</span></div>
-      <div class="kpi"><b class="num">${q.semCnpj.toLocaleString("pt-BR")}</b><span>organizações sem CNPJ no Pipedrive</span></div>
-    </div>
-    <p class="nota">Revisão semanal do Pipedrive. Nada é alterado sem a sua aprovação: <b>Mesclar</b> junta as organizações no Pipedrive (negócios, pessoas, atividades e notas passam para a que fica) e não tem volta. A razão social vem da Receita pelo CNPJ${q.aguardandoReceita ? ` (${q.aguardandoReceita} organizações com CNPJ ainda aguardam a consulta à Receita)` : ""}; sem CNPJ não é possível sugerir.</p>
-    <div class="grupo"><h3>Organizações duplicadas<span class="sub">fica a que tem mais negócios ganhos</span></h3>
-      ${q.duplicadas.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
-      ${q.duplicadas.map(g => `<tr>
-        <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
-        <td>${org(g.manter)}</td>
-        <td>${g.mesclar.map(org).join('<div style="height:6px"></div>')}</td>
-        <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
-      </tbody></table></div>` : '<p class="vazio">Nenhuma duplicada encontrada.</p>'}</div>
-    <div class="grupo"><h3>Razão social<span class="sub">nome da organização × Receita Federal</span></h3>
-      ${q.sugestoes.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>No Pipedrive</th><th>Razão social (editável)</th><th>Negócios</th><th></th></tr></thead><tbody>
-      ${q.sugestoes.slice(0, 200).map(x => `<tr><td>${esc(x.atual)}<div class="sub">org ${x.orgId}</div></td>
-        <td><input id="rz-${x.id}" value="${esc(x.sugerida)}" style="width:100%;min-width:300px"></td><td class="num">${x.negocios}</td>
-        <td style="white-space:nowrap"><button class="btn" data-razao="${x.id}">Atualizar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(x.chave)}">Manter como está</button></td></tr>`).join("")}
-      </tbody></table></div>${q.sugestoes.length > 200 ? `<p class="nota" style="padding:8px 14px">Mostrando 200 de ${q.sugestoes.length}, as com mais negócios primeiro.</p>` : ""}` : '<p class="vazio">Nenhuma sugestão por enquanto.</p>'}</div>
+    <div class="kpi-row" id="q-kpis"></div>
+    <p class="nota">Revisão semanal do Pipedrive. Nada é alterado sem a sua aprovação: <b>Mesclar</b> junta as organizações no Pipedrive (negócios, pessoas, atividades e notas passam para a que fica) e não tem volta. A razão social vem da Receita pelo CNPJ${QUAL.aguardandoReceita ? ` (${QUAL.aguardandoReceita} organizações com CNPJ ainda aguardam a consulta à Receita)` : ""}; sem CNPJ não é possível sugerir.</p>
+    <div class="grupo"><h3>Organizações duplicadas<span class="sub">fica a que tem mais negócios ganhos</span></h3><div id="q-dup"></div></div>
+    <div class="grupo"><h3>Razão social<span class="sub">nome da organização × Receita Federal, as com mais negócios primeiro</span></h3><div id="q-razao"></div></div>
   </section>`;
-  document.querySelectorAll("[data-mesclar]").forEach(b => b.onclick = async () => {
-    const g = q.duplicadas.find(x => x.chave === b.dataset.mesclar);
+  qualKpis(); qualDuplicadas(); qualRazao();
+}
+function qualKpis() {
+  document.getElementById("q-kpis").innerHTML = `
+    <div class="kpi"><b class="num">${QUAL.duplicadas.length}</b><span>grupos de organizações duplicadas</span></div>
+    <div class="kpi"><b class="num">${QUAL.sugestoesPagina.total.toLocaleString("pt-BR")}</b><span>sem a razão social completa</span></div>
+    <div class="kpi"><b class="num">${QUAL.semCnpj.toLocaleString("pt-BR")}</b><span>organizações sem CNPJ no Pipedrive</span></div>`;
+}
+function qualOrg(x) {
+  return `<div><b>${esc(x.nome)}</b> <span class="sub">· org ${x.orgId}</span></div>
+    <div class="sub">${[x.cnpj && x.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), x.site, `${x.negocios} negócios (${x.ganhos} ganhos)`, `${x.pessoas} pessoas`].filter(Boolean).map(esc).join(" · ")}</div>`;
+}
+function qualDuplicadas() {
+  const p = pagLocal(QUAL.duplicadas, qualPag.dup);
+  qualPag.dup = p.pagina;
+  const el = document.getElementById("q-dup");
+  el.innerHTML = p.total ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
+      ${p.itens.map(g => `<tr>
+        <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
+        <td>${qualOrg(g.manter)}</td>
+        <td>${g.mesclar.map(qualOrg).join('<div style="height:6px"></div>')}</td>
+        <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
+      </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
+  ligarPaginacao("dup", n => { qualPag.dup = n; qualDuplicadas(); el.scrollIntoView({block: "start"}); });
+  el.querySelectorAll("[data-mesclar]").forEach(b => b.onclick = async () => {
+    const g = QUAL.duplicadas.find(x => x.chave === b.dataset.mesclar);
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: não tem volta"; return; }
     b.disabled = true;
-    try { await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)}); aviso(PREVIA ? "Mesclada na prévia (nada foi enviado)" : "Organizações mescladas no Pipedrive"); telaQualidade(); }
-    catch (err) { aviso(err.message); b.disabled = false; }
+    try {
+      await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
+      aviso(PREVIA ? "Mesclada na prévia (nada foi enviado)" : "Organizações mescladas no Pipedrive");
+      QUAL.duplicadas = QUAL.duplicadas.filter(x => x !== g);
+      const sumiram = new Set(g.mesclar.map(m => m.id));  // as mescladas deixam de existir: saem das sugestões também
+      qualTirarSugestoes(x => sumiram.has(x.id));
+      qualKpis(); qualDuplicadas();
+    } catch (err) { aviso(err.message); b.disabled = false; }
   });
-  document.querySelectorAll("[data-razao]").forEach(b => b.onclick = async () => {
+  el.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => {
     b.disabled = true;
-    try { await api.post("/api/qualidade/razao", {empresa_id: +b.dataset.razao, nome: document.getElementById("rz-" + b.dataset.razao).value}); aviso(PREVIA ? "Atualizada na prévia (nada foi enviado)" : "Nome atualizado no Pipedrive"); telaQualidade(); }
+    try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); QUAL.duplicadas = QUAL.duplicadas.filter(x => x.chave !== b.dataset.ignorar); qualKpis(); qualDuplicadas(); }
     catch (err) { aviso(err.message); b.disabled = false; }
   });
-  document.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); telaQualidade(); });
+}
+async function qualPaginaRazao(n) {
+  Object.assign(QUAL, await api.get(`/api/qualidade/sugestoes?pagina=${n}`));
+  qualKpis(); qualRazao();
+}
+function qualTirarSugestoes(fora) {
+  const antes = QUAL.sugestoes.length;
+  QUAL.sugestoes = QUAL.sugestoes.filter(x => !fora(x));
+  QUAL.sugestoesPagina.total -= antes - QUAL.sugestoes.length;
+  // a página esvaziou e ainda há sugestões: busca a página (a última, se esta deixou de existir)
+  if (!QUAL.sugestoes.length && QUAL.sugestoesPagina.total > 0) qualPaginaRazao(QUAL.sugestoesPagina.pagina).catch(err => aviso(err.message));
+  else qualRazao();
+}
+function qualRazao() {
+  const p = QUAL.sugestoesPagina, el = document.getElementById("q-razao");
+  el.innerHTML = QUAL.sugestoes.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>No Pipedrive</th><th>Razão social (editável)</th><th>Negócios</th><th></th></tr></thead><tbody>
+      ${QUAL.sugestoes.map(x => `<tr><td>${esc(x.atual)}<div class="sub">org ${x.orgId}</div></td>
+        <td><input id="rz-${x.id}" value="${esc(x.sugerida)}" style="width:100%;min-width:300px"></td><td class="num">${x.negocios}</td>
+        <td style="white-space:nowrap"><button class="btn" data-razao="${x.id}">Atualizar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(x.chave)}">Manter como está</button></td></tr>`).join("")}
+      </tbody></table></div>${paginacao(p, "razao")}` : '<p class="vazio">Nenhuma sugestão por enquanto.</p>';
+  ligarPaginacao("razao", async n => { try { await qualPaginaRazao(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
+  el.querySelectorAll("[data-razao]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await api.post("/api/qualidade/razao", {empresa_id: +b.dataset.razao, nome: document.getElementById("rz-" + b.dataset.razao).value});
+      aviso(PREVIA ? "Atualizada na prévia (nada foi enviado)" : "Nome atualizado no Pipedrive");
+      qualTirarSugestoes(x => x.id === +b.dataset.razao); qualKpis();
+    } catch (err) { aviso(err.message); b.disabled = false; }
+  });
+  el.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); qualTirarSugestoes(x => x.chave === b.dataset.ignorar); qualKpis(); }
+    catch (err) { aviso(err.message); b.disabled = false; }
+  });
 }
 
 /* ---------- To-dos da semana ---------- */

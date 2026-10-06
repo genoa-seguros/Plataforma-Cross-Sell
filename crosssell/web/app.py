@@ -478,8 +478,15 @@ def api_editar_melhoria(melhoria_id: int, dados: MelhoriaIn, db: Session = Depen
 
 
 @app.get("/api/qualidade")
-def api_qualidade(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
-    return {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db)}
+def api_qualidade(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Duplicadas inteiras (são poucas; a tela pagina) e uma página das sugestões de razão social."""
+    return {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db, pagina)}
+
+
+@app.get("/api/qualidade/sugestoes")
+def api_qualidade_sugestoes(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Outra página das sugestões de razão social, sem refazer a busca de duplicadas."""
+    return qualidade.razao_social(db, pagina)
 
 
 class MesclarIn(BaseModel):

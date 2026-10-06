@@ -29,7 +29,7 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   do cadastro), o que cada um faz,
   os limites em vigor (consultas do LinkedIn por rodada e por dia, prazo para reler perfis, janela de
   e-mails) e a última execução de cada passo, com o erro quando falhou.
-- **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Cadastros suspeitos*: organizações
+- **Qualidade** (o master e os heads): revisão semanal do cadastro do Pipedrive. *Cadastros suspeitos*: organizações
   cujo nome não parece de empresa (teste, "não tenho", pessoa física, nome sem letras), agrupadas por
   motivo, com seleção uma a uma ou do grupo inteiro e *Excluir selecionadas no Pipedrive* (negócios,
   pessoas e atividades ficam, só sem a organização) ou *Não é suspeita*. *Organizações
@@ -41,7 +41,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   falta), conferindo cada nome no Pipedrive antes; nomes parecidos continuam na lista para análise.
   *Razão social*: nome da organização × razão social da Receita (pelo CNPJ), editável, com
   *Atualizar no Pipedrive*. Nada muda no Pipedrive sem aprovação.
-- **Equipe** (só o master): convidar e remover pessoas e ligar a **leitura de e-mails** de cada uma
+- **Equipe** (só o master): convidar e remover pessoas, definir o papel (membro ou head; o head também
+  acessa a Qualidade) e ligar a **leitura de e-mails** de cada uma
   (desligada por padrão; só para quem já entrou). A caixa também precisa estar no grupo
   `crosssell-equipe` do Microsoft 365; a tela mostra o resultado da última leitura.
 - **Ficha da empresa**: seguros vigentes, pessoas e temperatura, histórico de produtos e notícias.

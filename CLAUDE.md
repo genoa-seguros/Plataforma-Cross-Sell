@@ -59,7 +59,7 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   `scripts/exportar_preview.py`, which injects data at the `/*__DADOS__*/null` placeholder (`const D`), so
   UI changes must keep working in both modes. Auth uses scrypt passwords and hashed session tokens in
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
-  master-only routes use `somente_master`.
+  master-only routes use `somente_master`; Qualidade routes use `acesso_qualidade` (master or `papel="head"`).
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group

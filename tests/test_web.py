@@ -368,3 +368,26 @@ def test_suspeitos_e_exclusao_pela_api(cenario, db):
     m = TestClient(webapp.app)
     entrar(m, "membro@innoaseguros.com.br", "senha-do-membro-1")
     assert m.post("/api/qualidade/excluir", headers=H, json={"ids": [1]}).status_code == 403
+
+
+def test_head_acessa_a_qualidade_mas_nao_a_equipe(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    _, token = auth.convidar(db, "victor.boldrini@innoaseguros.com.br", "Victor Boldrini", ["linhas_financeiras"])
+    v = auth.usuario_do_convite(db, token)
+    auth.aceitar_convite(db, v, "senha-do-victor-1")
+    h = TestClient(webapp.app)
+    entrar(h, "victor.boldrini@innoaseguros.com.br", "senha-do-victor-1")
+    assert h.get("/api/qualidade").status_code == 403  # membro ainda
+
+    assert c.post(f"/api/equipe/{v.id}/papel", headers=H, json={"papel": "dono"}).status_code == 400
+    assert h.post(f"/api/equipe/{v.id}/papel", headers=H, json={"papel": "head"}).status_code == 403  # só o master muda
+    assert c.post(f"/api/equipe/{v.id}/papel", headers=H, json={"papel": "head"}).json()["papel"] == "head"
+    assert h.get("/api/qualidade").status_code == 200
+    assert h.post("/api/qualidade/excluir", headers=H, json={"ids": []}).status_code == 200
+    assert h.get("/api/equipe").status_code == 403  # a equipe continua só com o master
+    master = db.scalar(select(Usuario).where(Usuario.papel == "master"))
+    assert c.post(f"/api/equipe/{master.id}/papel", headers=H, json={"papel": "membro"}).status_code == 400
+
+    assert c.post(f"/api/equipe/{v.id}/papel", headers=H, json={"papel": "membro"}).json()["papel"] == "membro"
+    assert h.get("/api/qualidade").status_code == 403

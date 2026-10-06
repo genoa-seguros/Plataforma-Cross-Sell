@@ -30,7 +30,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   e-mails) e a última execução de cada passo, com o erro quando falhou.
 - **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Organizações
   duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
-  botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta.
+  botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta. *Mesclar todas
+  com nome idêntico* mescla de uma vez as organizações com o nome exatamente igual (letras, acentos,
+  maiúsculas e pontuação; o CNPJ não é considerado, porque no Pipedrive ele é opcional e muitas vezes
+  falta), conferindo cada nome no Pipedrive antes; nomes parecidos continuam na lista para análise.
   *Razão social*: nome da organização × razão social da Receita (pelo CNPJ), editável, com
   *Atualizar no Pipedrive*. Nada muda no Pipedrive sem aprovação.
 - **Equipe** (só o master): convidar e remover pessoas e ligar a **leitura de e-mails** de cada uma

@@ -96,7 +96,8 @@ def _calcular_oportunidades(db: Session) -> tuple[list[dict], list[str]]:
 
 OPORTUNIDADES = _Guardada(_calcular_oportunidades)
 # Duplicadas e sugestões de razão social, inteiras (a API devolve uma página de cada)
-QUALIDADE = _Guardada(lambda db: (qualidade.duplicadas(db), qualidade.razao_social(db)))
+QUALIDADE = _Guardada(lambda db: (qualidade.duplicadas(db), qualidade.razao_social(db),
+                                   _resumo_nomes_identicos(db)))
 
 
 @app.middleware("http")
@@ -537,9 +538,15 @@ def api_editar_melhoria(melhoria_id: int, dados: MelhoriaIn, db: Session = Depen
     return _melhoria_json(x)
 
 
+def _resumo_nomes_identicos(db: Session) -> dict:
+    grupos = qualidade.grupos_nome_identico(db)
+    return {"grupos": len(grupos), "organizacoes": sum(len(m) - 1 for _, m in grupos)}
+
+
 def _pagina_duplicadas(db: Session, pagina: int) -> dict:
-    p = qualidade.pagina(QUALIDADE.obter(db)[0], pagina)
-    return {"duplicadas": p.pop("itens"), "duplicadasPagina": p}
+    dup, _, nomes = QUALIDADE.obter(db)
+    p = qualidade.pagina(dup, pagina)
+    return {"duplicadas": p.pop("itens"), "duplicadasPagina": p, "nomesIdenticos": nomes}
 
 
 def _pagina_sugestoes(db: Session, pagina: int) -> dict:
@@ -581,6 +588,21 @@ def api_mesclar(dados: MesclarIn, db: Session = Depends(get_db), _m: Usuario = D
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise HTTPException(502, f"O Pipedrive não aceitou a mesclagem: {exc}")
+
+
+class NomesIdenticosIn(BaseModel):
+    apos: str = ""
+
+
+@app.post("/api/qualidade/mesclar-nomes-identicos")
+def api_mesclar_nomes_identicos(dados: NomesIdenticosIn, db: Session = Depends(get_db),
+                                _m: Usuario = Depends(somente_master),
+                                client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Um lote (10 grupos) da mesclagem por nome idêntico; a tela chama de novo com `apos` até `restantes` = 0."""
+    try:
+        return registrar(db, "qualidade-nomes", qualidade.mesclar_nomes_identicos, db, client, dados.apos)
+    except Exception as exc:
+        raise HTTPException(502, f"Não foi possível consultar o Pipedrive: {exc}")
 
 
 class RazaoIn(BaseModel):

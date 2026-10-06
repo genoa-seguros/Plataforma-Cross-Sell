@@ -333,3 +333,23 @@ def test_aba_rotina(cenario, db):
     assert r["linkedin"]["validadeDias"] == 90 and r["linkedin"]["limiteDia"] == 50 and r["linkedin"]["buscaDias"] == 30
     assert r["ultimos"]["pipedrive"] == {"em": "2026-10-06T13:00", "registros": 42, "erro": None}
     assert r["ultimos"]["email"]["erro"].startswith("1 de 2") and r["ultimos"]["linkedin"] is None
+
+
+def test_mesclar_nomes_identicos_pela_api(cenario, db):
+    """A Qualidade mostra quantos grupos têm o nome idêntico; só o master dispara a mesclagem em lote."""
+    c, _ = cenario
+    db.add_all([Empresa(razao_social="Loja Única", nome_normalizado="loja unica", pipedrive_org_id=2001),
+                Empresa(razao_social="Loja Única", nome_normalizado="loja unica", pipedrive_org_id=2002, cnpj="11111111000111"),
+                Empresa(razao_social="LOJA ÚNICA", nome_normalizado="loja unica", pipedrive_org_id=2003)])
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert c.get("/api/qualidade").json()["nomesIdenticos"] == {"grupos": 1, "organizacoes": 1}
+
+    _, token = auth.convidar(db, "membro@innoaseguros.com.br", "Membro", ["saude"])
+    auth.aceitar_convite(db, auth.usuario_do_convite(db, token), "senha-do-membro-1")
+    m = TestClient(webapp.app)
+    entrar(m, "membro@innoaseguros.com.br", "senha-do-membro-1")
+    assert m.post("/api/qualidade/mesclar-nomes-identicos", headers=H, json={}).status_code == 403
+    # Essas organizações não existem no Pipedrive (falso): nada é mesclado, o grupo fica para conferir
+    r = c.post("/api/qualidade/mesclar-nomes-identicos", headers=H, json={}).json()
+    assert r["mescladas"] == 0 and r["conferir"] == 1 and r["restantes"] == 0

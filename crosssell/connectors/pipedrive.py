@@ -61,6 +61,15 @@ class PipedriveClient:
         r.raise_for_status()
         return r.json().get("data") or {}
 
+    def organizacoes(self, ids: list[int]) -> dict[int, dict]:
+        """Organizações pelo id, como estão agora no Pipedrive (as excluídas não vêm)."""
+        saida = {}
+        for i in range(0, len(ids), 100):
+            r = self.http.get("/v2/organizations", params={"ids": ",".join(map(str, ids[i:i + 100])), "limit": 100})
+            r.raise_for_status()
+            saida |= {o["id"]: o for o in r.json().get("data") or []}
+        return saida
+
     def atualizar_organizacao(self, org_id: int, dados: dict) -> dict:
         r = self.http.patch(f"/v2/organizations/{org_id}", json=dados)
         r.raise_for_status()

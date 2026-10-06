@@ -15,10 +15,28 @@ from sqlalchemy.orm import Session
 
 from crosssell.config import Settings
 from crosssell.models import Atividade, Negocio, Usuario
-from crosssell.normalize import parse_data
+from crosssell.normalize import parse_data, sem_acento
 from crosssell.resolver import resolver_empresa, resolver_pessoa
 
 STATUS_MAP = {"open": "aberto", "won": "ganho", "lost": "perdido"}
+UFS = {"acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA", "ceara": "CE",
+       "distrito federal": "DF", "espirito santo": "ES", "goias": "GO", "maranhao": "MA", "mato grosso": "MT",
+       "mato grosso do sul": "MS", "minas gerais": "MG", "para": "PA", "paraiba": "PB", "parana": "PR",
+       "pernambuco": "PE", "piaui": "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN",
+       "rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR", "santa catarina": "SC", "sao paulo": "SP",
+       "sergipe": "SE", "tocantins": "TO"}
+
+
+def local_da_organizacao(org: dict) -> tuple[str | None, str | None]:
+    """(cidade, UF) do endereço da organização no Pipedrive (API v2 devolve o endereço em partes)."""
+    end = org.get("address")
+    if not isinstance(end, dict):
+        return None, None
+    cidade = (end.get("locality") or end.get("admin_area_level_2") or "").strip() or None
+    estado = (end.get("admin_area_level_1") or "").strip()
+    uf = estado.upper() if len(estado) == 2 else UFS.get(sem_acento(estado).lower())
+    return cidade, uf
+
 
 
 class PipedriveClient:
@@ -176,6 +194,7 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
             linkedin_url=org.get("linkedin"),
             setor=org.get("industry"),
             funcionarios=org.get("employee_count"),
+            **dict(zip(("cidade", "uf"), local_da_organizacao(org))),
         )
         if emp is not None and emp.funcionarios and not emp.funcionarios_fonte:
             emp.funcionarios_fonte = "pipedrive"

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela, temperatura
 from crosssell.normalize import AREA_LABEL
-from crosssell.potencial import influencia
+from crosssell.potencial import criterios, influencia
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -273,7 +273,8 @@ def api_eu(u: Usuario = Depends(usuario_atual)):
 def api_base(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     """Equipe ativa e verticais: o que toda tela precisa (sem montar a tabela)."""
     usuarios = db.scalars(select(Usuario).where(Usuario.ativo.is_(True)).order_by(Usuario.nome)).all()
-    return {"usuarios": [_usuario_json(x) for x in usuarios], "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS}}
+    return {"usuarios": [_usuario_json(x) for x in usuarios], "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS},
+            "pesos": {v: criterios()[v]["pesos"] for v in VERTICAIS}}  # critérios do Score (config/criterios.yaml)
 
 
 @app.get("/api/tabela")

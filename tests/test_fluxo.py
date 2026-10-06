@@ -469,3 +469,15 @@ def test_saude_ganho_no_pipedrive_vale_ate_desmarcar(db, settings):
     db.expire_all()
     linha = next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "961")
     assert [v["fonte"] for v in linha["vigentes"]] == ["pipedrive"] and linha["saude"]["manual"]
+
+
+def test_local_da_empresa_vem_do_endereco_no_pipedrive(db, settings, monkeypatch):
+    from tests.fakes import DADOS
+    orgs = [{**o, "address": {"locality": "Campinas", "admin_area_level_1": "São Paulo"}} if o["id"] == 20 else o
+            for o in DADOS["organizations"]]
+    monkeypatch.setitem(DADOS, "organizations", orgs)
+    carregar(db, settings)
+    beta = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
+    assert (beta.cidade, beta.uf) == ("Campinas", "SP") and tabela.local(beta) == "Campinas/SP"
+    ops = [o for o in tabela.oportunidades(db, settings) if o["empresa"]["id"] == beta.id]
+    assert ops and all(o["empresa"]["local"] == "Campinas/SP" for o in ops)

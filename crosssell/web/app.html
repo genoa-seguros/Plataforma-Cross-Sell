@@ -280,6 +280,8 @@ const previa = {
     if (path === "/api/base") return {usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
     if (path === "/api/equipe") return D.equipe;
     if (path === "/api/linkedin") return D.linkedin;
+    if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
+      opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
@@ -327,6 +329,7 @@ const previa = {
     if ((m = path.match(/^\/api\/melhorias\/(\d+)$/))) { const x = D.melhorias.find(y => y.id == m[1]); Object.entries(b).forEach(([k, v]) => { if (v != null) x[k] = v; }); return x; }
     if (path === "/api/qualidade/mesclar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.manter.id !== b.manter_id); return {mescladas: b.mesclar_ids.length}; }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
+    if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
     if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); return {ok: true}; }
     if (path === "/api/linkedin/endereco") { D.linkedin.naoEncontrados = D.linkedin.naoEncontrados.filter(x => x.id_alvo !== b.id_alvo); return {ok: true}; }
     if (path === "/api/equipe/convidar") {
@@ -745,6 +748,7 @@ async function telaEquipe() {
       <p class="nota">A pessoa recebe um link para criar a senha (vale 7 dias). Os e-mails dela só são lidos se você ligar a leitura abaixo, depois que ela entrar, e ela estiver no grupo crosssell-equipe do Microsoft 365.</p>
       <div id="c-link"></div>
     </form>
+    <div class="grupo" id="ia" style="padding:14px;display:grid;gap:10px"></div>
     <div class="grupo" id="lk" style="padding:14px;display:grid;gap:10px"></div>
     <div class="tabela"><table>
       <thead><tr><th>Nome</th><th>E-mail</th><th>Verticais</th><th>Situação</th><th>Leitura de e-mails</th><th>Pipedrive</th><th></th></tr></thead>
@@ -758,7 +762,7 @@ async function telaEquipe() {
           ? `${u.pendente ? `<button class="btn sec" data-reenviar="${u.id}">Novo link</button> ` : `<button class="btn sec" data-novasenha="${u.id}">Link de nova senha</button> `}<button class="btn perigo" data-remover="${u.id}">Remover acesso</button>`
           : `<button class="btn sec" data-reenviar="${u.id}">Convidar de novo</button>`}</td></tr>`).join("")}</tbody></table></div>
   </section>`;
-  telaLinkedin();
+  telaIa(); telaLinkedin();
   const mostrarLink = (link, nome, rotulo = "Link de convite") => {
     document.getElementById("c-link").innerHTML = `<div class="link-convite"><span>${esc(rotulo)} para ${esc(nome)}:</span><code id="c-url">${esc(link)}</code><button type="button" class="btn sec" id="c-copiar">Copiar</button></div>`;
     document.getElementById("c-copiar").onclick = () => navigator.clipboard?.writeText(link).then(() => aviso("Link copiado"), () => {
@@ -788,6 +792,21 @@ async function telaEquipe() {
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar remoção"; return; }
     await api.post(`/api/equipe/${b.dataset.remover}/desconvidar`); aviso("Acesso removido. Os e-mails dessa pessoa deixam de ser lidos."); telaEquipe();
   });
+}
+
+// Modelo da Claude usado na temperatura dos contatos (escolha do master; vale sobre o .env do servidor)
+async function telaIa() {
+  const el = document.getElementById("ia");
+  const ia = await api.get("/api/ia");
+  el.innerHTML = `<h2 style="margin:0">Inteligência artificial</h2>
+    <p class="nota">Modelo da Claude que lê as respostas dos contatos e classifica a temperatura (muita, média ou pouca abertura). Vale a partir da próxima rodada da rotina.${ia.origem === "servidor" ? " Hoje vem da configuração do servidor; ao salvar, passa a valer a escolha daqui." : ""}</p>
+    ${ia.chave ? "" : '<p class="erro">Chave da Claude não configurada: defina ANTHROPIC_API_KEY no servidor.</p>'}
+    <div class="form-linha"><label>Modelo<select id="ia-modelo">${ia.opcoes.map(o => `<option value="${esc(o.id)}" ${o.id === ia.modelo ? "selected" : ""}>${esc(o.nome)}</option>`).join("")}${ia.opcoes.some(o => o.id === ia.modelo) ? "" : `<option value="${esc(ia.modelo)}" selected disabled>${esc(ia.modelo)} (configurado no servidor)</option>`}</select></label>
+      <button type="button" class="btn sec" id="ia-salvar">Salvar</button></div>`;
+  document.getElementById("ia-salvar").onclick = async () => {
+    try { await api.post("/api/ia", {modelo: document.getElementById("ia-modelo").value}); aviso("Modelo salvo; vale a partir da próxima rodada"); telaIa(); }
+    catch (err) { aviso(err.message); }
+  };
 }
 
 async function telaLinkedin() {

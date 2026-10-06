@@ -181,6 +181,8 @@ def test_temperatura_pelos_emails_do_contato(db, settings):
     assert ana.temperatura == "muita" and "reunião" in ana.temperatura_motivo
     chamada = falso.chamadas[0]
     assert chamada["model"] == settings.anthropic_model
+    Classificador(settings, client=falso, modelo="claude-opus-5-5").classificar([{"data": agora, "texto": "Oi"}])
+    assert falso.chamadas[-1]["model"] == "claude-opus-5-5"  # o modelo escolhido na plataforma
     assert chamada["output_config"]["format"]["type"] == "json_schema"
     assert "Oi Ana" not in chamada["messages"][0]["content"]  # e-mail enviado pela equipe não entra
     relacionamento.calcular(db)

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # Temperatura dos e-mails (Claude API). A chave vem de ANTHROPIC_API_KEY (.env ou ambiente).
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-5-5"
+    anthropic_model: str = "claude-sonnet-5-5"
     temperatura_max_emails: int = 5
 
     # LinkedIn pela Linked API, chamada direto (painel da Linked API: linked-api-token e identification-token).

@@ -115,7 +115,8 @@ O último comando imprime um link: envie ao Rodrigo; ele cria a senha nele (vale
 ## 8. Claude API (temperatura dos e-mails)
 
 Em console.anthropic.com → API Keys, crie uma chave para a Innoa e coloque em `ANTHROPIC_API_KEY`;
-depois `docker compose up -d web`.
+depois `docker compose up -d web`. O modelo padrão é o Claude Sonnet 5.5 (`ANTHROPIC_MODEL`); um master pode
+trocar pela tela **Equipe → Inteligência artificial** (Sonnet 5.5 ou Opus 5.5), e a escolha de lá vale sobre o `.env`.
 
 ## 9. Deploy automático (GitHub Actions)
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from crosssell import auth
+from crosssell import auth, temperatura
 from crosssell.connectors import pipedrive
 from crosssell.models import Empresa, Negocio, SyncLog, Usuario
 from crosssell.web import app as webapp
@@ -176,6 +176,28 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
                 SyncLog(fonte="pipedrive", inicio=datetime(2026, 10, 6, 12), fim=datetime(2026, 10, 6, 12, 1), registros=1)])
     db.commit()
     assert c.get("/api/oportunidades").json()["totalGeral"] == 55
+
+
+def test_modelo_da_ia_escolhido_pelo_master(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    ia = c.get("/api/ia").json()
+    assert (ia["modelo"], ia["origem"]) == ("claude-sonnet-5-5", "servidor")  # sem escolha: o do .env/padrão
+    assert {o["id"] for o in ia["opcoes"]} == {"claude-sonnet-5-5", "claude-opus-5-5"}
+    assert c.post("/api/ia", headers=H, json={"modelo": "claude-haiku-4-5"}).status_code == 400
+    r = c.post("/api/ia", headers=H, json={"modelo": "claude-opus-5-5"}).json()
+    assert (r["modelo"], r["origem"]) == ("claude-opus-5-5", "plataforma")
+    # A rotina usa a escolha da plataforma
+    s = webapp.get_settings()
+    assert temperatura.modelo_em_uso(db, s) == ("claude-opus-5-5", "plataforma")
+
+    r = c.post("/api/equipe/convidar", headers=H, json={"email": "membro@innoaseguros.com.br", "nome": "Membro"}).json()
+    membro = TestClient(webapp.app)
+    membro.post(f"/convite/{re.search(r'/convite/(.+)$', r['link']).group(1)}",
+                data={"senha": "senha-nova-123", "confirmacao": "senha-nova-123"})
+    entrar(membro, "membro@innoaseguros.com.br", "senha-nova-123")
+    assert membro.get("/api/ia").status_code == 403
+    assert membro.post("/api/ia", headers=H, json={"modelo": "claude-sonnet-5-5"}).status_code == 403
 
 
 def test_esqueci_a_senha(cenario, db, monkeypatch):

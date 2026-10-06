@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from crosssell import auth
 from crosssell.connectors import pipedrive
-from crosssell.models import Empresa, Usuario
+from crosssell.models import Empresa, Negocio, SyncLog, Usuario
 from crosssell.web import app as webapp
 from tests.fakes import FakePipedrive
 from tests.test_fluxo import carregar
@@ -25,6 +26,7 @@ def cenario(engine, db, settings, monkeypatch):
     webapp.app.dependency_overrides[webapp.get_db] = lambda: Local()
     webapp.app.dependency_overrides[webapp.get_pipedrive] = lambda: pipedrive.PipedriveClient("x", transport=fake.transport())
     monkeypatch.setattr(webapp, "get_settings", lambda: settings.model_copy(update={"cookie_seguro": False}))
+    webapp.OPORTUNIDADES.limpar()  # a lista guardada é do processo; cada teste tem seu banco
     yield TestClient(webapp.app), fake
     webapp.app.dependency_overrides.clear()
 
@@ -137,6 +139,42 @@ def test_oportunidades_e_atividade_na_organizacao(cenario):
     enviada = fake.criadas[-1]
     assert enviada["org_id"] == 20 and "deal_id" not in enviada and "participants" not in enviada
     assert c.get("/api/oportunidades").json()["itens"][0]["proximaAtividade"]["assunto"] == "Abrir conversa de RE"
+
+
+def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    for i in range(25):  # leads negociando LF: cada um vira oportunidade de Saúde e de RE
+        e = Empresa(razao_social=f"Lead {i} SA", nome_normalizado=f"lead {i}")
+        db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo=f"8{i}",
+                               pipeline_id=1, status="aberto", titulo="D&O")])
+    db.commit()
+    r = c.get("/api/oportunidades").json()
+    assert (len(r["itens"]), r["total"], r["totalGeral"], r["pagina"], r["paginas"]) == (20, 51, 51, 1, 3)
+    assert len(c.get("/api/oportunidades?pagina=3").json()["itens"]) == 11
+    assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 3
+    assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25
+    assert {o["vertical"] for o in c.get("/api/oportunidades?q=LEAD 7 ").json()["itens"]} == {"saude", "ramos_elementares"}
+    assert [o["empresa"]["nome"] for o in c.get("/api/oportunidades?tipo=cliente").json()["itens"]] == ["Beta Serviços SA"]
+    assert c.get("/api/oportunidades?rel=-").json()["total"] == 51 and r["relacoes"] == []
+    lead3 = db.scalar(select(Empresa).where(Empresa.razao_social == "Lead 3 SA"))
+    assert len(c.get(f"/api/oportunidades?empresa={lead3.id}").json()["itens"]) == 2
+
+    # A lista fica guardada: o que muda direto no banco só aparece quando a plataforma altera algo
+    novo = Empresa(razao_social="Lead Novo SA", nome_normalizado="lead novo")
+    db.add_all([novo, Negocio(empresa=novo, vertical="linhas_financeiras", fonte="pipedrive", id_externo="899",
+                              pipeline_id=1, status="aberto", titulo="D&O")])
+    db.commit()
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 51
+    assert c.post("/api/melhorias", headers=H, json={"titulo": "Teste"}).status_code == 200
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 53
+    # ... ou quando a rotina termina um passo (sync_log novo)
+    outro = Empresa(razao_social="Lead Outro SA", nome_normalizado="lead outro")
+    db.add_all([outro, Negocio(empresa=outro, vertical="linhas_financeiras", fonte="pipedrive", id_externo="898",
+                               pipeline_id=1, status="aberto", titulo="D&O"),
+                SyncLog(fonte="pipedrive", inicio=datetime(2026, 10, 6, 12), fim=datetime(2026, 10, 6, 12, 1), registros=1)])
+    db.commit()
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 55
 
 
 def test_esqueci_a_senha(cenario, db, monkeypatch):

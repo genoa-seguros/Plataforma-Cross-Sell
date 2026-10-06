@@ -28,7 +28,7 @@ from crosssell.normalize import dominio_email, normalizar_email
 from crosssell.resolver import resolver_pessoa
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-CAMPOS = "id,conversationId,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,uniqueBody"
+CAMPOS = "id,conversationId,isDraft,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,uniqueBody"
 
 
 class GraphClient:
@@ -74,12 +74,13 @@ class GraphClient:
             })
             r.raise_for_status()
             body = r.json()
-            yield from body.get("value", [])
+            # Rascunho não foi trocado com ninguém (e vem sem remetente): não conta como interação
+            yield from (m for m in body.get("value", []) if not m.get("isDraft"))
             url, params = body.get("@odata.nextLink"), None
 
 
 def _enderecos(lista) -> list[str]:
-    return [e for e in (normalizar_email((x.get("emailAddress") or {}).get("address")) for x in lista or []) if e]
+    return [e for e in (normalizar_email(((x or {}).get("emailAddress") or {}).get("address")) for x in lista or []) if e]
 
 
 def converter_graph(msg: dict) -> dict:

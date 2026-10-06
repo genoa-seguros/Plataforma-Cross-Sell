@@ -601,6 +601,7 @@ function qualOrg(x) {
 }
 async function qualPaginaDup(n) {
   Object.assign(QUAL, await api.get(`/api/qualidade/duplicadas?pagina=${n}`));
+  QUAL.selDup = new Set();  // a seleção vale para a página aberta
   qualKpis(); qualDuplicadas();
 }
 function qualTirarDuplicadas(fora) {
@@ -611,27 +612,66 @@ function qualTirarDuplicadas(fora) {
   if (!QUAL.duplicadas.length && QUAL.duplicadasPagina.total > 0) qualPaginaDup(QUAL.duplicadasPagina.pagina).catch(err => aviso(err.message));
   else qualDuplicadas();
 }
+/* Mescla um grupo no Pipedrive; devolve as organizações que deixaram de existir. */
+async function qualMesclar(g) {
+  await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
+  return g.mesclar.map(m => m.id);
+}
+function qualTirarMescladas(grupos, sumiram) {  // as mescladas deixam de existir: saem das sugestões também
+  qualTirarDuplicadas(x => grupos.has(x));
+  qualTirarSugestoes(x => sumiram.has(x.id));
+  qualKpis();
+}
 function qualDuplicadas() {
   const p = QUAL.duplicadasPagina, el = document.getElementById("q-dup");
-  el.innerHTML = QUAL.duplicadas.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
+  const sel = QUAL.selDup = new Set([...(QUAL.selDup || [])].filter(c => QUAL.duplicadas.some(g => g.chave === c)));
+  el.innerHTML = QUAL.duplicadas.length ? `<div class="semana" style="padding:8px 12px">
+      <button class="btn" id="q-dup-lote" ${sel.size ? "" : "disabled"}>Mesclar selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}</button>
+      <span class="sub">marque os grupos para mesclar vários de uma vez</span></div>
+    <div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th style="width:1%"><input type="checkbox" id="q-dup-todas" aria-label="Selecionar todos os grupos da página" ${sel.size === QUAL.duplicadas.length ? "checked" : ""}></th><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
       ${QUAL.duplicadas.map(g => `<tr>
+        <td><input type="checkbox" data-sel="${esc(g.chave)}" aria-label="Selecionar ${esc(g.manter.nome)}" ${sel.has(g.chave) ? "checked" : ""}></td>
         <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
         <td>${qualOrg(g.manter)}</td>
         <td>${g.mesclar.map(qualOrg).join('<div style="height:6px"></div>')}</td>
         <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
       </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
   ligarPaginacao("dup", async n => { try { await qualPaginaDup(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
+  const lote = document.getElementById("q-dup-lote");
+  const marcar = () => {  // atualiza o botão sem redesenhar a tabela; desfaz a confirmação pendente
+    lote.disabled = !sel.size; delete lote.dataset.confirmar;
+    lote.textContent = `Mesclar selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}`;
+    document.getElementById("q-dup-todas").checked = sel.size === QUAL.duplicadas.length;
+  };
+  el.querySelectorAll("[data-sel]").forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.sel) : sel.delete(c.dataset.sel); marcar(); });
+  const todas = document.getElementById("q-dup-todas");
+  if (todas) todas.onchange = () => {
+    QUAL.duplicadas.forEach(g => todas.checked ? sel.add(g.chave) : sel.delete(g.chave));
+    el.querySelectorAll("[data-sel]").forEach(c => c.checked = todas.checked); marcar();
+  };
+  if (lote) lote.onclick = async () => {
+    const grupos = QUAL.duplicadas.filter(g => sel.has(g.chave));
+    if (lote.dataset.confirmar !== "1") { lote.dataset.confirmar = "1"; lote.textContent = `Confirmar ${grupos.length} mesclagens: não tem volta`; return; }
+    el.querySelectorAll("button, input").forEach(x => x.disabled = true);
+    const feitos = new Set(), sumiram = new Set(), erros = [];
+    for (const [i, g] of grupos.entries()) {  // um por vez: o Pipedrive mescla organização por organização
+      lote.textContent = `Mesclando ${i + 1} de ${grupos.length}…`;
+      try { (await qualMesclar(g)).forEach(id => sumiram.add(id)); feitos.add(g); sel.delete(g.chave); }
+      catch (err) { erros.push(`${g.manter.nome}: ${err.message}`); }
+    }
+    qualTirarMescladas(feitos, sumiram);
+    const prefixo = PREVIA ? "na prévia (nada foi enviado)" : "no Pipedrive";
+    aviso(erros.length ? `${feitos.size} de ${grupos.length} grupos mesclados ${prefixo}. Falharam: ${erros.join(" · ")}`
+                       : `${feitos.size} grupos mesclados ${prefixo}`);
+  };
   el.querySelectorAll("[data-mesclar]").forEach(b => b.onclick = async () => {
     const g = QUAL.duplicadas.find(x => x.chave === b.dataset.mesclar);
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: não tem volta"; return; }
     b.disabled = true;
     try {
-      await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
+      const sumiram = new Set(await qualMesclar(g));
       aviso(PREVIA ? "Mesclada na prévia (nada foi enviado)" : "Organizações mescladas no Pipedrive");
-      const sumiram = new Set(g.mesclar.map(m => m.id));  // as mescladas deixam de existir: saem das sugestões também
-      qualTirarDuplicadas(x => x === g);
-      qualTirarSugestoes(x => sumiram.has(x.id));
-      qualKpis();
+      qualTirarMescladas(new Set([g]), sumiram);
     } catch (err) { aviso(err.message); b.disabled = false; }
   });
   el.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => {

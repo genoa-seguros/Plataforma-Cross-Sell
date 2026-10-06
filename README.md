@@ -15,9 +15,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
   nada aberto fica de fora (terá uma tela própria, ainda a desenhar).
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
-  ela sai daqui. Colunas: Potencial (e Score de Influência), Empresa (Cliente/Lead), Oportunidade,
-  Quem decide e a ponte, Por quê (+ a favor, − contra, ? falta informação), Notícias, Já tem
-  conosco (com as caixas de Saúde), Em negociação e Próximo passo. Filtros por vertical,
+  ela sai daqui. Colunas, nesta ordem: Score (o Potencial, o Score de Influência e o
+  porquê: + a favor, − contra, ? falta informação), Empresa (Cliente/Lead, funcionários e local),
+  Em negociação, Oportunidade, Já tem conosco (com as caixas de Saúde), Quem decide e a ponte,
+  Notícias e Próxima atividade. Acima da tabela, os *Critérios do Score em cada vertical*, com os
+  pesos de `config/criterios.yaml`. O local (cidade/UF) vem da Receita pelo CNPJ, do endereço da
+  organização no Pipedrive ou da sede no LinkedIn, nessa ordem de chegada. Filtros por vertical,
   cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
   como cada coluna é calculada. Mostra quem decide, a ponte e o porte; *Criar
   atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.

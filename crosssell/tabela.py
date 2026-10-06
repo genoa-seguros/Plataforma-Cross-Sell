@@ -116,6 +116,16 @@ def _proxima_atividade(db: Session, negocio_id: int) -> Atividade | None:
                      .order_by(Atividade.vencimento))
 
 
+def local(e: Empresa | None) -> str | None:
+    """"Campinas/SP": cidade e UF da Receita, do Pipedrive ou do LinkedIn ("Joinville, SC")."""
+    if e is None or not (e.cidade or e.uf):
+        return None
+    partes = [x.strip() for x in (e.cidade or "").split(",")]
+    cidade = partes[0].title() if partes[0].isupper() else partes[0]
+    uf = (e.uf or (partes[1] if len(partes) > 1 and len(partes[1]) == 2 else "")).upper()
+    return "/".join(x for x in (cidade, uf) if x) or None
+
+
 def _funcionarios(n: Negocio | None, e: Empresa | None) -> tuple[int | None, str]:
     if n is not None and n.vertical == "saude" and n.vidas:
         return n.vidas, "vidas no negócio"
@@ -255,7 +265,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "score": pot["score"], "criterios": pot["criterios"],
                 "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
                 "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
-                            "noPipedrive": bool(e.pipedrive_org_id)},
+                            "noPipedrive": bool(e.pipedrive_org_id), "local": local(e)},
                 "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],

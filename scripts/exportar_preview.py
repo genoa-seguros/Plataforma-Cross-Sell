@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from crosssell import qualidade, tabela
+from crosssell.potencial import criterios
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.db import SessionLocal, init_db
@@ -54,6 +55,7 @@ def exportar(como: str | None) -> dict:
     return {
         "eu": webapp._usuario_json(eu),
         "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS},
+        "pesos": {v: criterios()[v]["pesos"] for v in VERTICAIS},
         "linhas": linhas,
         "empresas": empresas,
         "equipe": [webapp._usuario_json(u) for u in usuarios],

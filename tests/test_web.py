@@ -353,3 +353,18 @@ def test_mesclar_nomes_identicos_pela_api(cenario, db):
     # Essas organizações não existem no Pipedrive (falso): nada é mesclado, o grupo fica para conferir
     r = c.post("/api/qualidade/mesclar-nomes-identicos", headers=H, json={}).json()
     assert r["mescladas"] == 0 and r["conferir"] == 1 and r["restantes"] == 0
+
+
+def test_suspeitos_e_exclusao_pela_api(cenario, db):
+    c, _ = cenario
+    db.add(Empresa(razao_social="NAO TENHO", nome_normalizado="nao tenho", pipedrive_org_id=3001))
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert [x["motivoNome"] for x in c.get("/api/qualidade").json()["suspeitas"]] == ["Sem empresa"]
+    assert c.post("/api/qualidade/excluir", headers=H, json={"ids": list(range(51))}).status_code == 400
+
+    _, token = auth.convidar(db, "membro@innoaseguros.com.br", "Membro", ["saude"])
+    auth.aceitar_convite(db, auth.usuario_do_convite(db, token), "senha-do-membro-1")
+    m = TestClient(webapp.app)
+    entrar(m, "membro@innoaseguros.com.br", "senha-do-membro-1")
+    assert m.post("/api/qualidade/excluir", headers=H, json={"ids": [1]}).status_code == 403

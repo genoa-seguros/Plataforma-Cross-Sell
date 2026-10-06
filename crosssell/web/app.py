@@ -97,7 +97,7 @@ def _calcular_oportunidades(db: Session) -> tuple[list[dict], list[str]]:
 OPORTUNIDADES = _Guardada(_calcular_oportunidades)
 # Duplicadas e sugestões de razão social, inteiras (a API devolve uma página de cada)
 QUALIDADE = _Guardada(lambda db: (qualidade.duplicadas(db), qualidade.razao_social(db),
-                                   _resumo_nomes_identicos(db)))
+                                   _resumo_nomes_identicos(db), qualidade.suspeitas(db)))
 
 
 @app.middleware("http")
@@ -544,7 +544,7 @@ def _resumo_nomes_identicos(db: Session) -> dict:
 
 
 def _pagina_duplicadas(db: Session, pagina: int) -> dict:
-    dup, _, nomes = QUALIDADE.obter(db)
+    dup, _, nomes, _ = QUALIDADE.obter(db)
     p = qualidade.pagina(dup, pagina)
     return {"duplicadas": p.pop("itens"), "duplicadasPagina": p, "nomesIdenticos": nomes}
 
@@ -558,8 +558,8 @@ def _pagina_sugestoes(db: Session, pagina: int) -> dict:
 
 @app.get("/api/qualidade")
 def api_qualidade(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
-    """Primeira página das duplicadas e uma página das sugestões de razão social (20 cada)."""
-    return {**_pagina_duplicadas(db, 1), **_pagina_sugestoes(db, pagina)}
+    """Primeira página das duplicadas, uma página das sugestões de razão social (20 cada) e os cadastros suspeitos."""
+    return {**_pagina_duplicadas(db, 1), **_pagina_sugestoes(db, pagina), "suspeitas": QUALIDADE.obter(db)[3]}
 
 
 @app.get("/api/qualidade/duplicadas")
@@ -603,6 +603,19 @@ def api_mesclar_nomes_identicos(dados: NomesIdenticosIn, db: Session = Depends(g
         return registrar(db, "qualidade-nomes", qualidade.mesclar_nomes_identicos, db, client, dados.apos)
     except Exception as exc:
         raise HTTPException(502, f"Não foi possível consultar o Pipedrive: {exc}")
+
+
+class ExcluirIn(BaseModel):
+    ids: list[int]
+
+
+@app.post("/api/qualidade/excluir")
+def api_excluir(dados: ExcluirIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+                client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Exclui no Pipedrive e na plataforma as organizações marcadas (até 50 por chamada; a tela manda em lotes)."""
+    if len(dados.ids) > 50:
+        raise HTTPException(400, "Mande no máximo 50 organizações por vez.")
+    return registrar(db, "qualidade-excluir", qualidade.excluir, db, client, dados.ids)
 
 
 class RazaoIn(BaseModel):

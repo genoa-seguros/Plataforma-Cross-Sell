@@ -70,6 +70,11 @@ class PipedriveClient:
             saida |= {o["id"]: o for o in r.json().get("data") or []}
         return saida
 
+    def excluir_organizacao(self, org_id: int) -> None:
+        """Exclui a organização no Pipedrive (negócios e pessoas ficam, sem a organização)."""
+        r = self.http.delete(f"/v2/organizations/{org_id}")
+        r.raise_for_status()
+
     def atualizar_organizacao(self, org_id: int, dados: dict) -> dict:
         r = self.http.patch(f"/v2/organizations/{org_id}", json=dados)
         r.raise_for_status()

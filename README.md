@@ -28,7 +28,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal do cadastro), o que cada um faz,
   os limites em vigor (consultas do LinkedIn por rodada e por dia, prazo para reler perfis, janela de
   e-mails) e a última execução de cada passo, com o erro quando falhou.
-- **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Organizações
+- **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Cadastros suspeitos*: organizações
+  cujo nome não parece de empresa (teste, "não tenho", pessoa física, nome sem letras), agrupadas por
+  motivo, com seleção uma a uma ou do grupo inteiro e *Excluir selecionadas no Pipedrive* (negócios,
+  pessoas e atividades ficam, só sem a organização) ou *Não é suspeita*. *Organizações
   duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
   botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta. *Mesclar todas
   com nome idêntico* mescla de uma vez as organizações com o nome exatamente igual (letras, acentos,

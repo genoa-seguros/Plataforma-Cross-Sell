@@ -321,7 +321,7 @@ const previa = {
       const dup = n => { const {itens, ...pag} = pagLocal(q.duplicadas, n); return {duplicadas: itens, duplicadasPagina: pag, nomesIdenticos}; };
       if (m[1] === "/duplicadas") return dup(+m[2] || 1);
       const {itens, ...pag} = pagLocal(q.sugestoes, +m[2] || 1);
-      return {...(m[1] ? {} : dup(1)), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
+      return {...(m[1] ? {} : {...dup(1), suspeitas: q.suspeitas || []}), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
     }
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     throw new Error("rota desconhecida");
@@ -363,9 +363,10 @@ const previa = {
       D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => !igual(g));
       return {mescladas: feitos.reduce((s, g) => s + g.mesclar.length, 0), grupos: feitos.length, conferir: 0, falhas: 0, apos: "", restantes: 0, erros: []};
     }
+    if (path === "/api/qualidade/excluir") { const n = (D.qualidade.suspeitas || []).length; D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => !b.ids.includes(x.id)); return {excluidas: n - D.qualidade.suspeitas.length, falhas: 0, erros: []}; }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
     if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
-    if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); return {ok: true}; }
+    if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => x.chave !== b.chave); return {ok: true}; }
     if (path === "/api/linkedin/endereco") { D.linkedin.naoEncontrados = D.linkedin.naoEncontrados.filter(x => x.id_alvo !== b.id_alvo); return {ok: true}; }
     if (path === "/api/equipe/convidar") {
       const u = {id: ++this.seq, email: b.email.toLowerCase(), nome: b.nome, papel:"membro", ativo:true, verticais:b.verticais, lider:b.lider, pipedrive:false, pendente:true};
@@ -622,10 +623,65 @@ async function telaQualidade() {
     <h1>Qualidade do cadastro</h1>
     <div class="kpi-row" id="q-kpis"></div>
     <p class="nota">Revisão semanal do Pipedrive. Nada é alterado sem a sua aprovação: <b>Mesclar</b> junta as organizações no Pipedrive (negócios, pessoas, atividades e notas passam para a que fica) e não tem volta. A razão social vem da Receita pelo CNPJ${QUAL.aguardandoReceita ? ` (${QUAL.aguardandoReceita} organizações com CNPJ ainda aguardam a consulta à Receita)` : ""}; sem CNPJ não é possível sugerir.</p>
+    <div class="grupo"><h3>Cadastros suspeitos<span class="sub">nomes que não parecem de empresa: teste, "não tenho", pessoa física, nome sem letras</span></h3><div id="q-susp"></div></div>
     <div class="grupo"><h3>Organizações duplicadas<span class="sub">fica a que tem mais negócios ganhos</span></h3><div id="q-nomes"></div><div id="q-dup"></div></div>
     <div class="grupo"><h3>Razão social<span class="sub">nome da organização × Receita Federal, as com mais negócios primeiro</span></h3><div id="q-razao"></div></div>
   </section>`;
-  qualKpis(); qualNomes(); qualDuplicadas(); qualRazao();
+  qualKpis(); qualSuspeitas(); qualNomes(); qualDuplicadas(); qualRazao();
+}
+/* Cadastros suspeitos: marcar um a um ou o grupo inteiro e excluir no Pipedrive (em lotes de 20). */
+function qualSuspeitas() {
+  const lista = QUAL.suspeitas || [], el = document.getElementById("q-susp");
+  const sel = QUAL.selSusp = new Set([...(QUAL.selSusp || [])].filter(id => lista.some(x => x.id === id)));
+  if (!lista.length) { el.innerHTML = '<p class="vazio">Nenhum cadastro suspeito.</p>'; return; }
+  const grupos = [];
+  lista.forEach(x => { const g = grupos.find(y => y.motivo === x.motivo); g ? g.itens.push(x) : grupos.push({motivo: x.motivo, nome: x.motivoNome, itens: [x]}); });
+  const contagem = x => `${x.negocios} negócios${x.ganhos ? ` (${x.ganhos} ganhos)` : ""} · ${x.pessoas} pessoas`;
+  el.innerHTML = `<div class="semana" style="padding:8px 12px">
+      <button class="btn" id="q-susp-excluir" ${sel.size ? "" : "disabled"}>Excluir selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}</button>
+      <span class="sub">Negócios, pessoas e atividades continuam no Pipedrive, só sem a organização. Não tem volta.</span></div>
+    <div class="tabela" style="border:0;border-radius:0"><table><tbody>
+    ${grupos.map(g => `<tr style="background:var(--soft)"><td style="width:1%"><input type="checkbox" data-susp-grupo="${esc(g.motivo)}" aria-label="Selecionar todas: ${esc(g.nome)}" ${g.itens.every(x => sel.has(x.id)) ? "checked" : ""}></td>
+        <td colspan="3"><b>${esc(g.nome)}</b> <span class="sub">${g.itens.length} ${g.itens.length === 1 ? "organização" : "organizações"} · marque aqui para selecionar todas</span></td></tr>
+      ${g.itens.map(x => `<tr>
+        <td><input type="checkbox" data-susp="${x.id}" aria-label="Selecionar ${esc(x.nome)}" ${sel.has(x.id) ? "checked" : ""}></td>
+        <td><b>${esc(x.nome || "(sem nome)")}</b> <span class="sub">· org ${x.orgId}</span></td>
+        <td class="sub" ${x.ganhos ? 'style="color:var(--warn)" title="Tem negócio ganho: confira antes de excluir"' : ""}>${contagem(x)}</td>
+        <td style="white-space:nowrap;text-align:right"><button class="btn sec" data-susp-ok="${esc(x.chave)}">Não é suspeita</button></td></tr>`).join("")}`).join("")}
+    </tbody></table></div>`;
+  const btn = document.getElementById("q-susp-excluir");
+  const marcar = () => {
+    btn.disabled = !sel.size; delete btn.dataset.confirmar;
+    btn.textContent = `Excluir selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}`;
+    el.querySelectorAll("[data-susp-grupo]").forEach(c => c.checked = lista.filter(x => x.motivo === c.dataset.suspGrupo).every(x => sel.has(x.id)));
+  };
+  el.querySelectorAll("[data-susp]").forEach(c => c.onchange = () => { c.checked ? sel.add(+c.dataset.susp) : sel.delete(+c.dataset.susp); marcar(); });
+  el.querySelectorAll("[data-susp-grupo]").forEach(c => c.onchange = () => {
+    lista.filter(x => x.motivo === c.dataset.suspGrupo).forEach(x => c.checked ? sel.add(x.id) : sel.delete(x.id));
+    el.querySelectorAll("[data-susp]").forEach(i => i.checked = sel.has(+i.dataset.susp)); marcar();
+  });
+  btn.onclick = async () => {
+    const ids = [...sel];
+    if (btn.dataset.confirmar !== "1") { btn.dataset.confirmar = "1"; btn.textContent = `Confirmar: excluir ${ids.length} no Pipedrive, não tem volta`; return; }
+    el.querySelectorAll("button, input").forEach(x => x.disabled = true);
+    const total = {excluidas: 0, falhas: 0, erros: []};
+    try {
+      for (let i = 0; i < ids.length; i += 20) {
+        btn.textContent = `Excluindo… ${i} de ${ids.length}`;
+        const r = await api.post("/api/qualidade/excluir", {ids: ids.slice(i, i + 20)});
+        total.excluidas += r.excluidas; total.falhas += r.falhas; total.erros.push(...r.erros);
+      }
+    } catch (err) { total.erros.push(err.message); }
+    aviso(`${total.excluidas} organizações excluídas${PREVIA ? " na prévia (nada foi enviado)" : " no Pipedrive"}`
+      + (total.erros.length ? ` · falharam: ${total.erros.join(" · ")}` : ""));
+    QUAL.selSusp = new Set();
+    telaQualidade().catch(err => aviso(err.message));
+  };
+  el.querySelectorAll("[data-susp-ok]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.suspOk}); QUAL.suspeitas = lista.filter(x => x.chave !== b.dataset.suspOk); qualSuspeitas(); qualKpis(); }
+    catch (err) { aviso(err.message); b.disabled = false; }
+  });
 }
 /* Mesclagem em lote das organizações com o nome exatamente igual: o servidor faz 10 grupos por chamada
    (conferindo cada nome no Pipedrive) e a tela chama de novo até acabar. */
@@ -657,6 +713,7 @@ function qualNomes() {
 }
 function qualKpis() {
   document.getElementById("q-kpis").innerHTML = `
+    <div class="kpi"><b class="num">${(QUAL.suspeitas || []).length.toLocaleString("pt-BR")}</b><span>cadastros suspeitos</span></div>
     <div class="kpi"><b class="num">${QUAL.duplicadasPagina.total.toLocaleString("pt-BR")}</b><span>grupos de organizações duplicadas</span></div>
     <div class="kpi"><b class="num">${QUAL.sugestoesPagina.total.toLocaleString("pt-BR")}</b><span>sem a razão social completa</span></div>
     <div class="kpi"><b class="num">${QUAL.semCnpj.toLocaleString("pt-BR")}</b><span>organizações sem CNPJ no Pipedrive</span></div>`;

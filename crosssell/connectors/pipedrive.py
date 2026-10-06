@@ -62,12 +62,12 @@ class PipedriveClient:
         return r.json().get("data") or {}
 
     def organizacoes(self, ids: list[int]) -> dict[int, dict]:
-        """Organizações pelo id, como estão agora no Pipedrive (as excluídas não vêm)."""
+        """Organizações pelo id, como estão agora no Pipedrive. As excluídas (is_deleted) ficam de fora."""
         saida = {}
         for i in range(0, len(ids), 100):
             r = self.http.get("/v2/organizations", params={"ids": ",".join(map(str, ids[i:i + 100])), "limit": 100})
             r.raise_for_status()
-            saida |= {o["id"]: o for o in r.json().get("data") or []}
+            saida |= {o["id"]: o for o in r.json().get("data") or [] if not o.get("is_deleted")}
         return saida
 
     def excluir_organizacao(self, org_id: int) -> None:

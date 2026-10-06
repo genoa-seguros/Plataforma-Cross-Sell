@@ -285,8 +285,17 @@ def _apagar_na_plataforma(db: Session, e: Empresa) -> None:
     db.delete(e)
 
 
+def _motivo_pipedrive(exc: httpx.HTTPStatusError) -> str:
+    """A mensagem de erro que o Pipedrive mandou (ou o código HTTP), sem a URL."""
+    try:
+        corpo = exc.response.json()
+        return corpo.get("error") or corpo.get("message") or f"erro {exc.response.status_code}"
+    except ValueError:
+        return f"erro {exc.response.status_code}"
+
+
 def excluir(db: Session, client, ids: list[int]) -> dict:
-    """Exclui as organizações no Pipedrive e na plataforma. A que já não existe lá (404/410) só sai daqui."""
+    """Exclui as organizações no Pipedrive e na plataforma. A que já foi excluída lá só sai daqui."""
     cont = {"excluidas": 0, "falhas": 0}
     erros = []
     for i in ids:
@@ -296,9 +305,10 @@ def excluir(db: Session, client, ids: list[int]) -> dict:
         try:
             client.excluir_organizacao(e.pipedrive_org_id)
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code not in (404, 410):
+            # O Pipedrive responde 400 ao excluir uma organização que já está excluída: confere antes de dar erro
+            if exc.response.status_code not in (400, 404, 410) or e.pipedrive_org_id in client.organizacoes([e.pipedrive_org_id]):
                 cont["falhas"] += 1
-                erros.append(f"{e.razao_social}: {exc}")
+                erros.append(f"{e.razao_social}: {_motivo_pipedrive(exc)}")
                 continue
         except httpx.HTTPError as exc:
             cont["falhas"] += 1

@@ -34,7 +34,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   motivo, com seleção uma a uma ou do grupo inteiro e *Excluir selecionadas no Pipedrive* (negócios,
   pessoas e atividades ficam, só sem a organização) ou *Não é suspeita*. *Organizações
   duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
-  botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta. *Mesclar todas
+  botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta. Dá para
+  escolher qual organização fica e *Excluir* uma organização do grupo no Pipedrive (negócios e pessoas ficam, sem ela). *Mesclar todas
   com nome idêntico* mescla de uma vez as organizações com o nome exatamente igual (letras, acentos,
   maiúsculas e pontuação; o CNPJ não é considerado, porque no Pipedrive ele é opcional e muitas vezes
   falta), conferindo cada nome no Pipedrive antes; nomes parecidos continuam na lista para análise.

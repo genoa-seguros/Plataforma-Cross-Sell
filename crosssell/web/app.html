@@ -130,7 +130,9 @@ fieldset label{display:flex;gap:4px;align-items:center}
 a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-radius:3px;background:var(--accent);color:var(--accent-ink);text-decoration:none;vertical-align:1px}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s}}
 /* Aba Rotina: passos da rodada em linha do tempo e os painéis de e-mail e LinkedIn */
-.qual-org{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+.qual-org{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-radius:6px;border:1px solid transparent}
+.qual-org label{display:flex;gap:8px;align-items:flex-start;flex:1;cursor:pointer}
+.qual-org .btn{flex:none;font-size:12px;padding:2px 8px}
 .qual-org+.qual-org{margin-top:4px}
 .qual-org.fica{background:color-mix(in srgb,var(--good) 8%,transparent);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
 .qual-org input{margin-top:4px}
@@ -366,7 +368,7 @@ const previa = {
       D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => !igual(g));
       return {mescladas: feitos.reduce((s, g) => s + g.mesclar.length, 0), grupos: feitos.length, conferir: 0, falhas: 0, apos: "", restantes: 0, erros: []};
     }
-    if (path === "/api/qualidade/excluir") { const n = (D.qualidade.suspeitas || []).length; D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => !b.ids.includes(x.id)); return {excluidas: n - D.qualidade.suspeitas.length, falhas: 0, erros: []}; }
+    if (path === "/api/qualidade/excluir") { D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => !b.ids.includes(x.id)); return {excluidas: b.ids.length, falhas: 0, erros: []}; }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
     if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
     if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => x.chave !== b.chave); return {ok: true}; }
@@ -753,6 +755,16 @@ function qualTirarMescladas(grupos, sumiram) {  // as mescladas deixam de existi
   qualTirarSugestoes(x => sumiram.has(x.id));
   qualKpis();
 }
+/* Depois de excluir uma organização: sai do grupo (o grupo some se sobrar uma só) e das outras listas. */
+function qualTirarOrganizacao(g, id) {
+  const resto = qualMembros(g).filter(m => m.id !== id);
+  if ((QUAL.fica || {})[g.chave] === id) delete QUAL.fica[g.chave];
+  QUAL.sugestoes = QUAL.sugestoes.filter(x => x.id !== id);
+  QUAL.suspeitas = (QUAL.suspeitas || []).filter(x => x.id !== id);
+  if (resto.length < 2) qualTirarDuplicadas(x => x === g);
+  else { g.manter = resto[0]; g.mesclar = resto.slice(1); qualDuplicadas(); }
+  qualRazao(); qualSuspeitas(); qualKpis();
+}
 function qualDuplicadas() {
   const p = QUAL.duplicadasPagina, el = document.getElementById("q-dup");
   const sel = QUAL.selDup = new Set([...(QUAL.selDup || [])].filter(c => QUAL.duplicadas.some(g => g.chave === c)));
@@ -763,13 +775,25 @@ function qualDuplicadas() {
       ${QUAL.duplicadas.map(g => `<tr>
         <td><input type="checkbox" data-sel="${esc(g.chave)}" aria-label="Selecionar ${esc(g.manter.nome)}" ${sel.has(g.chave) ? "checked" : ""}></td>
         <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
-        <td style="min-width:420px">${qualMembros(g).map(m => `<label class="qual-org${m.id === qualFica(g) ? " fica" : ""}">
+        <td style="min-width:480px">${qualMembros(g).map(m => `<div class="qual-org${m.id === qualFica(g) ? " fica" : ""}"><label>
           <input type="radio" name="fica-${esc(g.chave)}" data-fica="${esc(g.chave)}" value="${m.id}" ${m.id === qualFica(g) ? "checked" : ""}>
-          <span>${qualOrg(m)}<span class="chip" style="--c:${m.id === qualFica(g) ? "var(--good)" : "var(--mute)"};margin-top:3px">${m.id === qualFica(g) ? "fica" : "será mesclada"}</span>${m.id === g.manter.id ? ' <span class="sub">sugerida</span>' : ""}</span></label>`).join("")}</td>
+          <span>${qualOrg(m)}<span class="chip" style="--c:${m.id === qualFica(g) ? "var(--good)" : "var(--mute)"};margin-top:3px">${m.id === qualFica(g) ? "fica" : "será mesclada"}</span>${m.id === g.manter.id ? ' <span class="sub">sugerida</span>' : ""}</span></label>
+          <button class="btn sec" data-excluir-org="${m.id}" data-grupo="${esc(g.chave)}" title="Exclui esta organização no Pipedrive (negócios e pessoas ficam, sem ela)">Excluir</button></div>`).join("")}</td>
         <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
       </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
   ligarPaginacao("dup", async n => { try { await qualPaginaDup(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
   el.querySelectorAll("[data-fica]").forEach(r => r.onchange = () => { (QUAL.fica ||= {})[r.dataset.fica] = +r.value; qualDuplicadas(); });
+  el.querySelectorAll("[data-excluir-org]").forEach(b => b.onclick = async () => {
+    const id = +b.dataset.excluirOrg, g = QUAL.duplicadas.find(x => x.chave === b.dataset.grupo);
+    if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: excluir no Pipedrive"; return; }
+    b.disabled = true;
+    try {
+      const r = await api.post("/api/qualidade/excluir", {ids: [id]});
+      if (!r.excluidas) throw new Error(r.erros[0] || "O Pipedrive não excluiu a organização.");
+      aviso(PREVIA ? "Excluída na prévia (nada foi enviado)" : "Organização excluída no Pipedrive");
+      qualTirarOrganizacao(g, id);
+    } catch (err) { aviso(err.message); b.disabled = false; }
+  });
   const lote = document.getElementById("q-dup-lote");
   const marcar = () => {  // atualiza o botão sem redesenhar a tabela; desfaz a confirmação pendente
     lote.disabled = !sel.size; delete lote.dataset.confirmar;

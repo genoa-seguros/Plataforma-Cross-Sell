@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SoOAtualizarNaZecaServer",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:us-east-1:483291753480:document/CrossSell-Atualizar",
+        "arn:aws:ec2:us-east-1:483291753480:instance/i-0f9625ef9d89d8b65"
+      ]
+    },
+    {
+      "Sid": "LerOResultado",
+      "Effect": "Allow",
+      "Action": ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"],
+      "Resource": "*"
+    }
+  ]
+}

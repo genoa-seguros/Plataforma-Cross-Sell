@@ -26,22 +26,20 @@ aws route53 change-resource-record-sets --hosted-zone-id Z102748431W69TB2FEDG3 -
 
 ## 2. Código (GitHub, leitura)
 
-Na `zeca-server` (`ssh -i zeca-server.pem ubuntu@100.25.253.31`). O repositório
-`genoa-seguros/Plataforma-Cross-Sell` é público, então o clone por HTTPS não precisa de credencial:
+Na `zeca-server` (`ssh -i zeca-server.pem ubuntu@100.25.253.31`), com uma chave SSH só de leitura
+(deploy key), que funciona com o repositório público ou privado:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/crosssell -N "" -C "zeca-server deploy cross-sell" && cat ~/.ssh/crosssell.pub
+```
+
+Um admin do repositório cadastra a chave pública em **GitHub → genoa-seguros/Plataforma-Cross-Sell →
+Settings → Deploy keys → Add deploy key** (sem "Allow write access"). Depois:
 
 ```bash
 sudo mkdir -p /opt/crosssell && sudo chown ubuntu:ubuntu /opt/crosssell
-git clone -b main https://github.com/genoa-seguros/Plataforma-Cross-Sell.git /opt/crosssell
-```
-
-Se o repositório virar privado, o servidor precisa de uma chave só de leitura: gere com
-`ssh-keygen -t ed25519 -f ~/.ssh/crosssell -N ""`, cadastre o `~/.ssh/crosssell.pub` em **GitHub →
-genoa-seguros/Plataforma-Cross-Sell → Settings → Deploy keys → Add deploy key** (sem "Allow write
-access") e troque o endereço:
-
-```bash
-cd /opt/crosssell && git config core.sshCommand "ssh -i ~/.ssh/crosssell"
-git remote set-url origin git@github.com:genoa-seguros/Plataforma-Cross-Sell.git
+GIT_SSH_COMMAND="ssh -i ~/.ssh/crosssell -o IdentitiesOnly=yes" git clone -b main   git@github.com:genoa-seguros/Plataforma-Cross-Sell.git /opt/crosssell
+git -C /opt/crosssell config core.sshCommand "ssh -i ~/.ssh/crosssell -o IdentitiesOnly=yes"
 ```
 
 ## 3. Configuração
@@ -119,11 +117,44 @@ O último comando imprime um link: envie ao Rodrigo; ele cria a senha nele (vale
 Em console.anthropic.com → API Keys, crie uma chave para a Innoa e coloque em `ANTHROPIC_API_KEY`;
 depois `docker compose up -d web`.
 
+## 9. Deploy automático (GitHub Actions)
+
+A cada merge na `main`, o workflow `.github/workflows/deploy.yml` roda os testes e, se passarem, publica:
+o GitHub assume o papel `github-crosssell-deploy` da AWS (OIDC, nenhuma senha guardada no GitHub) e
+manda a `zeca-server`, pelo SSM, rodar o documento `CrossSell-Atualizar`, que só executa
+`deploy/atualizar.sh` como `ubuntu`. Nenhuma porta é aberta e o GitHub não pode rodar outro comando no
+servidor. O papel só aceita a `main` deste repositório (PRs e forks não conseguem usá-lo). A aba
+**Actions** mostra o log do `atualizar.sh` e se o site voltou a responder. Também dá para rodar à mão:
+**Actions → Deploy → Run workflow**.
+
+Configuração única na AWS (perfil com permissão de IAM; arquivos em `deploy/aws/`, rodar na raiz do
+repositório). A API do Zeca não é afetada: ela usa as próprias chaves da AWS do `.env` dela.
+
+```bash
+# 1. Papel da instância, para o agente do SSM (já instalado na zeca-server) se conectar à AWS
+aws iam create-role --role-name zeca-server-ssm --assume-role-policy-document file://deploy/aws/confianca-ec2.json
+aws iam attach-role-policy --role-name zeca-server-ssm --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name zeca-server-ssm
+aws iam add-role-to-instance-profile --instance-profile-name zeca-server-ssm --role-name zeca-server-ssm
+aws ec2 associate-iam-instance-profile --region us-east-1 --instance-id i-0f9625ef9d89d8b65 --iam-instance-profile Name=zeca-server-ssm
+
+# 2. Documento do SSM (o único comando que o GitHub pode mandar)
+aws ssm create-document --region us-east-1 --name CrossSell-Atualizar --document-type Command   --document-format JSON --content file://deploy/aws/documento-ssm.json
+
+# 3. Login do GitHub na AWS (OIDC) e o papel do deploy
+aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com   --client-id-list sts.amazonaws.com --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+aws iam create-role --role-name github-crosssell-deploy --assume-role-policy-document file://deploy/aws/confianca-github.json
+aws iam put-role-policy --role-name github-crosssell-deploy --policy-name deploy-crosssell   --policy-document file://deploy/aws/permissao-deploy.json
+```
+
+Conferir: `aws ssm describe-instance-information --region us-east-1` deve listar `i-0f9625ef9d89d8b65`
+como `Online` (leva alguns minutos depois do passo 1).
+
 ## Operação
 
 Comandos na pasta `/opt/crosssell/deploy`:
 
-- **Atualizar** para a versão mais nova: `bash atualizar.sh` (o container aplica as migrações do banco ao subir).
+- **Atualizar** para a versão mais nova: automático a cada merge na `main` (passo 9). À mão: `bash atualizar.sh` (o container aplica as migrações do banco ao subir).
 - **Logs:** `docker compose logs -f web` (backup: `docker compose logs backup`).
 - **Rotina na hora:** `docker compose exec web crosssell rotina` (se a rotina automática estiver rodando,
   esta é pulada).

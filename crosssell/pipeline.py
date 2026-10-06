@@ -29,7 +29,8 @@ def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
 
 
 def carregar_usuarios(db: Session, settings: Settings) -> int:
-    """Cria os usuários da equipe inicial do config que ainda não existem (sem senha: precisam de convite)."""
+    """Cria os usuários da lista do config que ainda não existem (sem senha). Só para a demonstração
+    (scripts/demo.py) e os testes: em produção, quem cria usuários é o master, pela tela Equipe."""
     n = 0
     for u in settings.usuarios_iniciais():
         reg = db.scalar(select(Usuario).where(Usuario.email == u["email"]))

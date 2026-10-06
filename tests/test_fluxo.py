@@ -195,6 +195,39 @@ def ligar_leitura(db, *emails):
     db.commit()
 
 
+def test_rascunho_sem_remetente_nao_derruba_a_leitura(db, settings):
+    """Rascunho vem do Graph com "from": null; antes, um só derrubava a leitura da caixa inteira."""
+    carregar(db, settings)
+    db.add(Empresa(razao_social="Alfa", nome_normalizado="alfa", dominio="alfa.com.br"))
+    db.commit()
+    u = "victor.boldrini@innoaseguros.com.br"
+    ligar_leitura(db, u)
+    agora = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    mensagens = [
+        {"id": "r1", "conversationId": "t-r", "isDraft": True, "from": None, "toRecipients": [],
+         "uniqueBody": {"content": "rascunho"}},
+        {"id": "s1", "conversationId": "t-s", "isDraft": False, "sentDateTime": agora, "from": None,
+         "toRecipients": [{"emailAddress": {"address": "ana@alfa.com.br"}}], "uniqueBody": {"content": "Oi"}},
+        {"id": "m1", "conversationId": "t-m", "isDraft": False, "sentDateTime": agora,
+         "from": {"emailAddress": {"address": "ana@alfa.com.br"}}, "toRecipients": [{"emailAddress": {"address": u}}],
+         "uniqueBody": {"content": "Vamos marcar?"}},
+    ]
+
+    def graph(req: httpx.Request):
+        if "oauth2" in req.url.path:
+            return httpx.Response(200, json={"access_token": "tok"})
+        return httpx.Response(200, json={"value": mensagens if req.url.path.startswith(f"/v1.0/users/{u}") else []})
+
+    client = email_m365.GraphClient(settings, transport=httpx.MockTransport(graph))
+    r = email_m365.sincronizar(db, settings, client=client)
+    assert r["mensagens"] == 2  # o rascunho fica de fora; a mensagem sem remetente não quebra
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    assert [i.message_id for i in db.scalars(select(Interacao).where(Interacao.pessoa_id == ana.id))] == ["m1"]
+    db.expire_all()
+    victor = db.scalar(select(Usuario).where(Usuario.email == u))
+    assert victor.leitura_erro is None and victor.leitura_em is not None
+
+
 def test_caixa_com_erro_nao_impede_as_outras(db, settings):
     carregar(db, settings)
     ligar_leitura(db, *[u.email for u in db.scalars(select(Usuario))])

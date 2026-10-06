@@ -107,7 +107,7 @@ class Usuario(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(unique=True)
     nome: Mapped[str]
-    papel: Mapped[str] = mapped_column(default="membro")  # master | membro
+    papel: Mapped[str] = mapped_column(default="membro")  # master | head (também acessa a Qualidade) | membro
     ativo: Mapped[bool] = mapped_column(default=True)
     senha_hash: Mapped[str | None]
     convite_token: Mapped[str | None] = mapped_column(unique=True)

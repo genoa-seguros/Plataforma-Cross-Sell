@@ -373,6 +373,7 @@ const previa = {
     if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
     if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => x.chave !== b.chave); return {ok: true}; }
     if (path === "/api/linkedin/endereco") { D.linkedin.naoEncontrados = D.linkedin.naoEncontrados.filter(x => x.id_alvo !== b.id_alvo); return {ok: true}; }
+    if ((m = path.match(/^\/api\/equipe\/(\d+)\/papel$/))) { const u = D.equipe.find(x => x.id == m[1]); u.papel = b.papel; return u; }
     if (path === "/api/equipe/convidar") {
       const u = {id: ++this.seq, email: b.email.toLowerCase(), nome: b.nome, papel:"membro", ativo:true, verticais:b.verticais, lider:b.lider, pipedrive:false, pendente:true};
       D.equipe.push(u); return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id};
@@ -402,7 +403,8 @@ function todosLocal(refIso) {
 /* ---------- Abas ---------- */
 function abas(ativa) {
   const itens = [["oportunidades","Oportunidades"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
-  if (EU?.papel === "master") itens.push(["qualidade","Qualidade"], ["equipe","Equipe"]);
+  if (["master", "head"].includes(EU?.papel)) itens.push(["qualidade","Qualidade"]);
+  if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
 }
 
@@ -621,7 +623,7 @@ async function telaMelhorias() {
    ignorar tiram a linha da tela, e a página só é buscada de novo quando esvazia. */
 let QUAL = null;
 async function telaQualidade() {
-  if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
+  if (!["master", "head"].includes(EU?.papel)) { location.hash = "#oportunidades"; return; }
   QUAL = await api.get("/api/qualidade?pagina=1");
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:14px">
@@ -1024,9 +1026,11 @@ async function telaEquipe() {
     <div class="grupo" id="ia" style="padding:14px;display:grid;gap:10px"></div>
     <div class="grupo" id="lk" style="padding:14px;display:grid;gap:10px"></div>
     <div class="tabela"><table>
-      <thead><tr><th>Nome</th><th>E-mail</th><th>Verticais</th><th>Situação</th><th>Leitura de e-mails</th><th>Pipedrive</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Verticais</th><th>Situação</th><th>Leitura de e-mails</th><th>Pipedrive</th><th></th></tr></thead>
       <tbody>${equipe.map(u => `<tr>
-        <td>${esc(u.nome)}${u.papel === "master" ? ' <span class="sub">· master</span>' : ""}</td><td class="small">${esc(u.email)}</td>
+        <td>${esc(u.nome)}</td><td class="small">${esc(u.email)}</td>
+        <td class="small">${u.papel === "master" ? "Master" : `<select data-papel="${u.id}" aria-label="Papel de ${esc(u.nome)}" title="Head também acessa a Qualidade">
+          <option value="membro" ${u.papel === "head" ? "" : "selected"}>Membro</option><option value="head" ${u.papel === "head" ? "selected" : ""}>Head</option></select>`}</td>
         <td><div class="chips">${u.verticais.map(v => vchip(v, V[v] + (u.lider.includes(v) ? " · líder" : ""))).join("") || '<span class="sub">—</span>'}</div></td>
         <td class="small">${!u.ativo ? '<span class="mute">Acesso removido</span>' : u.pendente ? '<span style="color:var(--warn)">Convite pendente</span>' : '<span style="color:var(--good)">Ativo</span>'}</td>
         <td class="small">${leitura(u)}</td>
@@ -1054,6 +1058,10 @@ async function telaEquipe() {
   document.querySelectorAll("[data-novasenha]").forEach(b => b.onclick = async () => {
     try { const r = await api.post(`/api/equipe/${b.dataset.novasenha}/nova-senha`); mostrarLink(r.link, r.usuario.nome, "Link de nova senha (vale 1 hora)"); }
     catch (err) { aviso(err.message); } });
+  document.querySelectorAll("[data-papel]").forEach(sel => sel.onchange = async () => {
+    try { await api.post(`/api/equipe/${sel.dataset.papel}/papel`, {papel: sel.value}); aviso(sel.value === "head" ? "Agora é head: passa a ver a aba Qualidade" : "Agora é membro: sem a aba Qualidade"); }
+    catch (err) { aviso(err.message); telaEquipe(); }
+  });
   document.querySelectorAll("[data-leitura]").forEach(b => b.onchange = async () => {
     try {
       await api.post(`/api/equipe/${b.dataset.leitura}/emails`, {ler: b.checked});

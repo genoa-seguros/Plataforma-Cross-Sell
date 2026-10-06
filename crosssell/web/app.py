@@ -138,6 +138,13 @@ def somente_master(u: Usuario = Depends(usuario_atual)) -> Usuario:
     return u
 
 
+def acesso_qualidade(u: Usuario = Depends(usuario_atual)) -> Usuario:
+    """Qualidade do cadastro: o master e quem tem o papel de head."""
+    if u.papel not in ("master", "head"):
+        raise HTTPException(403, "A Qualidade é só para o master e os heads.")
+    return u
+
+
 # --- Páginas -------------------------------------------------------------
 
 @app.get("/")
@@ -410,6 +417,25 @@ def api_leitura_emails(usuario_id: int, dados: LeituraIn, db: Session = Depends(
     return _usuario_json(u)
 
 
+class PapelIn(BaseModel):
+    papel: str
+
+
+@app.post("/api/equipe/{usuario_id}/papel")
+def api_papel(usuario_id: int, dados: PapelIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Membro ou head (o head também acessa a Qualidade). O master não muda por aqui."""
+    if dados.papel not in ("membro", "head"):
+        raise HTTPException(400, "Papel deve ser membro ou head.")
+    u = db.get(Usuario, usuario_id)
+    if u is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    if u.papel == "master":
+        raise HTTPException(400, "O papel do master não muda por aqui.")
+    u.papel = dados.papel
+    db.commit()
+    return _usuario_json(u)
+
+
 @app.post("/api/equipe/{usuario_id}/desconvidar")
 def api_desconvidar(usuario_id: int, db: Session = Depends(get_db), m: Usuario = Depends(somente_master)):
     u = db.get(Usuario, usuario_id)
@@ -557,19 +583,19 @@ def _pagina_sugestoes(db: Session, pagina: int) -> dict:
 
 
 @app.get("/api/qualidade")
-def api_qualidade(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+def api_qualidade(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade)):
     """Primeira página das duplicadas, uma página das sugestões de razão social (20 cada) e os cadastros suspeitos."""
     return {**_pagina_duplicadas(db, 1), **_pagina_sugestoes(db, pagina), "suspeitas": QUALIDADE.obter(db)[3]}
 
 
 @app.get("/api/qualidade/duplicadas")
-def api_qualidade_duplicadas(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+def api_qualidade_duplicadas(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade)):
     """Outra página das duplicadas."""
     return _pagina_duplicadas(db, pagina)
 
 
 @app.get("/api/qualidade/sugestoes")
-def api_qualidade_sugestoes(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+def api_qualidade_sugestoes(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade)):
     """Outra página das sugestões de razão social."""
     return _pagina_sugestoes(db, pagina)
 
@@ -580,7 +606,7 @@ class MesclarIn(BaseModel):
 
 
 @app.post("/api/qualidade/mesclar")
-def api_mesclar(dados: MesclarIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+def api_mesclar(dados: MesclarIn, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade),
                 client: pd.PipedriveClient = Depends(get_pipedrive)):
     try:
         return registrar(db, "qualidade-mesclar", qualidade.mesclar, db, client, dados.manter_id, dados.mesclar_ids)
@@ -596,7 +622,7 @@ class NomesIdenticosIn(BaseModel):
 
 @app.post("/api/qualidade/mesclar-nomes-identicos")
 def api_mesclar_nomes_identicos(dados: NomesIdenticosIn, db: Session = Depends(get_db),
-                                _m: Usuario = Depends(somente_master),
+                                _m: Usuario = Depends(acesso_qualidade),
                                 client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Um lote (10 grupos) da mesclagem por nome idêntico; a tela chama de novo com `apos` até `restantes` = 0."""
     try:
@@ -610,7 +636,7 @@ class ExcluirIn(BaseModel):
 
 
 @app.post("/api/qualidade/excluir")
-def api_excluir(dados: ExcluirIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+def api_excluir(dados: ExcluirIn, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade),
                 client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Exclui no Pipedrive e na plataforma as organizações marcadas (até 50 por chamada; a tela manda em lotes)."""
     if len(dados.ids) > 50:
@@ -624,7 +650,7 @@ class RazaoIn(BaseModel):
 
 
 @app.post("/api/qualidade/razao")
-def api_razao(dados: RazaoIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master),
+def api_razao(dados: RazaoIn, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade),
               client: pd.PipedriveClient = Depends(get_pipedrive)):
     try:
         qualidade.aplicar_razao(db, client, dados.empresa_id, dados.nome)
@@ -640,7 +666,7 @@ class IgnorarIn(BaseModel):
 
 
 @app.post("/api/qualidade/ignorar")
-def api_ignorar(dados: IgnorarIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+def api_ignorar(dados: IgnorarIn, db: Session = Depends(get_db), _m: Usuario = Depends(acesso_qualidade)):
     qualidade.ignorar(db, dados.chave)
     return {"ok": True}
 

@@ -26,7 +26,8 @@ def cenario(engine, db, settings, monkeypatch):
     webapp.app.dependency_overrides[webapp.get_db] = lambda: Local()
     webapp.app.dependency_overrides[webapp.get_pipedrive] = lambda: pipedrive.PipedriveClient("x", transport=fake.transport())
     monkeypatch.setattr(webapp, "get_settings", lambda: settings.model_copy(update={"cookie_seguro": False}))
-    webapp.OPORTUNIDADES.limpar()  # a lista guardada é do processo; cada teste tem seu banco
+    webapp.OPORTUNIDADES.limpar()  # as listas guardadas são do processo; cada teste tem seu banco
+    webapp.QUALIDADE.limpar()
     yield TestClient(webapp.app), fake
     webapp.app.dependency_overrides.clear()
 
@@ -279,3 +280,19 @@ def test_qualidade_paginada(cenario, db):
     p2 = c.get("/api/qualidade/sugestoes?pagina=2").json()
     assert "duplicadas" not in p2 and p2["sugestoesPagina"]["pagina"] == 2
     assert len(p2["sugestoes"]) == q["sugestoesPagina"]["total"] - 20
+
+
+def test_qualidade_duplicadas_paginadas_no_servidor(cenario, db):
+    c, _ = cenario
+    for i in range(25):  # 25 pares com o mesmo nome no Pipedrive
+        for org in (2000 + i, 3000 + i):
+            db.add(Empresa(razao_social=f"Duplicada {i} Ltda", nome_normalizado=f"duplicada {i}", pipedrive_org_id=org))
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    q = c.get("/api/qualidade").json()
+    assert len(q["duplicadas"]) == 20 and q["duplicadasPagina"] == {"total": 25, "pagina": 1, "paginas": 2}
+    p2 = c.get("/api/qualidade/duplicadas?pagina=2").json()
+    assert len(p2["duplicadas"]) == 5 and "sugestoes" not in p2
+    # Ignorar pela plataforma renova a lista guardada
+    assert c.post("/api/qualidade/ignorar", headers=H, json={"chave": q["duplicadas"][0]["chave"]}).status_code == 200
+    assert c.get("/api/qualidade/duplicadas").json()["duplicadasPagina"]["total"] == 24

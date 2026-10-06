@@ -62,32 +62,40 @@ app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-class _CacheOportunidades:
-    """A lista de Oportunidades é calculada inteira (o Potencial não fica gravado; para ordenar é preciso
-    calcular todas) e guardada aqui. Recalcula quando a rotina termina um passo (sync_log novo), quando
-    alguém altera algo pela plataforma (POST etc., ver o middleware abaixo) ou depois de VALIDADE segundos."""
+class _Guardada:
+    """Resultado de um cálculo pesado, guardado no processo. Recalcula quando a rotina termina um passo
+    (sync_log novo), quando alguém altera algo pela plataforma (POST etc., ver o middleware abaixo) ou
+    depois de VALIDADE segundos."""
 
     VALIDADE = 900
 
-    def __init__(self):
+    def __init__(self, calcular):
+        self.calcular = calcular
         self.lock = threading.Lock()
-        self.geracao, self.chave, self.em, self.itens, self.relacoes = 0, None, 0.0, [], []
+        self.geracao, self.chave, self.em, self.valor = 0, None, 0.0, None
 
     def limpar(self) -> None:
         self.geracao += 1
 
-    def obter(self, db: Session) -> tuple[list[dict], list[str]]:
+    def obter(self, db: Session):
         ultimo_passo = db.scalar(select(func.max(SyncLog.id)).where(SyncLog.fim.is_not(None)))
         with self.lock:
             chave = (id(db.get_bind()), ultimo_passo, self.geracao)
             if chave != self.chave or time.monotonic() - self.em > self.VALIDADE:
-                self.itens = tabela.oportunidades(db, get_settings())
-                self.relacoes = sorted({u for o in self.itens for u in o["relacoes"]})
+                self.valor = self.calcular(db)
                 self.chave, self.em = chave, time.monotonic()
-            return self.itens, self.relacoes
+            return self.valor
 
 
-OPORTUNIDADES = _CacheOportunidades()
+def _calcular_oportunidades(db: Session) -> tuple[list[dict], list[str]]:
+    # O Potencial não fica gravado: para ordenar e paginar é preciso calcular todas
+    itens = tabela.oportunidades(db, get_settings())
+    return itens, sorted({u for o in itens for u in o["relacoes"]})
+
+
+OPORTUNIDADES = _Guardada(_calcular_oportunidades)
+# Duplicadas e sugestões de razão social, inteiras (a API devolve uma página de cada)
+QUALIDADE = _Guardada(lambda db: (qualidade.duplicadas(db), qualidade.razao_social(db)))
 
 
 @app.middleware("http")
@@ -95,6 +103,7 @@ async def _alteracao_invalida_oportunidades(request: Request, call_next):
     resp = await call_next(request)
     if request.method not in ("GET", "HEAD", "OPTIONS") and resp.status_code < 400:
         OPORTUNIDADES.limpar()
+        QUALIDADE.limpar()
     return resp
 app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")  # logo e favicon
 
@@ -527,16 +536,34 @@ def api_editar_melhoria(melhoria_id: int, dados: MelhoriaIn, db: Session = Depen
     return _melhoria_json(x)
 
 
+def _pagina_duplicadas(db: Session, pagina: int) -> dict:
+    p = qualidade.pagina(QUALIDADE.obter(db)[0], pagina)
+    return {"duplicadas": p.pop("itens"), "duplicadasPagina": p}
+
+
+def _pagina_sugestoes(db: Session, pagina: int) -> dict:
+    razao = QUALIDADE.obter(db)[1]
+    p = qualidade.pagina(razao["sugestoes"], pagina)
+    return {"sugestoes": p.pop("itens"), "sugestoesPagina": p, "semCnpj": razao["semCnpj"],
+            "aguardandoReceita": razao["aguardandoReceita"]}
+
+
 @app.get("/api/qualidade")
 def api_qualidade(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
-    """Duplicadas inteiras (são poucas; a tela pagina) e uma página das sugestões de razão social."""
-    return {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db, pagina)}
+    """Primeira página das duplicadas e uma página das sugestões de razão social (20 cada)."""
+    return {**_pagina_duplicadas(db, 1), **_pagina_sugestoes(db, pagina)}
+
+
+@app.get("/api/qualidade/duplicadas")
+def api_qualidade_duplicadas(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Outra página das duplicadas."""
+    return _pagina_duplicadas(db, pagina)
 
 
 @app.get("/api/qualidade/sugestoes")
 def api_qualidade_sugestoes(pagina: int = 1, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
-    """Outra página das sugestões de razão social, sem refazer a busca de duplicadas."""
-    return qualidade.razao_social(db, pagina)
+    """Outra página das sugestões de razão social."""
+    return _pagina_sugestoes(db, pagina)
 
 
 class MesclarIn(BaseModel):

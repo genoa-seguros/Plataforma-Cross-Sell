@@ -123,7 +123,10 @@ A cada merge na `main`, o workflow `.github/workflows/deploy.yml` roda os testes
 o GitHub assume o papel `github-crosssell-deploy` da AWS (OIDC, nenhuma senha guardada no GitHub) e
 manda a `zeca-server`, pelo SSM, rodar o documento `CrossSell-Atualizar`, que só executa
 `deploy/atualizar.sh` como `ubuntu`. Nenhuma porta é aberta e o GitHub não pode rodar outro comando no
-servidor. O papel só aceita a `main` deste repositório (PRs e forks não conseguem usá-lo). A aba
+servidor. O papel só aceita a `main` deste repositório (PRs e forks não conseguem usá-lo). O repositório
+usa o sujeito imutável do OIDC do GitHub, com os ids da organização e do repositório
+(`repo:genoa-seguros@60446604/Plataforma-Cross-Sell@1398487655:ref:refs/heads/main`): se o repositório for
+transferido ou recriado, o id muda e `deploy/aws/confianca-github.json` precisa ser atualizado. A aba
 **Actions** mostra o log do `atualizar.sh` e se o site voltou a responder. Também dá para rodar à mão:
 **Actions → Deploy → Run workflow**.
 

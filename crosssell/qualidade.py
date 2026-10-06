@@ -233,6 +233,83 @@ def mesclar_nomes_identicos(db: Session, client, apos: str = "", limite: int = 1
     return {**cont, "apos": lote[-1][0] if lote else apos, "restantes": resto, "erros": erros}
 
 
+# --- Cadastros suspeitos (exclusão decidida pelo master) ---------------------------
+# Organizações que não são empresa de verdade: teste, "não tenho", pessoa física, nome sem letras.
+# Comparação sem acento e em minúsculas. É uma lista para revisar: nada é excluído sem o master marcar.
+
+SUSPEITAS = (
+    ("teste", "Teste", (r"\btest(e|es|ando|ing)?\b", r"\bexemplo\b", r"\bfake\b", r"\basdf", r"\bx{3,}\b",
+                        r"\bdummy\b", r"\bnao usar\b", r"\b(apagar|excluir|deletar)\b")),
+    ("sem_empresa", "Sem empresa", (r"\bnao (tem|tenho|possui|sei|informad[oa]|definid[oa])\b", r"\bsem (empresa|nome)\b",
+                                    r"^nenhuma?$", r"^n/?a$", r"\bdesconhecid[oa]\b")),
+    ("pessoa_fisica", "Pessoa física", (r"\bpessoa fisica\b", r"\bpf\b", r"\bparticular\b", r"\bautonom[oa]\b")),
+)
+_PADROES = [(chave, rotulo, re.compile("|".join(regras))) for chave, rotulo, regras in SUSPEITAS]
+
+
+def motivo_suspeita(nome: str | None) -> tuple[str, str] | None:
+    """(chave, rótulo) do motivo pelo qual o nome não parece de uma empresa, ou None."""
+    t = sem_acento(nome or "").lower().strip()
+    if len(re.sub(r"[^a-z]", "", t)) < 2:  # vazio, só números ou só pontuação
+        return ("invalido", "Nome inválido")
+    for chave, rotulo, padrao in _PADROES:
+        if padrao.search(t):
+            return chave, rotulo
+    return None
+
+
+def chave_suspeita(empresa_id: int) -> str:
+    return f"susp:{empresa_id}"
+
+
+def suspeitas(db: Session) -> list[dict]:
+    """Organizações do Pipedrive com nome suspeito, por motivo e nome (as marcadas "não é suspeita" ficam fora)."""
+    ignoradas = _ignoradas(db)
+    achadas = [(e, m) for e in _empresas(db) if chave_suspeita(e.id) not in ignoradas
+               and (m := motivo_suspeita(e.razao_social))]
+    cont = _contagens(db) if achadas else {}
+    ordem = {c: i for i, (c, _, _) in enumerate((("invalido", 0, 0),) + SUSPEITAS)}
+    saida = [{**_resumo(e, cont), "motivo": chave, "motivoNome": rotulo, "chave": chave_suspeita(e.id)}
+             for e, (chave, rotulo) in achadas]
+    return sorted(saida, key=lambda x: (ordem[x["motivo"]], (x["nome"] or "").lower()))
+
+
+def _apagar_na_plataforma(db: Session, e: Empresa) -> None:
+    """Tira a organização da plataforma como o Pipedrive faz: negócios, pessoas, atividades e e-mails ficam, sem ela."""
+    for modelo in (Negocio, Pessoa, Atividade, Interacao):
+        db.execute(update(modelo).where(modelo.empresa_id == e.id).values(empresa_id=None))
+    for x in list(e.noticias):
+        db.delete(x)
+    db.flush()
+    db.expire(e)
+    db.delete(e)
+
+
+def excluir(db: Session, client, ids: list[int]) -> dict:
+    """Exclui as organizações no Pipedrive e na plataforma. A que já não existe lá (404/410) só sai daqui."""
+    cont = {"excluidas": 0, "falhas": 0}
+    erros = []
+    for i in ids:
+        e = db.get(Empresa, i)
+        if e is None or not e.pipedrive_org_id:
+            continue
+        try:
+            client.excluir_organizacao(e.pipedrive_org_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (404, 410):
+                cont["falhas"] += 1
+                erros.append(f"{e.razao_social}: {exc}")
+                continue
+        except httpx.HTTPError as exc:
+            cont["falhas"] += 1
+            erros.append(f"{e.razao_social}: {exc}")
+            continue
+        _apagar_na_plataforma(db, e)
+        db.commit()  # já excluída no Pipedrive: grava na hora
+        cont["excluidas"] += 1
+    return {**cont, "erros": erros}
+
+
 # --- Razão social ----------------------------------------------------------------
 
 _MINUSCULAS = {"de", "da", "do", "das", "dos", "e", "em", "para", "com"}

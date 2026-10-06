@@ -178,3 +178,49 @@ def test_mesclar_leva_atividades_interacoes_e_noticias_e_retoma_a_que_parou_no_m
     outra = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
     with pytest.raises(httpx.HTTPStatusError):
         qualidade.mesclar(db, c2, fica.id, [outra.id])
+
+
+def test_cadastros_suspeitos_e_exclusao(db, settings):
+    from datetime import date
+    from crosssell.models import Atividade, Noticia, Pessoa, Usuario
+
+    class ComExclusao(PipedriveEscrita):
+        def _handler(self, req):
+            if req.method == "DELETE":
+                org = int(req.url.path.rsplit("/", 1)[1])
+                self.escritas.append(("DELETE", req.url.path, None))
+                return httpx.Response(404 if org == 503 else 500 if org == 504 else 200, json={"data": {"id": org}})
+            return super()._handler(req)
+
+    fake = ComExclusao()
+    client = carregar(db, settings, fake)
+    nomes = {500: "TESTE", 501: "Não tenho", 502: "Maria Souza - Pessoa Física", 503: "-", 504: "Teste 2",
+             505: "Testa Engenharia"}
+    for org, nome in nomes.items():
+        db.add(Empresa(razao_social=nome, nome_normalizado=nome.lower(), pipedrive_org_id=org))
+    db.flush()
+    teste = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 500))
+    u = db.scalars(select(Usuario)).first()
+    db.add_all([Negocio(empresa=teste, vertical="saude", fonte="pipedrive", id_externo="800", pipeline_id=23,
+                        status="aberto", titulo="Saúde"),
+                Pessoa(nome="Ana Teste", nome_normalizado="ana teste", empresa=teste),
+                Noticia(empresa_id=teste.id, titulo="x", url="http://x"),
+                Atividade(empresa_id=teste.id, assunto="Ligar", vencimento=date(2026, 10, 9), responsavel_id=u.id,
+                          criada_por_id=u.id)])
+    db.commit()
+
+    achadas = {x["orgId"]: x["motivoNome"] for x in qualidade.suspeitas(db)}
+    assert achadas == {500: "Teste", 504: "Teste", 501: "Sem empresa", 502: "Pessoa física", 503: "Nome inválido"}
+    qualidade.ignorar(db, qualidade.chave_suspeita(db.scalar(select(Empresa.id).where(Empresa.pipedrive_org_id == 502))))
+    assert 502 not in {x["orgId"] for x in qualidade.suspeitas(db)}
+
+    ids = {e.pipedrive_org_id: e.id for e in db.scalars(select(Empresa).where(Empresa.pipedrive_org_id.in_([500, 503, 504])))}
+    res = qualidade.excluir(db, client, [ids[500], ids[503], ids[504]])
+    assert res["excluidas"] == 2 and res["falhas"] == 1 and res["erros"][0].startswith("Teste 2")  # 503 já não existia lá
+    db.expire_all()
+    restam = set(db.scalars(select(Empresa.pipedrive_org_id).where(Empresa.pipedrive_org_id >= 500)))
+    assert restam == {501, 502, 504, 505}
+    # Negócio, pessoa e atividade continuam, sem a organização (como no Pipedrive); a notícia vai junto com ela
+    assert db.scalar(select(Negocio.empresa_id).where(Negocio.id_externo == "800")) is None
+    assert db.scalar(select(Pessoa.empresa_id).where(Pessoa.nome == "Ana Teste")) is None
+    assert db.scalar(select(Atividade.empresa_id)) is None and db.scalar(select(Noticia.id)) is None

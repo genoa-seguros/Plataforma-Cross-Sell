@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -10,7 +11,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela
@@ -58,7 +59,43 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Innoa Cross Sell", lifespan=lifespan)
-app.add_middleware(GZipMiddleware, minimum_size=1000)  # o JSON das Oportunidades passa de 1 MB
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+class _CacheOportunidades:
+    """A lista de Oportunidades é calculada inteira (o Potencial não fica gravado; para ordenar é preciso
+    calcular todas) e guardada aqui. Recalcula quando a rotina termina um passo (sync_log novo), quando
+    alguém altera algo pela plataforma (POST etc., ver o middleware abaixo) ou depois de VALIDADE segundos."""
+
+    VALIDADE = 900
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.geracao, self.chave, self.em, self.itens, self.relacoes = 0, None, 0.0, [], []
+
+    def limpar(self) -> None:
+        self.geracao += 1
+
+    def obter(self, db: Session) -> tuple[list[dict], list[str]]:
+        ultimo_passo = db.scalar(select(func.max(SyncLog.id)).where(SyncLog.fim.is_not(None)))
+        with self.lock:
+            chave = (id(db.get_bind()), ultimo_passo, self.geracao)
+            if chave != self.chave or time.monotonic() - self.em > self.VALIDADE:
+                self.itens = tabela.oportunidades(db, get_settings())
+                self.relacoes = sorted({u for o in self.itens for u in o["relacoes"]})
+                self.chave, self.em = chave, time.monotonic()
+            return self.itens, self.relacoes
+
+
+OPORTUNIDADES = _CacheOportunidades()
+
+
+@app.middleware("http")
+async def _alteracao_invalida_oportunidades(request: Request, call_next):
+    resp = await call_next(request)
+    if request.method not in ("GET", "HEAD", "OPTIONS") and resp.status_code < 400:
+        OPORTUNIDADES.limpar()
+    return resp
 app.mount("/static", StaticFiles(directory=AQUI / "static"), name="static")  # logo e favicon
 
 
@@ -416,8 +453,21 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 
 
 @app.get("/api/oportunidades")
-def api_oportunidades(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
-    return {"itens": tabela.oportunidades(db, get_settings())}
+def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: str = "", q: str = "",
+                      empresa: int | None = None, db: Session = Depends(get_db),
+                      _u: Usuario = Depends(usuario_atual)):
+    """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
+    rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead."""
+    itens, relacoes = OPORTUNIDADES.obter(db)
+    if empresa is not None:
+        return {"itens": [o for o in itens if o["empresa"]["id"] == empresa]}
+    busca = q.strip().lower()
+    filtradas = [o for o in itens
+                 if (not vertical or o["vertical"] == vertical)
+                 and (not busca or busca in (o["empresa"]["nome"] or "").lower())
+                 and (not tipo or (tipo == "cliente") == o["cliente"])
+                 and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
+    return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes}
 
 
 PRIORIDADES = ("alta", "media", "baixa")

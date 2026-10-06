@@ -242,6 +242,15 @@ function marcarAjuda(raiz = document) {
 })();
 
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
+// Prévia (exportar_preview.py, sem servidor): os mesmos filtros e a paginação de /api/oportunidades
+function opsPrevia(path) {
+  const p = new URLSearchParams(path.split("?")[1] || ""), todas = D.oportunidades || [];
+  if (p.has("empresa")) return {itens: todas.filter(o => o.empresa.id == p.get("empresa"))};
+  const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel");
+  const ls = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
+    && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort()};
+}
 const api = {
   async get(path) {
     if (PREVIA) return previa.get(path);
@@ -271,7 +280,7 @@ const previa = {
     if (path === "/api/base") return {usuarios: D.equipe.filter(u => u.ativo), verticais: D.verticais};
     if (path === "/api/equipe") return D.equipe;
     if (path === "/api/linkedin") return D.linkedin;
-    if (path === "/api/oportunidades") return {itens: D.oportunidades || []};
+    if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
     m = path.match(/^\/api\/qualidade(\/sugestoes)?(?:\?pagina=(\d+))?$/);
@@ -455,28 +464,42 @@ function opHTML(o) {
       <button class="btn sec" data-ativ-op="${esc(o.id)}" ${o.empresa.noPipedrive || o.contatos.length ? "" : 'disabled title="A empresa não está no Pipedrive"'}>Criar atividade</button></div></td>
   </tr>`;
 }
-function filtrarOps() {
-  const q = filtroOp.q.toLowerCase();
-  const ls = OPS.filter(o => (!filtroOp.vertical || o.vertical === filtroOp.vertical) && (!q || o.empresa.nome.toLowerCase().includes(q))
-    && (!filtroOp.tipo || (filtroOp.tipo === "cliente") === o.cliente)
-    && (!filtroOp.rel || (filtroOp.rel === "-" ? !o.relacoes.length : o.relacoes.includes(filtroOp.rel))));
-  const p = pagLocal(ls, filtroOp.pagina);
-  filtroOp.pagina = p.pagina;
-  document.getElementById("ops").innerHTML = ls.length ? p.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
-  document.getElementById("contagem-op").textContent = `${ls.length} de ${OPS.length} oportunidades`;
-  document.getElementById("pag-op").innerHTML = paginacao(p, "op");
-  ligarPaginacao("op", n => { filtroOp.pagina = n; filtrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); });
+// A API devolve uma página (20) já filtrada: {itens, total, pagina, paginas, totalGeral, relacoes}
+let OPS_RESP = null, OPS_SEQ = 0, OPS_BUSCA = 0;
+function urlOps() {
+  const p = new URLSearchParams({pagina: filtroOp.pagina});
+  for (const k of ["vertical", "tipo", "rel", "q"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
+  return "/api/oportunidades?" + p;
+}
+async function buscarOps() {  // devolve null se um pedido mais novo (outro filtro ou página) passou na frente
+  const seq = ++OPS_SEQ;
+  const r = await api.get(urlOps());
+  if (seq !== OPS_SEQ) return null;
+  OPS_RESP = r; OPS = r.itens;
+  return r;
+}
+function mostrarOps() {
+  const r = OPS_RESP;
+  OPS = r.itens; filtroOp.pagina = r.pagina;
+  document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
+  document.getElementById("contagem-op").textContent = `${r.total} de ${r.totalGeral} oportunidades`;
+  document.getElementById("pag-op").innerHTML = paginacao(r, "op");
+  ligarPaginacao("op", async n => { filtroOp.pagina = n;
+    try { if (await buscarOps()) { mostrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); } }
+    catch (err) { aviso(err.message); } });
+}
+async function filtrarOps() {
+  try { if (await buscarOps()) mostrarOps(); } catch (err) { aviso(err.message); }
 }
 async function telaOportunidades() {
   await carregarBase();
-  if (!OPS.length) { OPS = (await api.get("/api/oportunidades")).itens; desenharOportunidades(); return; }
+  if (!OPS_RESP) { if (!await buscarOps()) return; desenharOportunidades(); return; }
   // Já carregada antes: mostra na hora e atualiza em segundo plano
   desenharOportunidades();
-  const novas = (await api.get("/api/oportunidades")).itens;
-  if (JSON.stringify(novas) === JSON.stringify(OPS)) return;
-  OPS = novas;
+  const antes = JSON.stringify(OPS_RESP);
+  if (!await buscarOps() || JSON.stringify(OPS_RESP) === antes) return;
   // Redesenhar tudo tiraria o cursor da busca; digitando, atualiza só as linhas
-  if (document.activeElement?.id === "f-q-op") filtrarOps(); else desenharOportunidades();
+  if (document.activeElement?.id === "f-q-op") mostrarOps(); else desenharOportunidades();
 }
 function desenharOportunidades() {
   document.getElementById("app").innerHTML = `
@@ -485,7 +508,7 @@ function desenharOportunidades() {
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
-      <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...new Set(OPS.flatMap(o => o.relacoes))].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
+      <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
       <span class="sub" id="contagem-op"></span>
     </div>
@@ -494,10 +517,11 @@ function desenharOportunidades() {
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
     <p class="nota">Cross sell que ninguém está trabalhando: empresas que já são clientes ou que estamos negociando em uma vertical e que ainda não têm seguro nem negócio aberto em outra. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
-  filtrarOps();
+  mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
     document.querySelectorAll("[data-vop]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.vop === filtroOp.vertical))); filtrarOps(); });
-  document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtroOp.pagina = 1;
+    clearTimeout(OPS_BUSCA); OPS_BUSCA = setTimeout(filtrarOps, 250); };  // espera parar de digitar
   document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
 }
@@ -795,8 +819,8 @@ async function telaLinkedin() {
 async function telaEmpresa(id) {
   await carregarBase();
   const e = await api.get("/api/empresas/" + id);
-  if (!OPS.length) OPS = (await api.get("/api/oportunidades")).itens;
-  const vig = e.negocios.filter(n => n.vigente), ops = OPS.filter(o => o.empresa.id == id), abertos = e.negocios.filter(n => n.status === "aberto");
+  const ops = OPS = (await api.get("/api/oportunidades?empresa=" + id)).itens;
+  const vig = e.negocios.filter(n => n.vigente), abertos = e.negocios.filter(n => n.status === "aberto");
   const temSaudeZeca = vig.some(n => n.vertical === "saude" && n.fonte === "zeca"), saudeManual = vig.some(n => n.vertical === "saude" && n.fonte === "manual");
   const situacao = n => n.vigente ? "Vigente" : n.status === "aberto" ? "Em negociação" : n.status === "cancelado" ? "Cancelado" : n.status === "perdido" ? "Perdido" : n.fim ? "Vencido" : "Ganho sem fim de vigência";
   document.getElementById("app").innerHTML = `
@@ -832,7 +856,7 @@ document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
   try {
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
-      OPS = []; render(); }
+      OPS_RESP = null; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
   } catch (err) { aviso(err.message); ev.target.checked = !ev.target.checked; }
 });

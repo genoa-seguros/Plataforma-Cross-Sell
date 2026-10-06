@@ -16,10 +16,11 @@ import re
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import case, func, select
+import httpx
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session, load_only
 
-from crosssell.models import Empresa, Negocio, Pessoa, QualidadeIgnorada
+from crosssell.models import Atividade, Empresa, Interacao, Negocio, Noticia, Pessoa, QualidadeIgnorada
 from crosssell.normalize import normalizar_nome_empresa, sem_acento
 
 DOMINIOS_GENERICOS = {"gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.com.br", "uol.com.br",
@@ -124,6 +125,19 @@ def duplicadas(db: Session) -> list[dict]:
     return sorted(saida, key=lambda g: (ordem[g["certeza"]], g["cnpjsDiferentes"], -g["manter"]["negocios"]))
 
 
+def _mesclar_no_pipedrive(client, org_id: int, manter_id: int) -> None:
+    """Mescla no Pipedrive. Se ele responde que a organização não existe mais e a que fica existe, ela já foi
+    mesclada (ex.: numa tentativa anterior que parou no meio): segue, para a plataforma terminar a mesclagem."""
+    try:
+        client.mesclar_organizacao(org_id, manter_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code not in (400, 404, 410):
+            raise
+        existem = client.organizacoes([org_id, manter_id])
+        if org_id in existem or manter_id not in existem:
+            raise
+
+
 def mesclar(db: Session, client, manter_id: int, mesclar_ids: list[int]) -> dict:
     """Mescla no Pipedrive e na plataforma: tudo das organizações `mesclar_ids` passa para `manter_id`."""
     alvo = db.get(Empresa, manter_id)
@@ -134,11 +148,24 @@ def mesclar(db: Session, client, manter_id: int, mesclar_ids: list[int]) -> dict
         dup = db.get(Empresa, i)
         if dup is None or dup.id == alvo.id or not dup.pipedrive_org_id:
             continue
-        client.mesclar_organizacao(dup.pipedrive_org_id, alvo.pipedrive_org_id)
+        _mesclar_no_pipedrive(client, dup.pipedrive_org_id, alvo.pipedrive_org_id)
         for n in list(dup.negocios):
             n.empresa = alvo
         for p in list(dup.pessoas):
             p.empresa = alvo
+        # Tudo que aponta para a organização que deixa de existir passa para a que fica
+        # (sem isso o banco recusa a exclusão, depois de o Pipedrive já ter mesclado)
+        for modelo in (Atividade, Interacao):
+            db.execute(update(modelo).where(modelo.empresa_id == dup.id).values(empresa_id=alvo.id))
+        ja_tem = set(db.scalars(select(Noticia.url).where(Noticia.empresa_id == alvo.id)))
+        for x in list(dup.noticias):
+            if x.url in ja_tem:
+                db.delete(x)
+            else:
+                x.empresa_id = alvo.id
+                ja_tem.add(x.url)
+        db.flush()
+        db.expire(dup, ["noticias"])
         for campo in ("cnpj", "razao_receita", "website", "dominio", "linkedin_url", "setor", "cnae", "funcionarios",
                       "cidade", "uf", "natureza_juridica", "descricao"):
             if getattr(alvo, campo) in (None, "") and getattr(dup, campo) not in (None, ""):

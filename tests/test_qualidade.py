@@ -3,9 +3,11 @@
 import json
 
 import httpx
+import pytest
 from sqlalchemy import event, select
 
 from crosssell import qualidade, tabela
+from crosssell.connectors.pipedrive import PipedriveClient
 from crosssell.models import Empresa, Negocio
 from tests.fakes import DADOS, FakePipedrive
 from tests.test_fluxo import carregar
@@ -134,3 +136,45 @@ def test_mescla_em_lote_so_nome_exatamente_igual_no_pipedrive(db, settings, monk
     assert nomes == {30: "Voke", 32: "Voke Mobilidade", 33: "VOKE", 34: "Mobi All", 40: "Zeta Seguros",
                      41: "Zeta Seguros Ltda"}
     assert qualidade.grupos_nome_identico(db) == []
+
+
+def test_mesclar_leva_atividades_interacoes_e_noticias_e_retoma_a_que_parou_no_meio(db, settings):
+    from datetime import date, datetime
+    from crosssell.models import Atividade, Interacao, Noticia, Usuario
+
+    fake = PipedriveEscrita()
+    client = carregar(db, settings, fake)
+    fica = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    sai = Empresa(razao_social="Metalúrgica Alfa", nome_normalizado="metalurgica alfa x", pipedrive_org_id=99)
+    db.add(sai)
+    db.flush()
+    u = db.scalars(select(Usuario)).first()
+    db.add_all([Noticia(empresa_id=fica.id, titulo="A", url="http://a"),
+                Noticia(empresa_id=sai.id, titulo="A", url="http://a"),  # a mesma notícia nas duas
+                Noticia(empresa_id=sai.id, titulo="B", url="http://b"),
+                Atividade(empresa_id=sai.id, assunto="Ligar", vencimento=date(2026, 10, 9), responsavel_id=u.id,
+                          criada_por_id=u.id),
+                Interacao(message_id="m1", data=datetime(2026, 10, 1), usuario_email=u.email,
+                          email_externo="x@alfa.com.br", direcao="enviado", empresa_id=sai.id)])
+    db.commit()
+    assert qualidade.mesclar(db, client, fica.id, [sai.id]) == {"mescladas": 1, "manter": 10}
+    db.expire_all()
+    assert sorted(n.url for n in db.scalars(select(Noticia).where(Noticia.empresa_id == fica.id))) == ["http://a", "http://b"]
+    assert db.scalar(select(Atividade.empresa_id)) == fica.id and db.scalar(select(Interacao.empresa_id)) == fica.id
+
+    # Mesclada no Pipedrive numa tentativa que parou antes de gravar aqui: o Pipedrive responde 404 e
+    # a organização 98 não existe mais lá (a 10 existe), então a plataforma termina a mesclagem
+    class JaMesclada(PipedriveEscrita):
+        def _handler(self, req):
+            if req.method == "PUT" and "/merge" in req.url.path:
+                return httpx.Response(404, json={"error": "not found"})
+            return super()._handler(req)
+    orfa = Empresa(razao_social="Alfa Antiga", nome_normalizado="alfa antiga", pipedrive_org_id=98)
+    db.add(orfa)
+    db.commit()
+    c2 = PipedriveClient("x", transport=JaMesclada().transport())
+    assert qualidade.mesclar(db, c2, fica.id, [orfa.id]) == {"mescladas": 1, "manter": 10}
+    # Mas se a organização ainda existe no Pipedrive, o 404 é erro de verdade
+    outra = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
+    with pytest.raises(httpx.HTTPStatusError):
+        qualidade.mesclar(db, c2, fica.id, [outra.id])

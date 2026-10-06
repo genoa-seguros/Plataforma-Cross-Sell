@@ -131,6 +131,17 @@ def linkedin_sites(limite: int = 50):
     typer.echo(registrar(db, "linkedin-sites", lk.descobrir_por_site, db, get_settings(), limite=limite))
 
 
+@app.command("pipedrive-excluidas")
+def pipedrive_excluidas():
+    """Tira da plataforma as organizações excluídas (ou mescladas) direto no Pipedrive."""
+    from crosssell import qualidade as q
+    from crosssell.connectors import pipedrive as pd
+    from crosssell.pipeline import registrar
+
+    db = _db()
+    typer.echo(registrar(db, "pipedrive-excluidas", q.remover_excluidas, db, pd.cliente(get_settings())))
+
+
 @app.command()
 def qualidade():
     """Revisão do cadastro: organizações duplicadas e razão social (resultado na aba Qualidade)."""
@@ -169,11 +180,12 @@ def rotina(dias: int = ROTINA_DIAS):
 def _rodar_rotina(dias: int) -> None:
     from crosssell.connectors import linkedin as lk
 
-    passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("emails", lambda: emails(dias=dias, temperatura=True)),
+    passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("pipedrive-excluidas", pipedrive_excluidas),
+              ("emails", lambda: emails(dias=dias, temperatura=True)),
               ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
               ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
-        passos.insert(5, ("linkedin", linkedin))
+        passos.insert(6, ("linkedin", linkedin))
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal
         passos.append(("qualidade", qualidade))
     for nome, fn in passos:

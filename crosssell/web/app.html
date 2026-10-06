@@ -283,11 +283,13 @@ const previa = {
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
-    m = path.match(/^\/api\/qualidade(\/sugestoes)?(?:\?pagina=(\d+))?$/);
+    m = path.match(/^\/api\/qualidade(\/sugestoes|\/duplicadas)?(?:\?pagina=(\d+))?$/);
     if (m) {
       const q = D.qualidade || (D.qualidade = {duplicadas: [], sugestoes: [], semCnpj: 0, aguardandoReceita: 0});
+      const dup = n => { const {itens, ...pag} = pagLocal(q.duplicadas, n); return {duplicadas: itens, duplicadasPagina: pag}; };
+      if (m[1] === "/duplicadas") return dup(+m[2] || 1);
       const {itens, ...pag} = pagLocal(q.sugestoes, +m[2] || 1);
-      return {...(m[1] ? {} : {duplicadas: q.duplicadas}), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
+      return {...(m[1] ? {} : dup(1)), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
     }
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     throw new Error("rota desconhecida");
@@ -571,14 +573,12 @@ async function telaMelhorias() {
 }
 
 /* ---------- Qualidade do cadastro (master) ---------- */
-/* Carrega uma vez ao abrir a aba; mesclar, atualizar e ignorar só tiram a linha da tela (sem recalcular tudo).
-   As duplicadas vêm inteiras e são paginadas aqui; as sugestões de razão social vêm uma página por vez. */
+/* Duplicadas e sugestões de razão social vêm do servidor uma página (20) por vez; mesclar, atualizar e
+   ignorar tiram a linha da tela, e a página só é buscada de novo quando esvazia. */
 let QUAL = null;
-const qualPag = {dup: 1};
 async function telaQualidade() {
   if (EU?.papel !== "master") { location.hash = "#oportunidades"; return; }
   QUAL = await api.get("/api/qualidade?pagina=1");
-  qualPag.dup = 1;
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:14px">
     <h1>Qualidade do cadastro</h1>
@@ -591,7 +591,7 @@ async function telaQualidade() {
 }
 function qualKpis() {
   document.getElementById("q-kpis").innerHTML = `
-    <div class="kpi"><b class="num">${QUAL.duplicadas.length}</b><span>grupos de organizações duplicadas</span></div>
+    <div class="kpi"><b class="num">${QUAL.duplicadasPagina.total.toLocaleString("pt-BR")}</b><span>grupos de organizações duplicadas</span></div>
     <div class="kpi"><b class="num">${QUAL.sugestoesPagina.total.toLocaleString("pt-BR")}</b><span>sem a razão social completa</span></div>
     <div class="kpi"><b class="num">${QUAL.semCnpj.toLocaleString("pt-BR")}</b><span>organizações sem CNPJ no Pipedrive</span></div>`;
 }
@@ -599,18 +599,28 @@ function qualOrg(x) {
   return `<div><b>${esc(x.nome)}</b> <span class="sub">· org ${x.orgId}</span></div>
     <div class="sub">${[x.cnpj && x.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), x.site, `${x.negocios} negócios (${x.ganhos} ganhos)`, `${x.pessoas} pessoas`].filter(Boolean).map(esc).join(" · ")}</div>`;
 }
+async function qualPaginaDup(n) {
+  Object.assign(QUAL, await api.get(`/api/qualidade/duplicadas?pagina=${n}`));
+  qualKpis(); qualDuplicadas();
+}
+function qualTirarDuplicadas(fora) {
+  const antes = QUAL.duplicadas.length;
+  QUAL.duplicadas = QUAL.duplicadas.filter(x => !fora(x));
+  QUAL.duplicadasPagina.total -= antes - QUAL.duplicadas.length;
+  // a página esvaziou e ainda há duplicadas: busca a página (a última, se esta deixou de existir)
+  if (!QUAL.duplicadas.length && QUAL.duplicadasPagina.total > 0) qualPaginaDup(QUAL.duplicadasPagina.pagina).catch(err => aviso(err.message));
+  else qualDuplicadas();
+}
 function qualDuplicadas() {
-  const p = pagLocal(QUAL.duplicadas, qualPag.dup);
-  qualPag.dup = p.pagina;
-  const el = document.getElementById("q-dup");
-  el.innerHTML = p.total ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
-      ${p.itens.map(g => `<tr>
+  const p = QUAL.duplicadasPagina, el = document.getElementById("q-dup");
+  el.innerHTML = QUAL.duplicadas.length ? `<div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
+      ${QUAL.duplicadas.map(g => `<tr>
         <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
         <td>${qualOrg(g.manter)}</td>
         <td>${g.mesclar.map(qualOrg).join('<div style="height:6px"></div>')}</td>
         <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
       </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
-  ligarPaginacao("dup", n => { qualPag.dup = n; qualDuplicadas(); el.scrollIntoView({block: "start"}); });
+  ligarPaginacao("dup", async n => { try { await qualPaginaDup(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
   el.querySelectorAll("[data-mesclar]").forEach(b => b.onclick = async () => {
     const g = QUAL.duplicadas.find(x => x.chave === b.dataset.mesclar);
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: não tem volta"; return; }
@@ -618,15 +628,15 @@ function qualDuplicadas() {
     try {
       await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
       aviso(PREVIA ? "Mesclada na prévia (nada foi enviado)" : "Organizações mescladas no Pipedrive");
-      QUAL.duplicadas = QUAL.duplicadas.filter(x => x !== g);
       const sumiram = new Set(g.mesclar.map(m => m.id));  // as mescladas deixam de existir: saem das sugestões também
+      qualTirarDuplicadas(x => x === g);
       qualTirarSugestoes(x => sumiram.has(x.id));
-      qualKpis(); qualDuplicadas();
+      qualKpis();
     } catch (err) { aviso(err.message); b.disabled = false; }
   });
   el.querySelectorAll("[data-ignorar]").forEach(b => b.onclick = async () => {
     b.disabled = true;
-    try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); QUAL.duplicadas = QUAL.duplicadas.filter(x => x.chave !== b.dataset.ignorar); qualKpis(); qualDuplicadas(); }
+    try { await api.post("/api/qualidade/ignorar", {chave: b.dataset.ignorar}); qualTirarDuplicadas(x => x.chave === b.dataset.ignorar); qualKpis(); }
     catch (err) { aviso(err.message); b.disabled = false; }
   });
 }

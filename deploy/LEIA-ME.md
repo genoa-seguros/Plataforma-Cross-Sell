@@ -26,20 +26,22 @@ aws route53 change-resource-record-sets --hosted-zone-id Z102748431W69TB2FEDG3 -
 
 ## 2. Código (GitHub, leitura)
 
-Na `zeca-server` (`ssh -i zeca-server.pem ubuntu@100.25.253.31`):
-
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/crosssell -N "" && cat ~/.ssh/crosssell.pub
-```
-
-Cadastre a chave pública em **GitHub → genoaseguros/Plataforma-Cross-Sell → Settings → Deploy keys →
-Add deploy key** (sem "Allow write access"). Depois:
+Na `zeca-server` (`ssh -i zeca-server.pem ubuntu@100.25.253.31`). O repositório
+`genoa-seguros/Plataforma-Cross-Sell` é público, então o clone por HTTPS não precisa de credencial:
 
 ```bash
 sudo mkdir -p /opt/crosssell && sudo chown ubuntu:ubuntu /opt/crosssell
-GIT_SSH_COMMAND="ssh -i ~/.ssh/crosssell" git clone -b main \
-  git@github.com:genoaseguros/Plataforma-Cross-Sell.git /opt/crosssell
+git clone -b main https://github.com/genoa-seguros/Plataforma-Cross-Sell.git /opt/crosssell
+```
+
+Se o repositório virar privado, o servidor precisa de uma chave só de leitura: gere com
+`ssh-keygen -t ed25519 -f ~/.ssh/crosssell -N ""`, cadastre o `~/.ssh/crosssell.pub` em **GitHub →
+genoa-seguros/Plataforma-Cross-Sell → Settings → Deploy keys → Add deploy key** (sem "Allow write
+access") e troque o endereço:
+
+```bash
 cd /opt/crosssell && git config core.sshCommand "ssh -i ~/.ssh/crosssell"
+git remote set-url origin git@github.com:genoa-seguros/Plataforma-Cross-Sell.git
 ```
 
 ## 3. Configuração

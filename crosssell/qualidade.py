@@ -146,8 +146,64 @@ def mesclar(db: Session, client, manter_id: int, mesclar_ids: list[int]) -> dict
         feitas.append(dup.pipedrive_org_id)
         db.flush()
         db.delete(dup)
-    db.commit()
+        db.commit()  # já mesclada no Pipedrive: grava na hora, para uma falha na próxima não desfazer esta aqui
     return {"mescladas": len(feitas), "manter": alvo.pipedrive_org_id}
+
+
+# --- Nome idêntico (mesclagem em lote, decidida pelo master) ----------------------
+# Nome exatamente igual no Pipedrive (mesmas letras, acentos, maiúsculas e pontuação; só os espaços
+# das pontas não contam) é a mesma organização, mesmo com CNPJ diferente ou em branco: o CNPJ não é
+# obrigatório no Pipedrive e muitas vezes falta. Nomes parecidos continuam na lista de duplicadas.
+
+def grupos_nome_identico(db: Session) -> list[tuple[str, list[Empresa]]]:
+    """(nome, organizações) com o mesmo nome exato, em ordem alfabética; a primeira de cada grupo fica."""
+    por: dict[str, list[Empresa]] = defaultdict(list)
+    for e in _empresas(db):
+        if (e.razao_social or "").strip():
+            por[e.razao_social.strip()].append(e)
+    grupos = [(nome, membros) for nome, membros in por.items() if len(membros) > 1]
+    if grupos:
+        cont = _contagens(db)
+        for _, membros in grupos:
+            membros.sort(key=lambda e: _ordem_manter(e, cont))
+    return sorted(grupos, key=lambda g: g[0])
+
+
+def mesclar_nomes_identicos(db: Session, client, apos: str = "", limite: int = 10) -> dict:
+    """Mescla até `limite` grupos de nome idêntico, em ordem alfabética depois de `apos`.
+
+    O nome gravado na plataforma pode estar desatualizado, então cada organização é conferida no
+    Pipedrive antes: só entram as que lá têm exatamente o nome do grupo. A que mudou de nome passa a
+    usar o nome do Pipedrive aqui (e sai do grupo); a que foi excluída lá fica de fora.
+    Devolve `apos` para a próxima chamada e quantos grupos ainda faltam."""
+    grupos = [g for g in grupos_nome_identico(db) if g[0] > apos]
+    lote, resto = grupos[:limite], len(grupos) - min(limite, len(grupos))
+    no_pipedrive = client.organizacoes([e.pipedrive_org_id for _, membros in lote for e in membros])
+    cont = {"mescladas": 0, "grupos": 0, "conferir": 0, "falhas": 0}
+    erros = []
+    for nome, membros in lote:
+        iguais = []
+        for e in membros:
+            org = no_pipedrive.get(e.pipedrive_org_id)
+            atual = (org or {}).get("name", "").strip()
+            if atual == nome:
+                iguais.append(e)
+            elif atual:  # renomeada no Pipedrive: a plataforma passa a usar o nome de lá
+                e.razao_social, e.nome_normalizado = atual, normalizar_nome_empresa(atual)
+        if len(iguais) < 2:
+            cont["conferir"] += 1
+            continue
+        try:
+            res = mesclar(db, client, iguais[0].id, [e.id for e in iguais[1:]])
+        except Exception as exc:  # um grupo recusado não para os outros
+            db.rollback()
+            cont["falhas"] += 1
+            erros.append(f"{nome}: {exc}")
+            continue
+        cont["mescladas"] += res["mescladas"]
+        cont["grupos"] += 1
+    db.commit()
+    return {**cont, "apos": lote[-1][0] if lote else apos, "restantes": resto, "erros": erros}
 
 
 # --- Razão social ----------------------------------------------------------------

@@ -102,3 +102,35 @@ def test_paginas_de_20_e_consultas_fixas(db, settings, engine):
     assert [s["id"] for s in p3["sugestoes"]] == [s["id"] for s in todas[40:60]]
     assert qualidade.razao_social(db, 99)["sugestoesPagina"]["pagina"] == 3  # além da última vai para a última
     assert qualidade.pagina([], 5) == {"itens": [], "total": 0, "pagina": 1, "paginas": 1}
+
+
+def test_mescla_em_lote_so_nome_exatamente_igual_no_pipedrive(db, settings, monkeypatch):
+    """Nome idêntico mescla mesmo com CNPJ diferente; grafia diferente não. O nome é conferido no Pipedrive."""
+    cnpj = settings.pipedrive_cnpj_field
+    novas = [{"id": 30, "name": "Voke", "custom_fields": {cnpj: "11.111.111/0001-11"}},
+             {"id": 31, "name": "Voke ", "custom_fields": {cnpj: "22.222.222/0001-22"}},  # espaço na ponta não conta
+             {"id": 32, "name": "Voke", "custom_fields": {}},
+             {"id": 33, "name": "VOKE", "custom_fields": {}},
+             {"id": 34, "name": "Mobi All", "custom_fields": {}},
+             {"id": 40, "name": "Zeta Seguros", "custom_fields": {}},
+             {"id": 41, "name": "Zeta Seguros", "custom_fields": {}}]
+    monkeypatch.setitem(DADOS, "organizations", DADOS["organizations"] + novas)
+    fake = PipedriveEscrita()
+    client = carregar(db, settings, fake)
+    assert [(n, sorted(e.pipedrive_org_id for e in m)) for n, m in qualidade.grupos_nome_identico(db)] == \
+        [("Voke", [30, 31, 32]), ("Zeta Seguros", [40, 41])]
+
+    # Depois da sincronização, alguém renomeou a 32 e a 41 no Pipedrive
+    renomeadas = {32: "Voke Mobilidade", 41: "Zeta Seguros Ltda"}
+    monkeypatch.setitem(DADOS, "organizations", [{**o, "name": renomeadas.get(o["id"], o["name"])}
+                                                 for o in DADOS["organizations"]])
+    r1 = qualidade.mesclar_nomes_identicos(db, client, limite=1)
+    assert r1 == {"mescladas": 1, "grupos": 1, "conferir": 0, "falhas": 0, "apos": "Voke", "restantes": 1, "erros": []}
+    assert [e[1] for e in fake.escritas] == ["/api/v1/organizations/31/merge"]  # a 31 entra na 30
+    r2 = qualidade.mesclar_nomes_identicos(db, client, apos=r1["apos"], limite=1)
+    assert r2["conferir"] == 1 and r2["restantes"] == 0 and len(fake.escritas) == 1  # Zeta: só uma ficou igual
+    db.expire_all()
+    nomes = {e.pipedrive_org_id: e.razao_social for e in db.scalars(select(Empresa).where(Empresa.pipedrive_org_id >= 30))}
+    assert nomes == {30: "Voke", 32: "Voke Mobilidade", 33: "VOKE", 34: "Mobi All", 40: "Zeta Seguros",
+                     41: "Zeta Seguros Ltda"}
+    assert qualidade.grupos_nome_identico(db) == []

@@ -316,7 +316,9 @@ const previa = {
     m = path.match(/^\/api\/qualidade(\/sugestoes|\/duplicadas)?(?:\?pagina=(\d+))?$/);
     if (m) {
       const q = D.qualidade || (D.qualidade = {duplicadas: [], sugestoes: [], semCnpj: 0, aguardandoReceita: 0});
-      const dup = n => { const {itens, ...pag} = pagLocal(q.duplicadas, n); return {duplicadas: itens, duplicadasPagina: pag}; };
+      const iguais = q.duplicadas.filter(g => g.mesclar.every(m => m.nome.trim() === g.manter.nome.trim()));
+      const nomesIdenticos = {grupos: iguais.length, organizacoes: iguais.reduce((s, g) => s + g.mesclar.length, 0)};
+      const dup = n => { const {itens, ...pag} = pagLocal(q.duplicadas, n); return {duplicadas: itens, duplicadasPagina: pag, nomesIdenticos}; };
       if (m[1] === "/duplicadas") return dup(+m[2] || 1);
       const {itens, ...pag} = pagLocal(q.sugestoes, +m[2] || 1);
       return {...(m[1] ? {} : dup(1)), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
@@ -356,6 +358,11 @@ const previa = {
     if (path === "/api/melhorias") { const x = {id: ++this.seq, titulo: b.titulo, descricao: b.descricao || null, prioridade: b.prioridade || "media", situacao: "nova", autor: D.eu.nome, autorId: D.eu.id, criadaEm: new Date().toISOString().slice(0, 16)}; (D.melhorias ||= []).unshift(x); return x; }
     if ((m = path.match(/^\/api\/melhorias\/(\d+)$/))) { const x = D.melhorias.find(y => y.id == m[1]); Object.entries(b).forEach(([k, v]) => { if (v != null) x[k] = v; }); return x; }
     if (path === "/api/qualidade/mesclar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.manter.id !== b.manter_id); return {mescladas: b.mesclar_ids.length}; }
+    if (path === "/api/qualidade/mesclar-nomes-identicos") {
+      const igual = g => g.mesclar.every(m => m.nome.trim() === g.manter.nome.trim()), feitos = D.qualidade.duplicadas.filter(igual);
+      D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => !igual(g));
+      return {mescladas: feitos.reduce((s, g) => s + g.mesclar.length, 0), grupos: feitos.length, conferir: 0, falhas: 0, apos: "", restantes: 0, erros: []};
+    }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
     if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
     if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); return {ok: true}; }
@@ -615,10 +622,38 @@ async function telaQualidade() {
     <h1>Qualidade do cadastro</h1>
     <div class="kpi-row" id="q-kpis"></div>
     <p class="nota">Revisão semanal do Pipedrive. Nada é alterado sem a sua aprovação: <b>Mesclar</b> junta as organizações no Pipedrive (negócios, pessoas, atividades e notas passam para a que fica) e não tem volta. A razão social vem da Receita pelo CNPJ${QUAL.aguardandoReceita ? ` (${QUAL.aguardandoReceita} organizações com CNPJ ainda aguardam a consulta à Receita)` : ""}; sem CNPJ não é possível sugerir.</p>
-    <div class="grupo"><h3>Organizações duplicadas<span class="sub">fica a que tem mais negócios ganhos</span></h3><div id="q-dup"></div></div>
+    <div class="grupo"><h3>Organizações duplicadas<span class="sub">fica a que tem mais negócios ganhos</span></h3><div id="q-nomes"></div><div id="q-dup"></div></div>
     <div class="grupo"><h3>Razão social<span class="sub">nome da organização × Receita Federal, as com mais negócios primeiro</span></h3><div id="q-razao"></div></div>
   </section>`;
-  qualKpis(); qualDuplicadas(); qualRazao();
+  qualKpis(); qualNomes(); qualDuplicadas(); qualRazao();
+}
+/* Mesclagem em lote das organizações com o nome exatamente igual: o servidor faz 10 grupos por chamada
+   (conferindo cada nome no Pipedrive) e a tela chama de novo até acabar. */
+function qualNomes() {
+  const n = QUAL.nomesIdenticos || {grupos: 0, organizacoes: 0}, el = document.getElementById("q-nomes");
+  el.innerHTML = n.grupos ? `<div class="semana" style="padding:10px 12px;border-bottom:1px solid var(--line);background:var(--soft)">
+      <button class="btn" id="q-nomes-btn">Mesclar todas com nome idêntico (${n.grupos.toLocaleString("pt-BR")} grupos)</button>
+      <span class="sub">${n.organizacoes.toLocaleString("pt-BR")} organizações com exatamente o mesmo nome de outra (letras, acentos e maiúsculas iguais), mesmo com CNPJ diferente ou em branco. Cada nome é conferido no Pipedrive antes. Nomes parecidos continuam abaixo para análise.</span></div>` : "";
+  const b = document.getElementById("q-nomes-btn");
+  if (b) b.onclick = async () => {
+    if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = `Confirmar: mesclar ${n.organizacoes.toLocaleString("pt-BR")} organizações, não tem volta`; return; }
+    document.querySelectorAll("#app button, #app input").forEach(x => x.disabled = true);
+    const total = {mescladas: 0, grupos: 0, conferir: 0, falhas: 0, erros: []};
+    let apos = "", restantes = n.grupos;
+    try {
+      do {
+        b.textContent = `Mesclando… ${(n.grupos - restantes).toLocaleString("pt-BR")} de ${n.grupos.toLocaleString("pt-BR")} grupos`;
+        const r = await api.post("/api/qualidade/mesclar-nomes-identicos", {apos});
+        ["mescladas", "grupos", "conferir", "falhas"].forEach(k => total[k] += r[k]);
+        total.erros.push(...r.erros);
+        apos = r.apos; restantes = r.restantes;
+      } while (restantes > 0);
+    } catch (err) { total.erros.push(err.message); }
+    aviso(`${total.mescladas.toLocaleString("pt-BR")} organizações mescladas em ${total.grupos.toLocaleString("pt-BR")} grupos${PREVIA ? " na prévia (nada foi enviado)" : " no Pipedrive"}`
+      + (total.conferir ? ` · ${total.conferir} grupos tinham nome diferente no Pipedrive e ficaram` : "")
+      + (total.erros.length ? ` · falharam: ${total.erros.join(" · ")}` : ""));
+    telaQualidade().catch(err => aviso(err.message));
+  };
 }
 function qualKpis() {
   document.getElementById("q-kpis").innerHTML = `
@@ -632,6 +667,7 @@ function qualOrg(x) {
 }
 async function qualPaginaDup(n) {
   Object.assign(QUAL, await api.get(`/api/qualidade/duplicadas?pagina=${n}`));
+  qualNomes();
   QUAL.selDup = new Set();  // a seleção vale para a página aberta
   qualKpis(); qualDuplicadas();
 }

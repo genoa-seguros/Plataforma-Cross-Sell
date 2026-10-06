@@ -10,8 +10,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Login**: e-mail e senha, com *Esqueci minha senha* (link de uso único por e-mail, vale 1 hora;
   o master também gera esse link na tela Equipe).
 - **Oportunidades** (tela inicial): o cross sell que **ninguém está trabalhando**. Clientes
-  (seguro vigente) e leads em negociação numa vertical que ainda não têm seguro nem negócio aberto
-  em outra (ex.: tem D&O, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade.
+  (seguro vigente) e leads com **algum card aberto** no Pipedrive (negócio aberto com vertical, em
+  qualquer funil) que ainda não têm seguro nem negócio aberto em outra vertical (ex.: tem D&O e está
+  renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
+  nada aberto fica de fora (terá uma tela própria, ainda a desenhar).
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas: Potencial (e Score de Influência), Empresa (Cliente/Lead), Oportunidade,
   Quem decide e a ponte, Por quê (+ a favor, − contra, ? falta informação), Notícias, Já tem

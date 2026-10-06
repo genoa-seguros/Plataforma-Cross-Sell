@@ -130,6 +130,10 @@ fieldset label{display:flex;gap:4px;align-items:center}
 a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-radius:3px;background:var(--accent);color:var(--accent-ink);text-decoration:none;vertical-align:1px}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .3s}}
 /* Aba Rotina: passos da rodada em linha do tempo e os painéis de e-mail e LinkedIn */
+.qual-org{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+.qual-org+.qual-org{margin-top:4px}
+.qual-org.fica{background:color-mix(in srgb,var(--good) 8%,transparent);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
+.qual-org input{margin-top:4px}
 .rot-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--brand);color:var(--brand-ink);border-radius:10px;padding:18px 20px}
 .rot-relogio{flex:none;width:92px;height:92px;border-radius:50%;display:grid;place-content:center;text-align:center;border:3px solid color-mix(in srgb,var(--brand-ink) 35%,transparent);background:color-mix(in srgb,var(--accent) 45%,var(--brand))}
 .rot-relogio b{font:800 30px/1 var(--f-display)} .rot-relogio span{font-size:11px;opacity:.85}
@@ -239,8 +243,7 @@ const AJUDA = {
   "Relação": "<b>Relacionamento por e-mail</b>, de 0 a 100, nos últimos 90 dias: frequência 35%, recência 30%, reciprocidade (ida e volta) 25%, amplitude (quantas pessoas da equipe falam com ela) 10%.",
   "Área": "<b>Área pelo cargo</b> (Pipedrive) ou título (LinkedIn): RH/Pessoas, Financeiro, Jurídico, Riscos, Operações, TI ou Executivo. Define quem decide cada vertical.",
   "Fala com": "<b>Quem da equipe troca e-mails</b> com esta pessoa.",
-  "Fica": "<b>Organização que permanece</b> depois da mesclagem: a com mais negócios ganhos; depois, mais negócios, CNPJ e a mais antiga.",
-  "Será mesclada": "<b>Organização que deixa de existir</b>: negócios, pessoas, atividades e notas passam para a que fica. Não tem volta.",
+  "Organizações do grupo": "Marque a <b>que fica</b>: as outras deixam de existir e os negócios, pessoas, atividades e notas delas passam para ela. Não tem volta. Vem marcada a sugerida: a com mais negócios ganhos; depois, mais negócios, CNPJ e a mais antiga.",
   "Razão social (editável)": "<b>Razão social da Receita Federal</b>, pelo CNPJ. Os acentos vêm do nome atual quando a palavra já existia. Confira antes de atualizar no Pipedrive.",
 };
 function chaveAjuda(th) {
@@ -357,7 +360,7 @@ const previa = {
     }
     if (path === "/api/melhorias") { const x = {id: ++this.seq, titulo: b.titulo, descricao: b.descricao || null, prioridade: b.prioridade || "media", situacao: "nova", autor: D.eu.nome, autorId: D.eu.id, criadaEm: new Date().toISOString().slice(0, 16)}; (D.melhorias ||= []).unshift(x); return x; }
     if ((m = path.match(/^\/api\/melhorias\/(\d+)$/))) { const x = D.melhorias.find(y => y.id == m[1]); Object.entries(b).forEach(([k, v]) => { if (v != null) x[k] = v; }); return x; }
-    if (path === "/api/qualidade/mesclar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.manter.id !== b.manter_id); return {mescladas: b.mesclar_ids.length}; }
+    if (path === "/api/qualidade/mesclar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => ![g.manter, ...g.mesclar].some(m => m.id === b.manter_id)); return {mescladas: b.mesclar_ids.length}; }
     if (path === "/api/qualidade/mesclar-nomes-identicos") {
       const igual = g => g.mesclar.every(m => m.nome.trim() === g.manter.nome.trim()), feitos = D.qualidade.duplicadas.filter(igual);
       D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => !igual(g));
@@ -737,9 +740,13 @@ function qualTirarDuplicadas(fora) {
   else qualDuplicadas();
 }
 /* Mescla um grupo no Pipedrive; devolve as organizações que deixaram de existir. */
+/* Quem fica numa mesclagem: a sugerida pelo servidor, ou a que o master marcou no grupo. */
+const qualMembros = g => [g.manter, ...g.mesclar];
+const qualFica = g => (QUAL.fica || {})[g.chave] ?? g.manter.id;
 async function qualMesclar(g) {
-  await api.post("/api/qualidade/mesclar", {manter_id: g.manter.id, mesclar_ids: g.mesclar.map(m => m.id)});
-  return g.mesclar.map(m => m.id);
+  const fica = qualFica(g), saem = qualMembros(g).filter(m => m.id !== fica).map(m => m.id);
+  await api.post("/api/qualidade/mesclar", {manter_id: fica, mesclar_ids: saem});
+  return saem;
 }
 function qualTirarMescladas(grupos, sumiram) {  // as mescladas deixam de existir: saem das sugestões também
   qualTirarDuplicadas(x => grupos.has(x));
@@ -752,15 +759,17 @@ function qualDuplicadas() {
   el.innerHTML = QUAL.duplicadas.length ? `<div class="semana" style="padding:8px 12px">
       <button class="btn" id="q-dup-lote" ${sel.size ? "" : "disabled"}>Mesclar selecionadas no Pipedrive${sel.size ? ` (${sel.size})` : ""}</button>
       <span class="sub">marque os grupos para mesclar vários de uma vez</span></div>
-    <div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th style="width:1%"><input type="checkbox" id="q-dup-todas" aria-label="Selecionar todos os grupos da página" ${sel.size === QUAL.duplicadas.length ? "checked" : ""}></th><th>Por quê</th><th>Fica</th><th>Será mesclada</th><th></th></tr></thead><tbody>
+    <div class="tabela" style="border:0;border-radius:0"><table><thead><tr><th style="width:1%"><input type="checkbox" id="q-dup-todas" aria-label="Selecionar todos os grupos da página" ${sel.size === QUAL.duplicadas.length ? "checked" : ""}></th><th>Por quê</th><th>Organizações do grupo</th><th></th></tr></thead><tbody>
       ${QUAL.duplicadas.map(g => `<tr>
         <td><input type="checkbox" data-sel="${esc(g.chave)}" aria-label="Selecionar ${esc(g.manter.nome)}" ${sel.has(g.chave) ? "checked" : ""}></td>
         <td style="min-width:130px"><span class="chip ${g.certeza === "alta" ? "t-muita" : "t-media"}">${g.certeza === "alta" ? "certeza alta" : "conferir"}</span><div class="sub" style="margin-top:4px">${esc(g.motivos.join(" · "))}</div>${g.cnpjsDiferentes ? '<div class="sub" style="color:var(--warn)">CNPJs diferentes: pode ser matriz e filial</div>' : ""}</td>
-        <td>${qualOrg(g.manter)}</td>
-        <td>${g.mesclar.map(qualOrg).join('<div style="height:6px"></div>')}</td>
+        <td style="min-width:420px">${qualMembros(g).map(m => `<label class="qual-org${m.id === qualFica(g) ? " fica" : ""}">
+          <input type="radio" name="fica-${esc(g.chave)}" data-fica="${esc(g.chave)}" value="${m.id}" ${m.id === qualFica(g) ? "checked" : ""}>
+          <span>${qualOrg(m)}<span class="chip" style="--c:${m.id === qualFica(g) ? "var(--good)" : "var(--mute)"};margin-top:3px">${m.id === qualFica(g) ? "fica" : "será mesclada"}</span>${m.id === g.manter.id ? ' <span class="sub">sugerida</span>' : ""}</span></label>`).join("")}</td>
         <td style="white-space:nowrap"><button class="btn" data-mesclar="${esc(g.chave)}">Mesclar no Pipedrive</button> <button class="btn sec" data-ignorar="${esc(g.chave)}">Não é duplicada</button></td></tr>`).join("")}
       </tbody></table></div>${paginacao(p, "dup")}` : '<p class="vazio">Nenhuma duplicada encontrada.</p>';
   ligarPaginacao("dup", async n => { try { await qualPaginaDup(n); el.scrollIntoView({block: "start"}); } catch (err) { aviso(err.message); } });
+  el.querySelectorAll("[data-fica]").forEach(r => r.onchange = () => { (QUAL.fica ||= {})[r.dataset.fica] = +r.value; qualDuplicadas(); });
   const lote = document.getElementById("q-dup-lote");
   const marcar = () => {  // atualiza o botão sem redesenhar a tabela; desfaz a confirmação pendente
     lote.disabled = !sel.size; delete lote.dataset.confirmar;

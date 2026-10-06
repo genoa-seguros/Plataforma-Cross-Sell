@@ -296,3 +296,18 @@ def test_qualidade_duplicadas_paginadas_no_servidor(cenario, db):
     # Ignorar pela plataforma renova a lista guardada
     assert c.post("/api/qualidade/ignorar", headers=H, json={"chave": q["duplicadas"][0]["chave"]}).status_code == 200
     assert c.get("/api/qualidade/duplicadas").json()["duplicadasPagina"]["total"] == 24
+
+
+def test_aba_rotina(cenario, db):
+    """A aba Rotina mostra os limites em vigor e a última execução de cada passo, para qualquer usuário."""
+    c, _ = cenario
+    assert c.get("/api/rotina").status_code == 401
+    db.add_all([SyncLog(fonte="pipedrive", inicio=datetime(2026, 10, 6, 13, 0), fim=datetime(2026, 10, 6, 13, 1), registros=42),
+                SyncLog(fonte="email", inicio=datetime(2026, 10, 6, 13, 1), erro="1 de 2 caixas não foram lidas")])
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    r = c.get("/api/rotina").json()
+    assert r["minutos"] == 60 and r["dias"] == 2 and r["qualidadeDias"] == 7
+    assert r["linkedin"]["validadeDias"] == 90 and r["linkedin"]["limiteDia"] == 50 and r["linkedin"]["buscaDias"] == 30
+    assert r["ultimos"]["pipedrive"] == {"em": "2026-10-06T13:00", "registros": 42, "erro": None}
+    assert r["ultimos"]["email"]["erro"].startswith("1 de 2") and r["ultimos"]["linkedin"] is None

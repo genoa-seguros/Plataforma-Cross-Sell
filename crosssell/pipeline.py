@@ -10,6 +10,14 @@ from crosssell.models import SyncLog, Usuario
 from crosssell.scoring import relacionamento
 
 
+# Parâmetros de cada rodada de `crosssell rotina` (também mostrados na aba Rotina)
+ROTINA_DIAS = 2  # Pipedrive e e-mails: o que mudou nos últimos N dias (a rodada anterior pode ter falhado)
+NOTICIAS_HORAS = 24  # cada empresa no máximo uma vez a cada N horas
+RECEITA_LOTE = 50  # empresas com CNPJ ainda não consultadas, por rodada
+SITES_LOTE = 50  # sites de empresas sem LinkedIn, por rodada
+QUALIDADE_DIAS = 7  # revisão do cadastro: semanal
+
+
 def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
     log = SyncLog(fonte=fonte)
     db.add(log)

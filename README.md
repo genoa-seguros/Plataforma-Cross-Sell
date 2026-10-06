@@ -24,6 +24,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
+- **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
+  e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal do cadastro), o que cada um faz,
+  os limites em vigor (consultas do LinkedIn por rodada e por dia, prazo para reler perfis, janela de
+  e-mails) e a última execução de cada passo, com o erro quando falhou.
 - **Qualidade** (só o master): revisão semanal do cadastro do Pipedrive. *Organizações
   duplicadas* (mesmo CNPJ, nome ou site), com sugestão de qual manter (mais negócios ganhos) e o
   botão *Mesclar no Pipedrive*, que junta negócios, pessoas, atividades e notas e não tem volta.

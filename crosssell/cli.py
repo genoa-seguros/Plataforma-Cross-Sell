@@ -88,10 +88,10 @@ def emails(dias: int = 30, temperatura: bool = typer.Option(True, help="Classifi
     """Lê os e-mails (Microsoft 365) dos usuários ativos e atualiza a temperatura dos contatos."""
     from crosssell.connectors import email_m365
     from crosssell.pipeline import registrar
-    from crosssell.temperatura import Classificador
+    from crosssell.temperatura import Classificador, modelo_em_uso
 
     db, s = _db(), get_settings()
-    classificador = Classificador(s) if temperatura else None
+    classificador = Classificador(s, modelo=modelo_em_uso(db, s)[0]) if temperatura else None
     typer.echo(registrar(db, "email", email_m365.sincronizar, db, s, dias=dias, classificador=classificador))
 
 

@@ -47,7 +47,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   `config/criterios.yaml` (reloaded by file mtime, no restart needed locally; in production the file is
   baked into the Docker image, so a change needs a commit plus `deploy/atualizar.sh`) plus `influencia()` (50% e-mail
   relationship from `scoring/relacionamento.py`, 50% job-title hierarchy). `temperatura.py` uses the Claude
-  API (`ANTHROPIC_MODEL`) to classify contact openness from e-mail replies. E-mail text is never stored.
+  API to classify contact openness from e-mail replies. E-mail text is never stored. The model is the one a master
+  picked on the Equipe screen (`configuracoes` table, `temperatura.modelo_em_uso`), else `ANTHROPIC_MODEL`; only
+  models in `temperatura.MODELOS` are offered (they must accept effort, structured output and the server fallback).
 - **LinkedIn** (`connectors/linkedin.py`, `linkedapi.py`): calls Linked API directly when
   `LINKED_API_TOKEN`/`LINKED_API_IDENTIFICATION_TOKEN` are set. Otherwise it falls back to an n8n webhook
   (`n8n/`, `docs/linkedin-n8n.md`). Rate-limited by `LINKEDIN_LOTE`/`LINKEDIN_LIMITE_DIA` and tracked in

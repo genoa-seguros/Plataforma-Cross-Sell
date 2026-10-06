@@ -14,14 +14,14 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from crosssell import auth, qualidade, tabela
+from crosssell import auth, qualidade, tabela, temperatura
 from crosssell.normalize import AREA_LABEL
 from crosssell.potencial import influencia
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Atividade, Empresa, Melhoria, Negocio, SyncLog, Usuario
+from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, SyncLog, Usuario
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
 
@@ -608,6 +608,34 @@ class IgnorarIn(BaseModel):
 def api_ignorar(dados: IgnorarIn, db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
     qualidade.ignorar(db, dados.chave)
     return {"ok": True}
+
+
+def _ia_json(db: Session) -> dict:
+    s = get_settings()
+    modelo, origem = temperatura.modelo_em_uso(db, s)
+    return {"modelo": modelo, "origem": origem, "chave": bool(s.anthropic_api_key),
+            "opcoes": [{"id": k, "nome": v} for k, v in temperatura.MODELOS.items()]}
+
+
+@app.get("/api/ia")
+def api_ia(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Modelo da Claude usado na temperatura dos contatos e as opções da tela Equipe."""
+    return _ia_json(db)
+
+
+class IaIn(BaseModel):
+    modelo: str
+
+
+@app.post("/api/ia")
+def api_ia_modelo(dados: IaIn, db: Session = Depends(get_db), u: Usuario = Depends(somente_master)):
+    if dados.modelo not in temperatura.MODELOS:
+        raise HTTPException(400, "Modelo não disponível.")
+    c = db.get(Configuracao, temperatura.CHAVE_MODELO) or Configuracao(chave=temperatura.CHAVE_MODELO, valor="")
+    c.valor, c.atualizado_por_id = dados.modelo, u.id
+    db.add(c)
+    db.commit()
+    return _ia_json(db)
 
 
 @app.get("/api/linkedin")

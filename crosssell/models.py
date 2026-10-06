@@ -319,3 +319,14 @@ class Melhoria(Base):
     atualizada_em: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
 
     autor: Mapped[Usuario] = relationship()
+
+
+class Configuracao(Base):
+    """Configuração alterada pelo master na plataforma (ex.: modelo da IA). Vale sobre o .env."""
+
+    __tablename__ = "configuracoes"
+
+    chave: Mapped[str] = mapped_column(primary_key=True)
+    valor: Mapped[str]
+    atualizado_em: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+    atualizado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

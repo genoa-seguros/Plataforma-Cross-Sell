@@ -14,12 +14,28 @@ import anthropic
 from sqlalchemy.orm import Session
 
 from crosssell.config import Settings
-from crosssell.models import Pessoa
+from crosssell.models import Configuracao, Pessoa
 
 log = logging.getLogger(__name__)
 
 NIVEIS = ("pouca", "media", "muita")
 ROTULO = {"pouca": "Pouca abertura", "media": "Média abertura", "muita": "Muita abertura"}
+
+# Modelos que o master pode escolher na tela Equipe. Todos aceitam o que classificar() usa: effort,
+# resposta em JSON estruturado e o fallback do servidor ("default"). O Haiku 4.5 não aceita effort nem o fallback.
+MODELOS = {
+    "claude-sonnet-5-5": "Claude Sonnet 5.5: US$ 2 / 10 por milhão de tokens (entrada / saída)",
+    "claude-opus-5-5": "Claude Opus 5.5: mais capaz, US$ 4 / 20 por milhão de tokens",
+}
+CHAVE_MODELO = "ia_modelo"
+
+
+def modelo_em_uso(db: Session, settings: Settings) -> tuple[str, str]:
+    """(modelo, origem): o escolhido na tela Equipe; senão ANTHROPIC_MODEL do .env; senão o padrão do código."""
+    c = db.get(Configuracao, CHAVE_MODELO)
+    if c is not None and c.valor in MODELOS:
+        return c.valor, "plataforma"
+    return settings.anthropic_model, "servidor"
 
 SISTEMA = """Você avalia a abertura de um contato de uma corretora de seguros B2B com base em como ele escreve.
 
@@ -51,8 +67,9 @@ FORMATO = {
 
 
 class Classificador:
-    def __init__(self, settings: Settings, client: anthropic.Anthropic | None = None):
+    def __init__(self, settings: Settings, client: anthropic.Anthropic | None = None, modelo: str | None = None):
         self.settings = settings
+        self.modelo = modelo or settings.anthropic_model
         # A chave do .env só chega ao SDK por aqui; vazia, o SDK procura nas variáveis de ambiente.
         self.client = client or anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
 
@@ -67,7 +84,7 @@ class Classificador:
             return None
         try:
             resp = self.client.beta.messages.create(
-                model=self.settings.anthropic_model,
+                model=self.modelo,
                 max_tokens=1024,
                 system=SISTEMA,
                 messages=[{"role": "user", "content": corpo}],

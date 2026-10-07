@@ -568,8 +568,14 @@ def api_negocios(pagina: int = 1, funil: str = "", dono: str = "", q: str = "", 
                  _u: Usuario = Depends(usuario_atual)):
     """Negócios em aberto (LF, RE, Saúde, Pipo), uma página por vez, com quais empresas têm oportunidade analisada."""
     todos = tabela.negocios_abertos(db, get_settings())
-    com_op = {o["empresa"]["id"] for o in OPORTUNIDADES.obter(db)[0]
-              if o["analisada"] and o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES}
+    visiveis = [o for o in OPORTUNIDADES.obter(db)[0] if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
+    com_op = {o["empresa"]["id"] for o in visiveis if o["analisada"]}
+    # O que falta para a empresa entrar em Oportunidades (cidade, funcionários, setor): preencher à mão adianta
+    falta: dict[int, list] = {}
+    for o in visiveis:
+        if not o["analisada"] and o["empresa"]["id"] not in com_op:
+            falta.setdefault(o["empresa"]["id"], [])
+            falta[o["empresa"]["id"]] += [x for x in o["faltando"] if x not in falta[o["empresa"]["id"]]]
     busca = q.strip().lower()
     filtrados = [n for n in todos if (not funil or n["funil"] == funil) and (not dono or n["dono"] == dono)
                  and (not busca or busca in ((n["empresa"] or {}).get("nome") or "").lower()
@@ -577,6 +583,7 @@ def api_negocios(pagina: int = 1, funil: str = "", dono: str = "", q: str = "", 
     p = qualidade.pagina(filtrados, pagina)
     for n in p["itens"]:
         n["temOportunidade"] = bool(n["empresa"]) and n["empresa"]["id"] in com_op
+        n["faltaParaOportunidade"] = falta.get(n["empresa"]["id"], []) if n["empresa"] else []
     return {**p, "totalGeral": len(todos), "funis": sorted({n["funil"] for n in todos}),
             "donos": sorted({n["dono"] for n in todos if n["dono"]})}
 

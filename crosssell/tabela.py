@@ -248,7 +248,8 @@ def negocios_abertos(db: Session, settings: Settings) -> list[dict]:
             "id": n.id, "pipedriveId": n.id_externo, "titulo": n.titulo, "produto": n.produto or n.titulo,
             "funil": funis[n.pipeline_id]["nome"], "etapa": n.etapa, "vertical": n.vertical, "valor": n.valor,
             "dono": n.responsavel_email, "donoNome": nomes.get(n.responsavel_email or "", n.responsavel_email),
-            "empresa": {"id": e.id, "nome": e.razao_social, "cliente": bool(seguros_vigentes(e)), "local": local(e)}
+            "empresa": {"id": e.id, "nome": e.razao_social, "cliente": bool(seguros_vigentes(e)), "local": local(e),
+                        "funcionarios": e.funcionarios, "cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte}
             if e else None,
             "pessoa": n.pessoa.nome if n.pessoa else None,
             "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat()} if prox else None,

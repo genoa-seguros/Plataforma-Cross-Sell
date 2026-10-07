@@ -37,7 +37,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Negócios em aberto**: todos os negócios abertos no Pipedrive nos funis de Linhas Financeiras,
   RE, Saúde e Pipo Saúde (sem Garantia, Flash e Canais Parceria), com funil, etapa, valor,
   responsável e próxima atividade. Filtros por funil, responsável e busca; marca as empresas que
-  também estão em Oportunidades.
+  também estão em Oportunidades e, nas que esperam a análise, o que falta para entrar lá. Funcionários
+  e cidade/UF podem ser informados ali mesmo (✎), com as mesmas regras da tela Oportunidades.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.

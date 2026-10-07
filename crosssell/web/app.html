@@ -315,7 +315,10 @@ function negociosPrevia(path) {
   const q = (p.get("q") || "").trim().toLowerCase(), f = p.get("funil"), d = p.get("dono");
   const ls = todos.filter(n => (!f || n.funil === f) && (!d || n.dono === d) && (!q || (n.empresa?.nome || "").toLowerCase().includes(q) || (n.titulo || "").toLowerCase().includes(q)));
   const com = new Set((D.oportunidades || []).filter(o => o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical)).map(o => o.empresa.id));
-  ls.forEach(n => n.temOportunidade = !!n.empresa && com.has(n.empresa.id));
+  const falta = {};
+  (D.oportunidades || []).filter(o => !o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical) && !com.has(o.empresa.id))
+    .forEach(o => falta[o.empresa.id] = [...new Set([...(falta[o.empresa.id] || []), ...o.faltando])]);
+  ls.forEach(n => { n.temOportunidade = !!n.empresa && com.has(n.empresa.id); n.faltaParaOportunidade = (n.empresa && falta[n.empresa.id]) || []; });
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todos.length, funis: [...new Set(todos.map(n => n.funil))].sort(), donos: [...new Set(todos.map(n => n.dono).filter(Boolean))].sort()};
 }
 const api = {
@@ -408,12 +411,14 @@ const previa = {
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/funcionarios$/))) {
       (D.oportunidades || []).filter(o => o.empresa.id == m[1]).forEach(o => { if (b.funcionarios) { o.empresa.funcionarios = b.funcionarios; o.empresa.funcionariosOrigem = "funcionários informado à mão"; } });
       if (D.empresas[m[1]] && b.funcionarios) Object.assign(D.empresas[m[1]], {funcionarios: b.funcionarios, funcionariosFonte: "manual", funcionariosEm: new Date().toISOString().slice(0, 16)});
+      (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.funcionarios = b.funcionarios);
       return {funcionarios: b.funcionarios, funcionariosFonte: b.funcionarios ? "manual" : null};
     }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/local$/))) {
       const local = b.cidade ? `${b.cidade}/${b.uf}` : null;
       (D.oportunidades || []).filter(o => o.empresa.id == m[1]).forEach(o => Object.assign(o.empresa, {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local}));
       if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null});
+      (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => Object.assign(n.empresa, {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local}));
       return {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local};
     }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
@@ -1124,16 +1129,21 @@ async function telaNegocios() {
   document.getElementById("neg-dono").innerHTML = `<option value="">Responsável: todos</option>${r.donos.map(d => `<option value="${esc(d)}" ${d === filtroNeg.dono ? "selected" : ""}>${esc(nomeDe(d))}</option>`).join("")}`;
   document.getElementById("neg-contagem").textContent = `${r.total} de ${r.totalGeral} negócios`;
   document.getElementById("neg-lista").innerHTML = `<div class="tabela"><table>
-    <thead><tr><th>Empresa</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
+    <thead><tr><th>Empresa</th><th>Funcionários · cidade</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
     <tbody>${r.itens.map(n => `<tr>
       <td>${n.empresa ? `<a href="#empresa-${n.empresa.id}"><b>${esc(n.empresa.nome)}</b></a>${n.empresa.cliente ? ' <span class="chip" style="--c:var(--good)">cliente</span>' : ""}
-        <div class="sub">${esc(n.empresa.local || "")}${n.temOportunidade ? ' · <span style="color:var(--good)">também em Oportunidades</span>' : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
+        <div class="sub">${n.temOportunidade ? '<span style="color:var(--good)">também em Oportunidades</span>'
+          : n.faltaParaOportunidade.length ? `<span style="color:var(--warn)" title="Cross sell de Saúde esperando a análise. Preencher à mão leva a empresa para Oportunidades na hora.">falta para Oportunidades: ${esc(n.faltaParaOportunidade.join(", "))}</span>` : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
+      <td class="small" style="white-space:nowrap">${n.empresa ? `<div>${n.empresa.funcionarios ? `${n.empresa.funcionarios.toLocaleString("pt-BR")} func.` : '<span class="mute">—</span>'}
+          <button type="button" class="lapis" data-func="${n.empresa.id}" data-func-atual="${n.empresa.funcionarios || ""}" data-func-nome="${esc(n.empresa.nome)}" title="Informar o número de funcionários">${n.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
+        <div>${n.empresa.local ? esc(n.empresa.local) : '<span class="mute">—</span>'}
+          <button type="button" class="lapis" data-local="${n.empresa.id}" data-local-cidade="${esc(n.empresa.cidadeFonte === "manual" ? n.empresa.cidade || "" : "")}" data-local-uf="${esc(n.empresa.uf || "")}" data-local-nome="${esc(n.empresa.nome)}" title="Informar cidade e UF">${n.empresa.local ? "✎" : "+ cidade"}</button></div>` : ""}</td>
       <td>${esc(n.produto)}${n.pessoa ? `<div class="sub">${esc(n.pessoa)}</div>` : ""}</td>
       <td>${vchip(n.vertical, V[n.vertical] || n.vertical)}<div class="sub">${esc(n.funil)}${n.etapa ? " · " + esc(n.etapa) : ""}</div></td>
       <td class="num">${brl(n.valor)}</td>
       <td class="small">${esc(n.donoNome || "")}</td>
       <td class="small">${n.proximaAtividade ? `${esc(n.proximaAtividade.assunto)}<div class="sub num">${dt(n.proximaAtividade.vencimento)}</div>` : '<span class="mute">nenhuma</span>'}</td>
-    </tr>`).join("") || '<tr><td colspan="6" class="vazio">Nenhum negócio aberto com esses filtros.</td></tr>'}</tbody></table></div>${paginacao(r, "neg")}`;
+    </tr>`).join("") || '<tr><td colspan="7" class="vazio">Nenhum negócio aberto com esses filtros.</td></tr>'}</tbody></table></div>${paginacao(r, "neg")}`;
   ligarPaginacao("neg", n => { filtroNeg.pagina = n; telaNegocios(); });
 }
 

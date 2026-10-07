@@ -282,6 +282,28 @@ def api_tabela(db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual
     return {"linhas": tabela.montar(db, get_settings()), **api_base(db, u)}
 
 
+class FuncionariosIn(BaseModel):
+    funcionarios: int | None
+
+
+@app.post("/api/empresas/{empresa_id}/funcionarios")
+def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depends(get_db),
+                     _u: Usuario = Depends(usuario_atual)):
+    """Número de funcionários informado à mão: vale sobre o do LinkedIn por 180 dias. Vazio volta ao automático."""
+    e = db.get(Empresa, empresa_id)
+    if e is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    if dados.funcionarios is not None and not 0 < dados.funcionarios < 10_000_000:
+        raise HTTPException(400, "Informe um número de funcionários válido.")
+    if dados.funcionarios is None:
+        if e.funcionarios_fonte == "manual":  # volta ao automático: a próxima leitura do LinkedIn preenche
+            e.funcionarios_fonte, e.funcionarios_em = None, None
+    else:
+        e.funcionarios, e.funcionarios_fonte, e.funcionarios_em = dados.funcionarios, "manual", datetime.utcnow()
+    db.commit()
+    return {"funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte}
+
+
 @app.get("/api/empresas/{empresa_id}")
 def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     e = db.get(Empresa, empresa_id)
@@ -289,7 +311,9 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         raise HTTPException(404, "Empresa não encontrada.")
     return {
         "id": e.id, "nome": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
-        "cidade": e.cidade, "uf": e.uf, "funcionarios": e.funcionarios, "score": e.score_relacionamento,
+        "cidade": e.cidade, "uf": e.uf, "funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte,
+        "funcionariosEm": e.funcionarios_em.isoformat(timespec="minutes") if e.funcionarios_em else None,
+        "score": e.score_relacionamento,
         "comp": e.score_componentes,
         "linkedin": e.linkedin_url, "setor": e.setor,
         "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,

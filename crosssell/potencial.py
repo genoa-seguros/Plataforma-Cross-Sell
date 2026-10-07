@@ -213,7 +213,10 @@ def fit_do(e: Empresa | None) -> tuple[float, str | None, str]:
     sinais, valor = [], 0.15
     if e is not None and e.investida:
         sinais.append("recebeu venture capital"); valor += 0.4
-    if _acha(_noticias(e), c["aporte"]):
+    ma = _acha(_noticias(e), c.get("ma", []))
+    if ma:  # comprou, foi comprada, fundiu, recebeu investimento: momento de D&O (e W&I na operação)
+        sinais.append(f"notícia de M&A/investimento ({ma})"); valor += 0.35
+    elif _acha(_noticias(e), c["aporte"]):
         sinais.append("notícia de aporte/conselho"); valor += 0.3
     if e is not None and "anonima" in _norm(e.natureza_juridica):
         sinais.append("S.A."); valor += 0.25

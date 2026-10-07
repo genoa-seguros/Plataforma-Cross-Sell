@@ -48,6 +48,10 @@ linhas_financeiras:
     engenharia, arquitetura, auditoria, corretora]
   # D&O: gestão profissional, aporte, conselho
   aporte: [aporte, captacao, capta, rodada, serie a, serie b, investimento, ipo, conselho, venture, fundo]
+  # M&A e investimentos nas notícias: comprou, foi comprada, fundiu, recebeu ou fez investimento (D&O, W&I)
+  ma: [aquisicao, adquire, adquiriu, adquirida, compra da, compra de, comprou, comprada, fusao, incorporacao, incorpora,
+    m&a, joint venture, vende para, vendida, venda da, novo investimento, investe, investira, investimento de,
+    recebe investimento, injecao de capital, controle acionario, participacao acionaria, oferta publica, abertura de capital]
   fundo: [fundo de investimento, fundos de investimento, gestora de recursos, gestora, asset, private equity,
     venture capital, administracao de fundos, holdings de instituicoes]
   # Cyber: quem tem CTO ou DPO

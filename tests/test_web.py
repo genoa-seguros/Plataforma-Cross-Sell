@@ -391,3 +391,24 @@ def test_head_acessa_a_qualidade_mas_nao_a_equipe(cenario, db):
 
     assert c.post(f"/api/equipe/{v.id}/papel", headers=H, json={"papel": "membro"}).json()["papel"] == "membro"
     assert h.get("/api/qualidade").status_code == 403
+
+
+def test_funcionarios_informados_a_mao_valem_por_180_dias(cenario, db):
+    from datetime import timedelta
+    from crosssell.connectors import linkedin as lk
+
+    c, _ = cenario
+    e = db.scalars(select(Empresa)).first()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert c.post(f"/api/empresas/{e.id}/funcionarios", headers=H, json={"funcionarios": 0}).status_code == 400
+    r = c.post(f"/api/empresas/{e.id}/funcionarios", headers=H, json={"funcionarios": 250}).json()
+    assert r == {"funcionarios": 250, "funcionariosFonte": "manual"}
+    db.expire_all()
+    e = db.get(Empresa, e.id)
+    agora = e.funcionarios_em
+    lk._aplicar_empresa(db, e, {"funcionarios": 900}, agora + timedelta(days=30))
+    assert (e.funcionarios, e.funcionarios_fonte) == (250, "manual")  # o LinkedIn não passa por cima
+    lk._aplicar_empresa(db, e, {"funcionarios": 900}, agora + timedelta(days=181))
+    assert (e.funcionarios, e.funcionarios_fonte, e.funcionarios_em) == (900, "linkedin", None)  # depois de 180 dias, atualiza
+    db.commit()
+    assert c.get(f"/api/empresas/{e.id}").json()["funcionariosFonte"] == "linkedin"

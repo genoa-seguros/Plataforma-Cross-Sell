@@ -38,7 +38,8 @@ class Empresa(Base):
     investida: Mapped[bool | None]  # LinkedIn: recebeu investimento de venture capital
     porte: Mapped[str | None]
     funcionarios: Mapped[int | None]
-    funcionarios_fonte: Mapped[str | None]  # linkedin | pipedrive | planilha
+    funcionarios_fonte: Mapped[str | None]  # manual | linkedin | pipedrive | planilha
+    funcionarios_em: Mapped[datetime | None]  # quando foi informado à mão (o LinkedIn só atualiza 180 dias depois)
     capital_social: Mapped[float | None]
     cidade: Mapped[str | None]
     uf: Mapped[str | None]

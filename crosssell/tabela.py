@@ -21,7 +21,7 @@ from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usu
 from crosssell.normalize import AREA_LABEL, classificar_area
 from crosssell.potencial import influencia, melhor_contato, motivos as motivos_potencial, potencial
 
-FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha"}
+FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha", "manual": "informado à mão"}
 DECISORES = {"socio", "c_level", "diretor"}
 NIVEL = {"socio": 0, "c_level": 0, "diretor": 1, "gerente": 2}
 

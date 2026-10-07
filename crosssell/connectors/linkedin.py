@@ -342,12 +342,23 @@ def _aplicar_pessoa(p: Pessoa, r: dict, quando: datetime) -> str:
     return "pessoas"
 
 
+FUNCIONARIOS_MANUAL_DIAS = 180
+
+
+def manual_em_vigor(e: Empresa, agora: datetime) -> bool:
+    """O número de funcionários foi informado à mão há menos de FUNCIONARIOS_MANUAL_DIAS."""
+    return (e.funcionarios_fonte == "manual" and e.funcionarios_em is not None
+            and e.funcionarios_em > agora - timedelta(days=FUNCIONARIOS_MANUAL_DIAS))
+
+
 def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     e.linkedin_url = _txt(r, "linkedin_url") or e.linkedin_url
     e.setor = _txt(r, "setor") or e.setor
     func = _num(r.get("funcionarios"))
-    if func:  # o número do LinkedIn é o mais exato; prevalece sobre Pipedrive/planilha
-        e.funcionarios, e.funcionarios_fonte = func, "linkedin"
+    # O número do LinkedIn é o mais exato e prevalece sobre Pipedrive/planilha, mas não sobre o informado
+    # à mão: esse só é atualizado depois de FUNCIONARIOS_MANUAL_DIAS
+    if func and not manual_em_vigor(e, quando):
+        e.funcionarios, e.funcionarios_fonte, e.funcionarios_em = func, "linkedin", None
     if _txt(r, "site"):
         e.website = e.website or _txt(r, "site")
         e.dominio = e.dominio or dominio_site(_txt(r, "site"))

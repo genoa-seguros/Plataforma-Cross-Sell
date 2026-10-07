@@ -15,11 +15,13 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
   nada aberto fica de fora (terá uma tela própria, ainda a desenhar).
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
-  ela sai daqui. Colunas, nesta ordem: Score (o Potencial, o Score de Influência e o
-  porquê: + a favor, − contra, ? falta informação), Empresa (Cliente/Lead, funcionários e local),
-  Em negociação, Oportunidade, Já tem conosco (com as caixas de Saúde), Quem decide e a ponte,
-  Notícias e Próxima atividade. Acima da tabela, os *Critérios do Score em cada vertical*, com os
-  pesos de `config/criterios.yaml`. O local (cidade/UF) vem da Receita pelo CNPJ, do endereço da
+  ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
+  (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,
+  ? falta informação), Já tem conosco (com as caixas de Saúde), Quem decide e a ponte, Notícias e
+  Próxima atividade. Acima da tabela, recolhidos, os *Critérios do Score em cada vertical*, com os
+  pesos de `config/criterios.yaml`. O número de funcionários pode ser informado à mão (✎ na coluna
+  Empresa ou na ficha): ele vale sobre o do LinkedIn e do Pipedrive por 180 dias; depois disso, a
+  leitura do LinkedIn volta a atualizar. O local (cidade/UF) vem da Receita pelo CNPJ, do endereço da
   organização no Pipedrive ou da sede no LinkedIn, nessa ordem de chegada. Filtros por vertical,
   cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
   como cada coluna é calculada. Mostra quem decide, a ponte e o porte; *Criar
@@ -77,7 +79,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
     restaurantes), localização 15 (interior perde para a Unimed local) e RH estruturado 10.
   - *Linhas Financeiras*: influência 35 e encaixe do produto 65. E&O: serviço intelectual
     (advocacia, contabilidade, tecnologia, saúde, consultoria). D&O: gestão profissional (venture
-    capital, aporte/conselho nas notícias, S.A., diretoria executiva, porte); fundos e gestoras:
+    capital, notícias de M&A ou investimento (comprou, foi comprada, fusão, recebeu investimento;
+    lista `ma`), aporte/conselho nas notícias, S.A., diretoria executiva, porte); fundos e gestoras:
     IMI. Cyber: CTO ou DPO na empresa, setor com muitos dados.
   - *RE*: influência 30, perfil 45 (galpões, indústrias, transportadoras; empresa grande em
     escritório: empresarial e fiança) e porte 25.

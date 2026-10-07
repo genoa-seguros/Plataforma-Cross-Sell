@@ -481,3 +481,14 @@ def test_local_da_empresa_vem_do_endereco_no_pipedrive(db, settings, monkeypatch
     assert (beta.cidade, beta.uf) == ("Campinas", "SP") and tabela.local(beta) == "Campinas/SP"
     ops = [o for o in tabela.oportunidades(db, settings) if o["empresa"]["id"] == beta.id]
     assert ops and all(o["empresa"]["local"] == "Campinas/SP" for o in ops)
+
+
+def test_noticia_de_m_e_a_conta_para_d_e_o():
+    from crosssell.models import Noticia
+    from crosssell.potencial import fit_do
+
+    e = Empresa(razao_social="Gama Indústria", nome_normalizado="gama industria")
+    base = fit_do(e)[0]
+    e.noticias = [Noticia(titulo="Gama Indústria adquire concorrente no Sul por R$ 200 milhões", url="http://x")]
+    valor, texto, sinal = fit_do(e)
+    assert valor > base and sinal == "+" and "M&A" in texto

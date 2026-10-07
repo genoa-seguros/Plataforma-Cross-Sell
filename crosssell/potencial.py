@@ -157,6 +157,24 @@ def cidade_alvo(cidade: str | None) -> bool:
     return bool(nome) and nome in {_norm(x) for x in criterios()["saude"]["metropoles"]}
 
 
+_REGIAO = re.compile(r"^(greater|grande|regiao (metropolitana )?de|metropolitan region of)\s+|"
+                     r"\s+(e regiao|area|metropolitan area|region|metropolitana)$")
+
+
+def local_alvo(local: str | None) -> bool:
+    """Local de um funcionário no LinkedIn ("São Paulo, São Paulo, Brazil", "Greater São Paulo Area",
+    "Rio de Janeiro e Região") é uma cidade alvo?"""
+    cidade = _norm((local or "").split(",")[0]).strip()
+    for _ in range(2):
+        cidade = _REGIAO.sub("", cidade).strip()
+    return cidade_alvo(cidade)
+
+
+def cargos_saude() -> list[str]:
+    """Cargos de quem decide Saúde, para a lista de funcionários do Sales Navigator (saude.linkedin_cargos)."""
+    return list(criterios()["saude"].get("linkedin_cargos") or [])
+
+
 def praca(e: Empresa | None) -> str | None:
     """Praça de Saúde: "alvo", "fora" ou None (ainda não dá para decidir).
 

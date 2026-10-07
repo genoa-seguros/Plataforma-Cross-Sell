@@ -52,7 +52,12 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   models in `temperatura.MODELOS` are offered (they must accept effort, structured output and the server fallback).
 - **LinkedIn** (`connectors/linkedin.py`, `linkedapi.py`): calls Linked API directly when
   `LINKED_API_TOKEN`/`LINKED_API_IDENTIFICATION_TOKEN` are set. Otherwise it falls back to an n8n webhook
-  (`n8n/`, `docs/linkedin-n8n.md`). Rate-limited by `LINKEDIN_LOTE`/`LINKEDIN_LIMITE_DIA` and tracked in
+  (`n8n/`, `docs/linkedin-n8n.md`). Targets come from `linkedin.alvos()` in Score order, each tagged with the
+  vertical that pays (the company's highest-Score opportunity) and a quota group; `escolher()` applies the daily
+  per-vertical quotas (`LINKEDIN_COTA_*`, leftover passes to others). Saúde companies follow `_passos_saude`
+  (page → praça via Sales Navigator employee locations → decision makers by cargo; SN actions only with
+  `LINKEDIN_SALES_NAVIGATOR=true`, test first with `crosssell linkedin-teste`). Rate-limited by
+  `LINKEDIN_LOTE`/`LINKEDIN_LIMITE_DIA` and tracked in
   `LinkedinPedido` rows.
 - **Web** (`crosssell/web/app.py`): server-rendered Jinja templates for auth pages only. The main UI is a
   single static file, `web/app.html`, that calls `/api/*` with `fetch`. The same HTML is reused by

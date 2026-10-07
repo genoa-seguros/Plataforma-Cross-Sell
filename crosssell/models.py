@@ -294,8 +294,10 @@ class LinkedinPedido(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     workflow_id: Mapped[str] = mapped_column(unique=True)
     id_alvo: Mapped[str] = mapped_column(index=True)  # P123 | E45
-    acao: Mapped[str]  # ler | buscar | area
+    acao: Mapped[str]  # ler | buscar | area | praca | pessoas
     area: Mapped[str | None]
+    vertical: Mapped[str | None]  # vertical que pagou a consulta (cota do dia)
+    grupo: Mapped[str | None]  # caracteristicas | pessoas | geral
     criado_em: Mapped[datetime] = mapped_column(default=_now, index=True)
     concluido_em: Mapped[datetime | None] = mapped_column(index=True)
     situacao: Mapped[str] = mapped_column(default="pendente")  # pendente | aplicado | erro | expirado

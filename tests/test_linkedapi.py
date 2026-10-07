@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import httpx
 from sqlalchemy import select
 
-from crosssell import tabela
+from crosssell import potencial, tabela
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors.linkedapi import LinkedApiClient, definicao, resultado
 from crosssell.models import Empresa, LinkedinPedido, Pessoa
@@ -14,7 +14,7 @@ from tests.test_fluxo import carregar
 
 EMPRESA_ALFA = {
     "name": "Metalúrgica Alfa", "publicUrl": "https://www.linkedin.com/company/metalurgica-alfa",
-    "industry": "Metalurgia", "employeesCount": 850, "website": "https://alfa.com.br", "headquarters": "Joinville, SC",
+    "industry": "Metalurgia", "employeesCount": 850, "urn": "urn:li:fsd_company:1035", "website": "https://alfa.com.br", "headquarters": "Joinville, SC",
     "then": [
         {"actionType": "st.retrieveCompanyDMs", "success": True, "data": [
             {"name": "Ana Souza", "headline": "CFO | Metalúrgica Alfa", "publicUrl": "https://www.linkedin.com/in/ana-cfo"},
@@ -44,6 +44,9 @@ class LinkedApiFalsa:
         self.pendentes = pendentes  # quantas consultas responder "running" antes de concluir
         self.falhas: dict[tuple[str, int], Exception] = {}  # (método, nº da chamada) -> exceção a levantar
         self.chamadas = {"POST": 0, "GET": 0}
+        # locais dos funcionários no Sales Navigator: 4 de 6 com cidade em cidades alvo (o "Brazil" não conta)
+        self.locais = ["São Paulo, São Paulo, Brazil", "Greater São Paulo Area", "Barueri, São Paulo, Brazil",
+                       "Rio de Janeiro e Região", "Joinville, Santa Catarina, Brazil", "Blumenau, SC", "Brazil"]
 
     def _resposta(self, d: dict):
         t = d["actionType"]
@@ -54,6 +57,14 @@ class LinkedApiFalsa:
         if t == "st.searchPeople":
             return [{"name": "Ana Souza", "headline": "Advogada", "publicUrl": "https://www.linkedin.com/in/ana-adv"},
                     {"name": "Ana Souza", "headline": "CFO | Metalúrgica Alfa", "publicUrl": "https://www.linkedin.com/in/ana-cfo"}]
+        if t == "nv.openCompanyPage":
+            filtro = d["then"][0].get("filter")
+            lista = ([{"name": "Ana Souza", "position": "CFO", "hashedUrl": "https://www.linkedin.com/sales/lead/ana"},
+                      {"name": "Carla Mendes", "position": "Diretora de RH", "hashedUrl": "https://www.linkedin.com/sales/lead/carla"}]
+                     if filtro else [{"name": f"F{i}", "position": "Operador", "location": local}
+                                     for i, local in enumerate(self.locais)])
+            return {"name": "Metalúrgica Alfa", "employeesCount": 850,
+                    "then": [{"actionType": "nv.retrieveCompanyEmployees", "success": True, "data": lista}]}
         if t == "st.openCompanyPage" and d["then"] and d["then"][0]["actionType"] == "st.retrieveCompanyEmployees":
             lista = [] if "beta" in d["companyUrl"] else FUNCIONARIOS_RH  # cada empresa com os seus funcionários
             return {**{k: v for k, v in EMPRESA_ALFA.items() if k != "then"},
@@ -155,7 +166,16 @@ def test_rodadas_buscam_leem_e_procuram_rh(db, settings):
     assert {p.nome for p in alfa.pessoas} >= {"Ana Souza", "Bruno Prado"}
     areas = sorted(p["def"]["companyUrl"].rsplit("/", 1)[1] for p in api.pedidos.values() if p["def"].get("then")
                    and p["def"]["then"][0]["actionType"] == "st.retrieveCompanyEmployees")
-    # Uma leitura de funcionários por empresa: Alfa (falta RH para Saúde) e Beta (falta RH e Operações)
+    # Beta (sem oportunidade de Saúde) segue a leitura geral: falta Operações para RE.
+    # Alfa tem oportunidade de Saúde, mas a sede (Joinville) não é cidade alvo e sem Sales Navigator não dá para
+    # ver onde estão os funcionários: quem decide só é procurado quando a praça estiver decidida
+    assert areas == ["beta"]
+    assert alfa.cidade == "Joinville, SC" and alfa.cidade_fonte == "linkedin"
+    alfa.cidade, alfa.uf, alfa.cidade_fonte = "São Paulo", "SP", "manual"  # informada à mão: decide a praça
+    db.commit()
+    lk.executar(db, s, client)
+    areas = sorted(p["def"]["companyUrl"].rsplit("/", 1)[1] for p in api.pedidos.values() if p["def"].get("then")
+                   and p["def"]["then"][0]["actionType"] == "st.retrieveCompanyEmployees")
     assert areas == ["beta", "metalurgica-alfa"]
     lk.executar(db, s, client)
     lk.executar(db, s, client)
@@ -241,3 +261,118 @@ def test_funcionarios_reais_da_salvy(db, settings):
                      "capturado_em": "2026-10-04T10:00:00"}])
     assert sorted(p.nome for p in salvy.pessoas) == ["Artur Negrão", "Lucas Rosa"]
     assert "funcionarios" in salvy.linkedin_areas
+
+
+def test_saude_com_sales_navigator_decide_a_praca_e_acha_quem_decide(db, settings):
+    s = config(settings, linkedin_sales_navigator=True)
+    carregar(db, s)
+    api = LinkedApiFalsa()
+    client = api.client()
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    for _ in range(3):  # busca, leitura da página (com o urn) e a praça pelo Sales Navigator
+        lk.executar(db, s, client)
+    db.expire_all()
+    assert alfa.cidade == "Joinville, SC" and alfa.linkedin_areas["urn"] == "urn:li:fsd_company:1035"
+    praca = next(p["def"] for p in api.pedidos.values() if p["def"]["actionType"] == "nv.openCompanyPage")
+    assert praca["companyHashedUrl"] == "https://www.linkedin.com/sales/company/1035"
+    assert praca["then"] == [{"actionType": "nv.retrieveCompanyEmployees", "limit": 850}]
+    lk.executar(db, s, client)
+    db.expire_all()
+    # 4 de 6 funcionários com cidade estão em cidades alvo: 67% >= 30% -> alvo, mesmo com a matriz em Joinville
+    assert alfa.praca == "alvo" and alfa.praca_fatia == 0.667
+    assert potencial.praca(alfa) == "alvo"
+    # Na praça: lista de quem decide por cargo (Sales Navigator), paga pela cota de pessoas de Saúde
+    pessoas = [p["def"] for p in api.pedidos.values() if p["def"]["actionType"] == "nv.openCompanyPage"
+               and p["def"]["then"][0].get("filter")]
+    assert len(pessoas) == 1 and "diretor de rh" in pessoas[0]["then"][0]["filter"]["positions"]
+    # Paga a vertical de maior Score da Alfa (a leitura serve a todas); grupo "pessoas" só na cota de Saúde
+    ped = db.scalar(select(LinkedinPedido).where(LinkedinPedido.acao == "pessoas"))
+    paga = lk._candidatos_alvo(db, s)[2][alfa.id][0]
+    assert ped.vertical == paga and ped.grupo == ("pessoas" if paga == "saude" else "geral")
+    lk.executar(db, s, client)
+    db.expire_all()
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    carla = db.scalar(select(Pessoa).where(Pessoa.nome == "Carla Mendes"))
+    assert ana.linkedin_headline == "CFO"  # contato do e-mail ganha o cargo atual
+    assert carla.empresa_id == alfa.id and carla.linkedin_url.endswith("/sales/lead/carla")
+    assert not [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"]  # nada mais até a validade
+    # Depois de 180 dias, relê a empresa, a praça e a lista
+    depois = datetime.utcnow() + timedelta(days=181)
+    assert {a["acao"] for a in lk.alvos(db, s, depois) if a["id_alvo"] == f"E{alfa.id}"} == {"ler", "praca", "pessoas"}
+
+
+def test_fora_da_praca_nao_gasta_consulta_com_pessoas(db, settings):
+    s = config(settings, linkedin_sales_navigator=True)
+    carregar(db, s)
+    api = LinkedApiFalsa()
+    api.locais = ["Joinville, Santa Catarina, Brazil"] * 8 + ["São Paulo, São Paulo, Brazil"]
+    for _ in range(5):
+        lk.executar(db, s, api.client())
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    assert alfa.praca == "fora" and alfa.praca_fatia == 0.111
+    assert not any(p["def"]["then"][0].get("filter") for p in api.pedidos.values()
+                   if p["def"]["actionType"] == "nv.openCompanyPage")
+    assert potencial.praca(alfa) == "fora" and potencial.faltando_saude(alfa) == []  # analisada, fora da praça
+
+
+def test_cidade_alvo_dispensa_a_consulta_da_praca(db, settings):
+    s = config(settings, linkedin_sales_navigator=True)
+    carregar(db, s)
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    alfa.cidade, alfa.uf, alfa.cidade_fonte = "Campinas", "SP", "manual"  # fora da lista, mas à mão: decide
+    alfa.funcionarios, alfa.funcionarios_fonte, alfa.funcionarios_em = 300, "manual", datetime.utcnow()
+    alfa.setor = "Metalurgia"
+    db.commit()
+    assert [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"] == []  # nem página, nem praça
+    alfa.linkedin_url = "https://www.linkedin.com/company/metalurgica-alfa"
+    db.commit()
+    assert not [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"]  # fora da praça: nem pessoas
+
+
+def test_cotas_por_vertical_e_sobra():
+    cotas = {("saude", "caracteristicas"): 2, ("saude", "pessoas"): 1, ("linhas_financeiras", "geral"): 1,
+             ("ramos_elementares", "geral"): 1}
+    fila = ([{"id_alvo": f"S{i}", "vertical": "saude", "grupo": "caracteristicas"} for i in range(5)]
+            + [{"id_alvo": "P1", "vertical": "saude", "grupo": "pessoas"}]
+            + [{"id_alvo": f"L{i}", "vertical": "linhas_financeiras", "grupo": "geral"} for i in range(3)])
+    ids = lambda xs: [a["id_alvo"] for a in xs]  # noqa: E731
+    # Alterna entre as cotas com saldo, na ordem do Score
+    assert ids(lk.escolher(fila, cotas, {}, 4)) == ["S0", "P1", "L0", "S1"]
+    # RE não tem o que fazer: a sobra vai para os próximos da fila
+    assert ids(lk.escolher(fila, cotas, {}, 7)) == ["S0", "P1", "L0", "S1", "S2", "S3", "S4"]
+    # Cota de Saúde já usada nas últimas 24 h: vai LF primeiro
+    assert ids(lk.escolher(fila, cotas, {("saude", "caracteristicas"): 2, ("saude", "pessoas"): 1}, 2)) == ["L0", "S0"]
+    assert lk.escolher(fila, cotas, {}, 0) == []
+
+
+def test_resultado_do_sales_navigator():
+    praca = resultado("E1", "empresa", "praca", None, {"actionType": "nv.openCompanyPage", "success": True, "data": {
+        "name": "X", "employeesCount": 120, "then": [{"actionType": "nv.retrieveCompanyEmployees", "success": True,
+                                                       "data": [{"name": "A", "location": "Recife, Pernambuco, Brazil"}]}]}})
+    assert praca["total"] == 120 and praca["locais"] == ["Recife, Pernambuco, Brazil"]
+    falha = resultado("E1", "empresa", "pessoas", None, {"actionType": "nv.openCompanyPage", "success": True, "data": {
+        "name": "X", "then": [{"actionType": "nv.retrieveCompanyEmployees", "success": False,
+                               "error": {"type": "noSalesNavigator", "message": "Sem Sales Navigator"}}]}})
+    assert falha["erro"] == "Sem Sales Navigator"
+    assert definicao({"tipo": "pessoa", "acao": "ler", "linkedin_url": "https://www.linkedin.com/sales/lead/x"}) == \
+        {"actionType": "nv.openPersonPage", "personHashedUrl": "https://www.linkedin.com/sales/lead/x",
+         "basicInfo": True, "then": []}
+
+
+def test_comando_de_teste_do_sales_navigator(db, settings):
+    s = config(settings)
+    carregar(db, s)
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    alfa.linkedin_url = "https://www.linkedin.com/company/metalurgica-alfa"
+    db.commit()
+    linhas, client = [], LinkedApiFalsa().client()
+    r = lk.testar_sales_navigator(db, s, alfa, client, saida=linhas.append, espera=0)
+    texto = "\n".join(linhas)
+    assert r == {"praca": "alvo", "fatia": 4 / 6, "pessoas": 2, "aplicado": False}
+    assert "sales/company/1035" in texto and "← cidade alvo" in texto and "Carla Mendes · Diretora de RH" in texto
+    db.expire_all()
+    assert alfa.praca is None  # sem --aplicar não grava
+    assert len(db.scalars(select(LinkedinPedido)).all()) == 3  # página, praça e pessoas contam no limite de 24 h
+    lk.testar_sales_navigator(db, s, alfa, client, aplicar=True, saida=linhas.append, espera=0)
+    db.expire_all()
+    assert alfa.praca == "alvo" and alfa.linkedin_areas["urn"] and "Carla Mendes" in {p.nome for p in alfa.pessoas}

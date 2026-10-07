@@ -117,15 +117,46 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 
 1. confere as consultas em andamento na Linked API e aplica as que terminaram;
 2. inicia até `LINKEDIN_LOTE` novas (10), sem passar de `LINKEDIN_LIMITE_DIA` (50) em 24 h,
-   na ordem da tabela (maior score primeiro) e depois das Oportunidades.
+   na ordem do Score (Oportunidades primeiro, depois as empresas dos negócios abertos).
 
-Tipos de consulta: **ler** (perfil, ou página da empresa com decisores e posts), **buscar**
-(procura pelo nome; a pessoa só é aceita se o nome e a empresa conferirem no título, e a empresa
-pelo domínio ou pelo nome com local no Brasil) e **funcionários** (lista de até 50 pessoas da
-página da empresa, quando falta alguém da área que decide; a plataforma classifica cada um pela
-área do título e descarta quem cita outra organização, como investidores e conselheiros). Releitura a cada 90 dias; quem não foi
-encontrado volta a ser procurado depois de 30 dias e pode receber o endereço à mão na tela
-Equipe. O link da empresa também é procurado de graça no site dela.
+**Cotas por vertical** (consultas por dia): Saúde 30 (`LINKEDIN_COTA_SAUDE`, das quais 12 para
+quem decide, `LINKEDIN_COTA_SAUDE_PESSOAS`), Linhas Financeiras 10 (`LINKEDIN_COTA_LF`) e RE 10
+(`LINKEDIN_COTA_RE`). Paga a vertical da oportunidade de maior Score da empresa, e o que for lido
+serve a todas. A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por
+não ter o que consultar) passa para as outras.
+
+**Fluxo de Saúde**, um passo por vez:
+
+1. *Empresa*: acha a página (link no site, de graça, ou busca pelo nome) e lê funcionários, setor,
+   sede e o urn. Não gasta consulta se os funcionários foram informados à mão (valem 180 dias) e o
+   setor já é conhecido (LinkedIn ou CNAE).
+2. *Praça*: cidade informada à mão ou cidade alvo (`saude.metropoles`) decide sozinha. Fora disso,
+   o Sales Navigator traz a lista de funcionários com o local de cada um; com pelo menos
+   `saude.praca_fatia_minima` (30%) em cidades alvo a empresa vale, senão fica *fora da praça*.
+3. *Quem decide*: só na praça, a lista do Sales Navigator filtrada pelos cargos de
+   `saude.linkedin_cargos` (diretor de RH, CHRO, Head de People, Founder, CFO). Atualiza o cargo de
+   quem já conhecemos pelos e-mails e cadastra quem falta. Sem Sales Navigator, usa a lista comum de
+   funcionários da página.
+
+Linhas Financeiras e RE seguem, por enquanto, a leitura geral: **ler** (perfil, ou página da
+empresa com decisores e posts), **buscar** (procura pelo nome; a pessoa só é aceita se o nome e a
+empresa conferirem no título, e a empresa pelo domínio ou pelo nome com local no Brasil) e
+**funcionários** (lista de até 50 pessoas da página da empresa, quando falta alguém da área que
+decide; descarta quem cita outra organização, como investidores e conselheiros).
+
+Releitura a cada 180 dias (`LINKEDIN_VALIDADE_DIAS`), também para a praça e quem decide; quem não
+foi encontrado volta a ser procurado depois de 30 dias e pode receber o endereço à mão na tela
+Equipe.
+
+**Sales Navigator** (`LINKEDIN_SALES_NAVIGATOR`, desligado por padrão): antes de ligar, teste no
+servidor com algumas empresas (gasta até 3 consultas por empresa e mostra o que voltou):
+
+```bash
+docker compose exec web crosssell linkedin-teste 123 "Nome da Empresa"   # só mostra
+docker compose exec web crosssell linkedin-teste 123 --aplicar           # grava praça e pessoas
+```
+
+Se a praça e as pessoas fizerem sentido, ponha `LINKEDIN_SALES_NAVIGATOR=true` no `deploy/.env`.
 
 Tokens: `LINKED_API_TOKEN` e `LINKED_API_IDENTIFICATION_TOKEN` (painel da Linked API). O caminho
 antigo pelo n8n continua disponível se esses tokens não forem definidos

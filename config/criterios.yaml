@@ -38,6 +38,11 @@ saude:
     sao jose dos pinhais, porto alegre, canoas, florianopolis, sao jose, brasilia, goiania, salvador, recife,
     jaboatao dos guararapes, fortaleza, belem, manaus, vitoria, vila velha, serra, natal, joao pessoa, maceio,
     aracaju, teresina, sao luis, campo grande, cuiaba, porto velho, rio branco, macapa, boa vista, palmas]
+  # Quem decide Saúde: cargos procurados na lista de funcionários do Sales Navigator (filtro de cargo)
+  linkedin_cargos: [diretor de rh, diretora de rh, diretor de recursos humanos, diretora de recursos humanos, chro,
+    chief human resources, chief people, head de pessoas, head de people, head of people, head de rh, head of hr,
+    gerente de rh, gerente de recursos humanos, people, founder, fundador, fundadora, cofundador, co-founder, cfo,
+    diretor financeiro, diretora financeira]
   # RH que olha para cultura, benefícios e processos
   rh_bom: [cultura, beneficios, benefits, people, pessoas, employee experience, clima, engajamento, processos,
     desenvolvimento humano, talent, talentos, business partner, total rewards, remuneracao]

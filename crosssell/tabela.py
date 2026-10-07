@@ -19,7 +19,19 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.normalize import AREA_LABEL, classificar_area
-from crosssell.potencial import influencia, melhor_contato, motivos as motivos_potencial, potencial
+from crosssell.potencial import (faltando_saude, influencia, melhor_contato, motivos as motivos_potencial,
+                                 potencial, praca)
+
+# Verticais que já têm fluxo de análise definido e aparecem em Oportunidades (RE entra quando o dela for definido)
+VERTICAIS_OPORTUNIDADES = ("saude",)
+
+
+def faltando(vertical: str, e: Empresa | None) -> list[str]:
+    """O que falta para a empresa estar analisada na vertical (vazio = analisada, entra em Oportunidades)."""
+    if vertical == "saude":
+        return faltando_saude(e)
+    return ["fluxo da vertical"]
+
 
 FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha", "manual": "informado à mão"}
 DECISORES = {"socio", "c_level", "diretor"}
@@ -213,6 +225,37 @@ def montar(db: Session, settings: Settings, hoje: date | None = None) -> list[di
     return sorted(linhas, key=lambda x: (x["score"], x["influencia"], x["valor"] or 0), reverse=True)
 
 
+def negocios_abertos(db: Session, settings: Settings) -> list[dict]:
+    """Negócios abertos nos funis das verticais (LF, RE, Saúde, Pipo; sem Canais Parceria), poucos campos e
+    poucas consultas (a tabela antiga fazia várias consultas por negócio)."""
+    funis = {pid: f for pid, f in settings.pipelines().items() if f["tabela"] and f["vertical"]}
+    nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
+    negocios = db.scalars(select(Negocio).where(Negocio.fonte == "pipedrive", Negocio.status == "aberto",
+                                                Negocio.pipeline_id.in_(funis))
+                          .options(selectinload(Negocio.empresa).selectinload(Empresa.negocios),
+                                   selectinload(Negocio.pessoa))).all()
+    proxima: dict[int, Atividade] = {}
+    for a in db.scalars(select(Atividade).where(Atividade.negocio_id.in_([n.id for n in negocios]),
+                                                Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
+        proxima.setdefault(a.negocio_id, a)
+    saida = []
+    for n in negocios:
+        e = n.empresa
+        if interna(e, settings):
+            continue
+        prox = proxima.get(n.id)
+        saida.append({
+            "id": n.id, "pipedriveId": n.id_externo, "titulo": n.titulo, "produto": n.produto or n.titulo,
+            "funil": funis[n.pipeline_id]["nome"], "etapa": n.etapa, "vertical": n.vertical, "valor": n.valor,
+            "dono": n.responsavel_email, "donoNome": nomes.get(n.responsavel_email or "", n.responsavel_email),
+            "empresa": {"id": e.id, "nome": e.razao_social, "cliente": bool(seguros_vigentes(e)), "local": local(e)}
+            if e else None,
+            "pessoa": n.pessoa.nome if n.pessoa else None,
+            "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat()} if prox else None,
+        })
+    return sorted(saida, key=lambda x: ((x["empresa"] or {}).get("nome") or "").lower())
+
+
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
     """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente) e
     leads com algum card aberto no Pipedrive (negócio aberto com vertical, em qualquer funil).
@@ -265,7 +308,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "score": pot["score"], "criterios": pot["criterios"],
                 "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
                 "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
-                            "noPipedrive": bool(e.pipedrive_org_id), "local": local(e)},
+                            "noPipedrive": bool(e.pipedrive_org_id), "local": local(e), "cidade": e.cidade, "uf": e.uf,
+                            "cidadeFonte": e.cidade_fonte},
                 "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
@@ -276,6 +320,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,
+                "faltando": (falta := faltando(v, e)), "analisada": not falta,
+                "praca": praca(e) if v == "saude" else None,
             })
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 

@@ -19,7 +19,7 @@ pytest                                       # all tests (tests/)
 pytest tests/test_fluxo.py::test_regra_de_vigencia   # single test
 crosssell initdb                             # apply DB migrations only; users are created by a master on the Equipe screen
 crosssell serve                              # web app at http://localhost:8000 (set COOKIE_SEGURO=false locally)
-crosssell rotina                             # hourly job: pipedrive, pipedrive-excluidas, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
+crosssell rotina                             # hourly job: pipedrive, pipedrive-excluidas, cnpj-sites, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
 DATABASE_URL=sqlite:///demo.db python scripts/demo.py                         # fake demo data
 DATABASE_URL=sqlite:///demo.db python scripts/exportar_preview.py preview.html --exemplo   # static single-file preview
 ```
@@ -61,6 +61,10 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
   master-only routes use `somente_master`; Qualidade routes use `acesso_qualidade` (master or `papel="head"`).
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
+- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`, today only `saude`; `faltando()` says
+  what is missing: praça, funcionários, setor). `potencial.praca(e)` decides the Saúde praça: a manual city
+  (`cidade_fonte="manual"`) decides alone, a city in `metropoles` is alvo, otherwise `Empresa.praca` (set by the
+  employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group
   `crosssell-equipe`. `email_m365.sincronizar` records `leitura_em` / `leitura_erro` ("recusada" = 403).

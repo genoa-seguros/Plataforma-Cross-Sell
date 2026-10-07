@@ -28,7 +28,10 @@ saude:
     bar e restaurante, vigilancia, limpeza]
   qualificacao_baixa: [industria, fabricacao, manufatura, metalurg, transporte, transportadora, logistic,
     alimentacao, construcao]
-  # Fora das capitais e regiões metropolitanas: Unimed local forte, que não trabalha com corretora
+  # Cidade alvo: boa rede hospitalar (4 a 5 hospitais ou mais) e sem depender da Unimed local.
+  # Matriz fora da lista: vale se pelo menos esta fatia dos funcionários (LinkedIn) estiver em cidades alvo.
+  praca_fatia_minima: 0.3
+  # Cidades alvo (capitais e regiões metropolitanas). Fora delas, a Unimed local costuma ser forte.
   metropoles: [sao paulo, barueri, osasco, santana de parnaiba, santo andre, sao bernardo do campo, sao caetano do sul,
     guarulhos, diadema, cotia, taboao da serra, carapicuiba, embu das artes, alphaville, rio de janeiro, niteroi,
     duque de caxias, nova iguacu, sao goncalo, belo horizonte, contagem, betim, nova lima, curitiba,

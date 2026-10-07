@@ -43,6 +43,13 @@ class Empresa(Base):
     capital_social: Mapped[float | None]
     cidade: Mapped[str | None]
     uf: Mapped[str | None]
+    cidade_fonte: Mapped[str | None]  # manual | receita | pipedrive | linkedin
+    cidade_em: Mapped[datetime | None]  # quando foi informada à mão (vale sobre as outras fontes)
+    # Praça de Saúde: "alvo" ou "fora" (cidade fora da lista e menos de 30% dos funcionários em cidades alvo)
+    praca: Mapped[str | None]
+    praca_fatia: Mapped[float | None]  # fatia dos funcionários (LinkedIn) em cidades alvo, 0 a 1
+    praca_em: Mapped[datetime | None]  # quando a distribuição dos funcionários foi lida
+    site_cnpj_em: Mapped[datetime | None]  # última procura do CNPJ no site da empresa
     pipedrive_org_id: Mapped[int | None] = mapped_column(index=True)
     enriquecido_em: Mapped[datetime | None]
 

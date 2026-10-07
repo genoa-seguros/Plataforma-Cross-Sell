@@ -11,6 +11,7 @@
    linkedin. A interface ProvedorPessoas permite plugar um provedor via API.
 """
 
+import re
 from datetime import datetime
 from typing import Protocol
 
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 from crosssell.config import Settings
 from crosssell.connectors.planilhas import ler_linhas, mapear
 from crosssell.models import Empresa
-from crosssell.normalize import normalizar_cnpj
+from crosssell.normalize import cnpj_valido, normalizar_cnpj, normalizar_nome_empresa, so_digitos
 from crosssell.resolver import resolver_empresa, resolver_pessoa
 
 BRASILAPI = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
@@ -61,8 +62,8 @@ def enriquecer_receita(db: Session, empresa: Empresa, http: httpx.Client | None 
     if d.get("natureza_juridica"):
         empresa.natureza_juridica = f"{d.get('codigo_natureza_juridica') or ''} - {d['natureza_juridica']}".strip(" -")
     empresa.capital_social = d.get("capital_social") or empresa.capital_social
-    empresa.cidade = d.get("municipio") or empresa.cidade
-    empresa.uf = d.get("uf") or empresa.uf
+    if empresa.cidade_fonte != "manual" and d.get("municipio"):  # a cidade da matriz; a informada à mão vale mais
+        empresa.cidade, empresa.uf, empresa.cidade_fonte = d["municipio"], d.get("uf") or empresa.uf, "receita"
     for socio in d.get("qsa") or []:
         if socio.get("nome_socio"):
             p = resolver_pessoa(db, nome=socio["nome_socio"].title(), empresa=empresa,
@@ -111,3 +112,66 @@ def registrar_pessoas(db: Session, linhas: list[dict]) -> dict:
 
 def importar_linkedin(db: Session, settings: Settings, conteudo: bytes, nome_arquivo: str) -> dict:
     return registrar_pessoas(db, [mapear(lin, MAPA_LINKEDIN) for lin in ler_linhas(conteudo, nome_arquivo)])
+
+
+# --- CNPJ no site da empresa ----------------------------------------------------------
+# Quase todo site brasileiro traz o CNPJ no rodapé. Achado o CNPJ, a Receita dá a cidade da matriz, porte,
+# CNAE e sócios, sem gastar consulta do LinkedIn. Só é aceito se o nome na Receita bater com o da empresa
+# (o rodapé pode trazer o CNPJ da agência que fez o site, por exemplo).
+_CNPJ_NO_TEXTO = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+_PALAVRAS_GENERICAS = {"ltda", "eireli", "servicos", "comercio", "industria", "brasil", "grupo", "solucoes",
+                       "tecnologia", "consultoria", "participacoes", "holding", "empresa", "companhia"}
+
+
+def cnpjs_no_html(html: str) -> list[str]:
+    """CNPJs válidos (dígitos verificadores) que aparecem no texto, na ordem, sem repetir."""
+    vistos = []
+    for bruto in _CNPJ_NO_TEXTO.findall(html or ""):
+        c = so_digitos(bruto)
+        if len(c) == 14 and cnpj_valido(c) and c not in vistos:
+            vistos.append(c)
+    return vistos
+
+
+def _termos(texto: str | None) -> set[str]:
+    return {t for t in normalizar_nome_empresa(texto or "").split() if len(t) >= 4 and t not in _PALAVRAS_GENERICAS}
+
+
+def mesma_empresa(e: Empresa, dados: dict) -> bool:
+    """O nome na Receita (razão social ou fantasia) tem alguma palavra marcante do nome ou do domínio da empresa."""
+    nossos = _termos(e.razao_social) | _termos(e.nome_fantasia) | _termos((e.dominio or "").split(".")[0])
+    deles = _termos(dados.get("razao_social")) | _termos(dados.get("nome_fantasia"))
+    return bool(nossos & deles)
+
+
+def cnpj_por_site(db: Session, empresa_ids: list[int], http: httpx.Client | None = None, limite: int = 50) -> dict:
+    """Procura o CNPJ no site das empresas sem CNPJ (as da tabela e das Oportunidades), uma vez por empresa."""
+    http = http or httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    cont = {"verificadas": 0, "encontradas": 0}
+    pendentes = db.scalars(select(Empresa).where(Empresa.id.in_(empresa_ids), Empresa.cnpj.is_(None),
+                                                Empresa.dominio.is_not(None), Empresa.site_cnpj_em.is_(None))
+                           .limit(limite)).all()
+    for e in pendentes:
+        e.site_cnpj_em = datetime.utcnow()
+        cont["verificadas"] += 1
+        achados = []
+        for url in (f"https://{e.dominio}", f"https://www.{e.dominio}"):
+            try:
+                r = http.get(url)
+            except httpx.HTTPError:
+                continue
+            if r.status_code == 200:
+                achados = cnpjs_no_html(r.text)
+                break
+        for cnpj in achados[:3]:
+            try:
+                r = http.get(BRASILAPI.format(cnpj=cnpj))
+            except httpx.HTTPError:
+                continue
+            if r.status_code == 200 and mesma_empresa(e, r.json()):
+                e.cnpj = cnpj
+                enriquecer_receita(db, e, http)
+                cont["encontradas"] += 1
+                break
+        db.commit()
+    return cont

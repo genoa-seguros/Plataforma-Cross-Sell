@@ -485,3 +485,24 @@ def test_negocios_em_aberto(cenario, db):
     funil = r["funis"][0]
     assert all(n["funil"] == funil for n in c.get(f"/api/negocios?funil={funil}").json()["itens"])
     assert c.get("/api/negocios?q=zzzz").json()["total"] == 0
+
+
+def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = Empresa(razao_social="Lead Novo SA", nome_normalizado="lead novo", setor="Software")  # negociando LF
+    db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo="991",
+                           pipeline_id=1, status="aberto", titulo="D&O")])
+    db.commit()
+    itens = c.get("/api/negocios").json()["itens"]
+    n = next(x for x in itens if x["empresa"] and x["empresa"]["id"] == e.id)
+    eid = n["empresa"]["id"]
+    assert n["faltaParaOportunidade"] == ["cidade", "funcionários"] and not n["temOportunidade"]
+    assert {"funcionarios", "cidade", "uf", "cidadeFonte"} <= set(n["empresa"])
+    # Preencher cidade e funcionários na própria aba leva a empresa para mais perto de Oportunidades
+    hdr = {"X-Cross-Sell": "1"}
+    assert c.post(f"/api/empresas/{eid}/local", json={"cidade": "São Paulo", "uf": "SP"}, headers=hdr).status_code == 200
+    assert c.post(f"/api/empresas/{eid}/funcionarios", json={"funcionarios": 120}, headers=hdr).status_code == 200
+    depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
+    assert depois["empresa"]["funcionarios"] == 120 and depois["empresa"]["cidadeFonte"] == "manual"
+    assert depois["temOportunidade"] and depois["faltaParaOportunidade"] == []  # agora está em Oportunidades

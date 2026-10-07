@@ -146,14 +146,64 @@ def _cidade(e: Empresa | None) -> tuple[str, str]:
     return _norm(partes[0]), uf.upper()
 
 
+def fatia_minima() -> float:
+    """Fatia mínima dos funcionários em cidades alvo para a empresa valer em Saúde (config: saude.praca_fatia_minima)."""
+    return float(criterios()["saude"].get("praca_fatia_minima", 0.3))
+
+
+def cidade_alvo(cidade: str | None) -> bool:
+    """Cidade com boa rede hospitalar e sem depender da Unimed local (lista saude.metropoles)."""
+    nome = _norm((cidade or "").split(",")[0]).strip()
+    return bool(nome) and nome in {_norm(x) for x in criterios()["saude"]["metropoles"]}
+
+
+def praca(e: Empresa | None) -> str | None:
+    """Praça de Saúde: "alvo", "fora" ou None (ainda não dá para decidir).
+
+    A cidade informada à mão decide sozinha. A de outra fonte (Receita, Pipedrive, LinkedIn) decide quando é
+    alvo; fora da lista, vale a distribuição dos funcionários no LinkedIn (e.praca, gravada pela consulta),
+    porque a matriz registrada nem sempre é onde as pessoas trabalham."""
+    if e is None:
+        return None
+    cidade, _ = _cidade(e)
+    if e.cidade_fonte == "manual" and cidade:
+        return "alvo" if cidade_alvo(cidade) else "fora"
+    if cidade and cidade_alvo(cidade):
+        return "alvo"
+    return e.praca
+
+
+def faltando_saude(e: Empresa | None) -> list[str]:
+    """O que falta para a empresa estar analisada em Saúde (vazio = analisada). Pessoas não entram:
+    a empresa aparece com "quem decide: em busca" e é completada depois."""
+    if e is None:
+        return ["empresa"]
+    falta = []
+    if praca(e) is None:
+        falta.append("praça" if _cidade(e)[0] else "cidade")
+    if praca(e) != "fora":  # fora da praça já está decidida: não precisa do resto
+        if not e.funcionarios:
+            falta.append("funcionários")
+        if not (e.setor or e.cnae or e.descricao):
+            falta.append("setor")
+    return falta
+
+
 def c_localizacao(e: Empresa | None) -> dict:
     cidade, uf = _cidade(e)
+    p = praca(e)
+    rotulo = (e.cidade.split(",")[0].strip().title() + (f"/{uf}" if uf else "")) if cidade else ""
+    if p == "fora":
+        return _crit("localizacao", 0.0, f"fora da praça{': ' + rotulo if rotulo else ''} (sem rede hospitalar forte ou "
+                     "Unimed local dominante)", "-")
+    if p == "alvo" and cidade and cidade_alvo(cidade):
+        return _crit("localizacao", 1.0, None, "")
+    if p == "alvo":  # matriz fora da lista, mas boa parte da equipe em cidades alvo
+        fatia = f"{round(100 * e.praca_fatia)}% " if e.praca_fatia is not None else ""
+        return _crit("localizacao", 0.8, f"{fatia}dos funcionários em cidades alvo", "+")
     if not cidade:
         return _crit("localizacao", SEM_DADO, "localização desconhecida", "?")
-    rotulo = e.cidade.split(",")[0].strip().title() + (f"/{uf}" if uf else "")
-    if cidade in [_norm(x) for x in criterios()["saude"]["metropoles"]]:
-        return _crit("localizacao", 1.0, None, "")
-    return _crit("localizacao", 0.2, f"{rotulo}: interior, Unimed local costuma ser forte", "-")
+    return _crit("localizacao", 0.2, f"{rotulo}: fora das cidades alvo; falta ver onde estão os funcionários", "?")
 
 
 def c_rh(e: Empresa | None) -> dict:

@@ -198,6 +198,8 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
         )
         if emp is not None and emp.funcionarios and not emp.funcionarios_fonte:
             emp.funcionarios_fonte = "pipedrive"
+        if emp is not None and emp.cidade and not emp.cidade_fonte and local_da_organizacao(org)[0] == emp.cidade:
+            emp.cidade_fonte = "pipedrive"
         contagem["organizacoes"] += 1
 
     for p in client.paginar("persons", **filtro):

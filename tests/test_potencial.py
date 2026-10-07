@@ -44,7 +44,7 @@ def test_saude_fintech_na_capital_com_rh_estruturado_vence_industria_do_interior
     assert a["score"] > b["score"] + 25
     assert "RH estruturado: Carla (Head de Pessoas e Cultura)" in textos(a)
     assert any("time qualificado" in t for t in textos(a))
-    assert "Joinville/SC: interior, Unimed local costuma ser forte" in textos(b)
+    assert "Joinville/SC: fora das cidades alvo; falta ver onde estão os funcionários" in textos(b)
     assert any("plano mais simples" in t for t in textos(b))
     assert any(t.startswith("RH só operacional") for t in textos(b))
 

@@ -363,7 +363,7 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
         e.website = e.website or _txt(r, "site")
         e.dominio = e.dominio or dominio_site(_txt(r, "site"))
     if _txt(r, "sede") and not e.cidade:
-        e.cidade = _txt(r, "sede")
+        e.cidade, e.cidade_fonte = _txt(r, "sede"), "linkedin"
     if _txt(r, "descricao"):
         e.descricao = _txt(r, "descricao")[:2000]
     if isinstance(r.get("investida"), bool):

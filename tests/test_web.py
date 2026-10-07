@@ -1,4 +1,6 @@
 import re
+
+import httpx
 from datetime import datetime
 
 import pytest
@@ -124,13 +126,16 @@ def test_criar_atividade_e_marcar_saude_pela_api(cenario):
     assert linha["saude"]["manual"] is True
 
 
-def test_oportunidades_e_atividade_na_organizacao(cenario):
+def test_oportunidades_e_atividade_na_organizacao(cenario, db):
     c, fake = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
-    ops = c.get("/api/oportunidades").json()["itens"]
     # Beta já tem Saúde (marcado no Pipedrive) e negócios abertos em Saúde e LF (Garantia): falta RE.
     # Alfa tem LF vigente e negócios abertos de RE e Saúde: nenhuma oportunidade.
-    assert [(o["empresa"]["nome"], o["vertical"]) for o in ops] == [("Beta Serviços SA", "ramos_elementares")]
+    # RE ainda não tem fluxo de análise: fica fora da tela, mas aparece na ficha da empresa
+    assert c.get("/api/oportunidades").json()["itens"] == []
+    beta_id = db.scalar(select(Empresa.id).where(Empresa.pipedrive_org_id == 20))
+    ops = c.get(f"/api/oportunidades?empresa={beta_id}").json()["itens"]
+    assert [(o["empresa"]["nome"], o["vertical"], o["analisada"]) for o in ops] == [("Beta Serviços SA", "ramos_elementares", False)]
     beta = ops[0]
     assert beta["quemDecide"]["areas"] == ["Operações", "Riscos", "Financeiro"]
     victor = next(u for u in c.get("/api/tabela").json()["usuarios"] if u["email"].startswith("victor"))
@@ -139,43 +144,47 @@ def test_oportunidades_e_atividade_na_organizacao(cenario):
     assert r.status_code == 200
     enviada = fake.criadas[-1]
     assert enviada["org_id"] == 20 and "deal_id" not in enviada and "participants" not in enviada
-    assert c.get("/api/oportunidades").json()["itens"][0]["proximaAtividade"]["assunto"] == "Abrir conversa de RE"
+    assert c.get(f"/api/oportunidades?empresa={beta['empresa']['id']}").json()["itens"][0]["proximaAtividade"]["assunto"] \
+        == "Abrir conversa de RE"
 
 
 def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     c, _ = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
-    for i in range(25):  # leads negociando LF: cada um vira oportunidade de Saúde e de RE
+    def lead(i, analisado=True):  # lead negociando LF: oportunidade de Saúde (e de RE, que fica fora da tela)
         e = Empresa(razao_social=f"Lead {i} SA", nome_normalizado=f"lead {i}")
+        if analisado:  # cidade alvo, funcionários e setor conhecidos: analisada em Saúde
+            e.cidade, e.uf, e.funcionarios, e.setor = "São Paulo", "SP", 120, "Software"
         db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo=f"8{i}",
                                pipeline_id=1, status="aberto", titulo="D&O")])
+    for i in range(25):
+        lead(i)
+    lead(90, analisado=False)  # sem cidade nem funcionários: fica na fila de análise
     db.commit()
     r = c.get("/api/oportunidades").json()
-    assert (len(r["itens"]), r["total"], r["totalGeral"], r["pagina"], r["paginas"]) == (20, 51, 51, 1, 3)
-    assert len(c.get("/api/oportunidades?pagina=3").json()["itens"]) == 11
-    assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 3
+    assert (len(r["itens"]), r["total"], r["totalGeral"], r["pagina"], r["paginas"]) == (20, 25, 25, 1, 2)
+    assert r["verticais"] == ["saude"] and r["fila"] == {"saude": 1}
+    assert len(c.get("/api/oportunidades?pagina=2").json()["itens"]) == 5
+    assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 2
     assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25
-    assert {o["vertical"] for o in c.get("/api/oportunidades?q=LEAD 7 ").json()["itens"]} == {"saude", "ramos_elementares"}
-    assert [o["empresa"]["nome"] for o in c.get("/api/oportunidades?tipo=cliente").json()["itens"]] == ["Beta Serviços SA"]
-    assert c.get("/api/oportunidades?rel=-").json()["total"] == 51 and r["relacoes"] == []
+    assert {o["vertical"] for o in c.get("/api/oportunidades?q=LEAD 7 ").json()["itens"]} == {"saude"}
+    assert c.get("/api/oportunidades?tipo=cliente").json()["itens"] == []
+    assert c.get("/api/oportunidades?rel=-").json()["total"] == 25 and r["relacoes"] == []
     lead3 = db.scalar(select(Empresa).where(Empresa.razao_social == "Lead 3 SA"))
-    assert len(c.get(f"/api/oportunidades?empresa={lead3.id}").json()["itens"]) == 2
+    assert {o["vertical"] for o in c.get(f"/api/oportunidades?empresa={lead3.id}").json()["itens"]} == \
+        {"saude", "ramos_elementares"}  # a ficha mostra todas
 
     # A lista fica guardada: o que muda direto no banco só aparece quando a plataforma altera algo
-    novo = Empresa(razao_social="Lead Novo SA", nome_normalizado="lead novo")
-    db.add_all([novo, Negocio(empresa=novo, vertical="linhas_financeiras", fonte="pipedrive", id_externo="899",
-                              pipeline_id=1, status="aberto", titulo="D&O")])
+    lead(91)
     db.commit()
-    assert c.get("/api/oportunidades").json()["totalGeral"] == 51
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 25
     assert c.post("/api/melhorias", headers=H, json={"titulo": "Teste"}).status_code == 200
-    assert c.get("/api/oportunidades").json()["totalGeral"] == 53
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 26
     # ... ou quando a rotina termina um passo (sync_log novo)
-    outro = Empresa(razao_social="Lead Outro SA", nome_normalizado="lead outro")
-    db.add_all([outro, Negocio(empresa=outro, vertical="linhas_financeiras", fonte="pipedrive", id_externo="898",
-                               pipeline_id=1, status="aberto", titulo="D&O"),
-                SyncLog(fonte="pipedrive", inicio=datetime(2026, 10, 6, 12), fim=datetime(2026, 10, 6, 12, 1), registros=1)])
+    lead(92)
+    db.add(SyncLog(fonte="pipedrive", inicio=datetime(2026, 10, 6, 12), fim=datetime(2026, 10, 6, 12, 1), registros=1))
     db.commit()
-    assert c.get("/api/oportunidades").json()["totalGeral"] == 55
+    assert c.get("/api/oportunidades").json()["totalGeral"] == 27
 
 
 def test_modelo_da_ia_escolhido_pelo_master(cenario, db):
@@ -412,3 +421,67 @@ def test_funcionarios_informados_a_mao_valem_por_180_dias(cenario, db):
     assert (e.funcionarios, e.funcionarios_fonte, e.funcionarios_em) == (900, "linkedin", None)  # depois de 180 dias, atualiza
     db.commit()
     assert c.get(f"/api/empresas/{e.id}").json()["funcionariosFonte"] == "linkedin"
+
+
+def test_cidade_informada_a_mao_decide_a_praca_e_vale_sobre_a_receita(cenario, db):
+    from crosssell.connectors import enriquecimento
+    from crosssell.potencial import praca
+
+    c, _ = cenario
+    e = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "Ribeirão Preto", "uf": "XX"}).status_code == 400
+    r = c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "Ribeirão Preto", "uf": "sp"}).json()
+    assert r["local"] == "Ribeirão Preto/SP" and r["cidadeFonte"] == "manual"
+    db.expire_all()
+    e = db.get(Empresa, e.id)
+    assert praca(e) == "fora"  # informada à mão e fora da lista: decide sozinha, sem consulta
+    e.cnpj = "14069185000103"
+
+    class Receita(httpx.BaseTransport):
+        def handle_request(self, request):
+            return httpx.Response(200, json={"razao_social": "BETA SERVICOS SA", "municipio": "SAO PAULO", "uf": "SP"})
+    enriquecimento.enriquecer_receita(db, e, httpx.Client(transport=Receita()))
+    assert (e.cidade, e.uf, e.cidade_fonte) == ("Ribeirão Preto", "SP", "manual")  # a Receita não passa por cima
+    db.commit()
+    c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "", "uf": ""})
+    db.expire_all()
+    e = db.get(Empresa, e.id)
+    enriquecimento.enriquecer_receita(db, e, httpx.Client(transport=Receita()))
+    assert (e.cidade, e.cidade_fonte) == ("SAO PAULO", "receita") and praca(e) == "alvo"
+
+
+def test_cnpj_achado_no_site_so_vale_se_o_nome_bater(db):
+    from crosssell.connectors import enriquecimento as en
+
+    e = Empresa(razao_social="Voke Mobilidade", nome_normalizado="voke mobilidade", dominio="voke.com.br")
+    outra = Empresa(razao_social="Gama Tech", nome_normalizado="gama tech", dominio="gama.com.br")
+    db.add_all([e, outra])
+    db.commit()
+    paginas = {"voke.com.br": "<footer>Voke Mobilidade Ltda · CNPJ 14.069.185/0001-03 · 11.222.333/0001-99</footer>",
+               "gama.com.br": "<footer>Feito por Agência X - CNPJ 14.069.185/0001-03</footer>"}
+
+    class Web(httpx.BaseTransport):
+        def handle_request(self, request):
+            if "brasilapi" in request.url.host:
+                return httpx.Response(200, json={"razao_social": "VOKE MOBILIDADE LTDA", "municipio": "SAO PAULO", "uf": "SP"})
+            return httpx.Response(200, text=paginas.get(request.url.host.removeprefix("www."), ""))
+    assert en.cnpjs_no_html(paginas["voke.com.br"]) == ["14069185000103"]  # o segundo não tem dígito verificador válido
+    res = en.cnpj_por_site(db, [e.id, outra.id], httpx.Client(transport=Web()))
+    assert res == {"verificadas": 2, "encontradas": 1}
+    assert (e.cnpj, e.cidade, e.cidade_fonte) == ("14069185000103", "SAO PAULO", "receita")
+    assert outra.cnpj is None and outra.site_cnpj_em is not None  # CNPJ da agência: nome não bate, não vale
+
+
+def test_negocios_em_aberto(cenario, db):
+    c, _ = cenario
+    db.add(Negocio(empresa=db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20)), vertical=None,
+                   fonte="pipedrive", id_externo="777", pipeline_id=39, status="aberto", titulo="Canal parceiro"))
+    db.commit()
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    r = c.get("/api/negocios").json()
+    assert r["itens"] and set(r["funis"]) <= {"Linhas Financeiras", "RE", "Saúde", "Pipo Saúde"}
+    assert not any(n["titulo"] == "Canal parceiro" for n in r["itens"])  # Canais Parceria fica de fora
+    funil = r["funis"][0]
+    assert all(n["funil"] == funil for n in c.get(f"/api/negocios?funil={funil}").json()["itens"])
+    assert c.get("/api/negocios?q=zzzz").json()["total"] == 0

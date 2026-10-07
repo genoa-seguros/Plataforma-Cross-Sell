@@ -13,7 +13,13 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   (seguro vigente) e leads com **algum card aberto** no Pipedrive (negócio aberto com vertical, em
   qualquer funil) que ainda não têm seguro nem negócio aberto em outra vertical (ex.: tem D&O e está
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
-  nada aberto fica de fora (terá uma tela própria, ainda a desenhar).
+  nada aberto fica de fora (terá uma tela própria, ainda a desenhar). Só aparecem as empresas já
+  **analisadas**: em Saúde, praça decidida (cidade alvo ou ≥ 30% dos funcionários em cidades alvo,
+  `saude.praca_fatia_minima`), funcionários e setor conhecidos. As outras ficam na fila de análise
+  (contador "X analisadas · Y na fila"), que anda pela ordem do Score; a ficha da empresa mostra
+  também as não analisadas, com o que falta. Empresas fora da praça continuam, com Score baixo e a
+  etiqueta *fora da praça*. Por enquanto só Saúde: Linhas Financeiras e RE entram quando o fluxo de
+  cada uma estiver pronto.
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
   (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,
@@ -21,11 +27,17 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   Próxima atividade. Acima da tabela, recolhidos, os *Critérios do Score em cada vertical*, com os
   pesos de `config/criterios.yaml`. O número de funcionários pode ser informado à mão (✎ na coluna
   Empresa ou na ficha): ele vale sobre o do LinkedIn e do Pipedrive por 180 dias; depois disso, a
-  leitura do LinkedIn volta a atualizar. O local (cidade/UF) vem da Receita pelo CNPJ, do endereço da
-  organização no Pipedrive ou da sede no LinkedIn, nessa ordem de chegada. Filtros por vertical,
+  leitura do LinkedIn volta a atualizar. O local (cidade/UF) vem da Receita pelo CNPJ (inclusive o
+  CNPJ achado no site da empresa, aceito só se o nome bater), do endereço da organização no Pipedrive
+  ou da sede no LinkedIn. A cidade e a UF também podem ser informadas à mão (✎ na coluna Empresa ou
+  na ficha): valem sobre todas as fontes e decidem a praça de Saúde sem gastar consulta. Filtros por vertical,
   cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
   como cada coluna é calculada. Mostra quem decide, a ponte e o porte; *Criar
   atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.
+- **Negócios em aberto**: todos os negócios abertos no Pipedrive nos funis de Linhas Financeiras,
+  RE, Saúde e Pipo Saúde (sem Garantia, Flash e Canais Parceria), com funil, etapa, valor,
+  responsável e próxima atividade. Filtros por funil, responsável e busca; marca as empresas que
+  também estão em Oportunidades.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
@@ -139,6 +151,7 @@ Uma entrada só faz tudo, sem ação manual: `crosssell rotina`, de hora em hora
 ```bash
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
+crosssell cnpj-sites              # a cada hora: CNPJ no site de empresas sem CNPJ (só se o nome bater)
 crosssell noticias                # diário
 crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário

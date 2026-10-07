@@ -300,12 +300,22 @@ function marcarAjuda(raiz = document) {
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
 // Prévia (exportar_preview.py, sem servidor): os mesmos filtros e a paginação de /api/oportunidades
 function opsPrevia(path) {
-  const p = new URLSearchParams(path.split("?")[1] || ""), todas = D.oportunidades || [];
-  if (p.has("empresa")) return {itens: todas.filter(o => o.empresa.id == p.get("empresa"))};
+  const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
+  if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
+  const visiveis = tudo.filter(o => verticais.includes(o.vertical)), todas = visiveis.filter(o => o.analisada);
+  const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada).map(o => o.empresa.id)).size]));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel");
   const ls = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
-  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort()};
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila};
+}
+function negociosPrevia(path) {
+  const p = new URLSearchParams(path.split("?")[1] || ""), todos = D.negocios || [];
+  const q = (p.get("q") || "").trim().toLowerCase(), f = p.get("funil"), d = p.get("dono");
+  const ls = todos.filter(n => (!f || n.funil === f) && (!d || n.dono === d) && (!q || (n.empresa?.nome || "").toLowerCase().includes(q) || (n.titulo || "").toLowerCase().includes(q)));
+  const com = new Set((D.oportunidades || []).filter(o => o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical)).map(o => o.empresa.id));
+  ls.forEach(n => n.temOportunidade = !!n.empresa && com.has(n.empresa.id));
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todos.length, funis: [...new Set(todos.map(n => n.funil))].sort(), donos: [...new Set(todos.map(n => n.dono).filter(Boolean))].sort()};
 }
 const api = {
   async get(path) {
@@ -339,6 +349,7 @@ const previa = {
     if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
+    if (path.startsWith("/api/negocios")) return negociosPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     if (path === "/api/rotina") return D.rotina;
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
@@ -398,6 +409,12 @@ const previa = {
       if (D.empresas[m[1]] && b.funcionarios) Object.assign(D.empresas[m[1]], {funcionarios: b.funcionarios, funcionariosFonte: "manual", funcionariosEm: new Date().toISOString().slice(0, 16)});
       return {funcionarios: b.funcionarios, funcionariosFonte: b.funcionarios ? "manual" : null};
     }
+    if ((m = path.match(/^\/api\/empresas\/(\d+)\/local$/))) {
+      const local = b.cidade ? `${b.cidade}/${b.uf}` : null;
+      (D.oportunidades || []).filter(o => o.empresa.id == m[1]).forEach(o => Object.assign(o.empresa, {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local}));
+      if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null});
+      return {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local};
+    }
     if (path === "/api/qualidade/razao") { D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.id !== b.empresa_id); return {ok: true}; }
     if (path === "/api/ia") { this.get("/api/ia"); D.ia.modelo = b.modelo; D.ia.origem = "plataforma"; return D.ia; }
     if (path === "/api/qualidade/ignorar") { D.qualidade.duplicadas = D.qualidade.duplicadas.filter(g => g.chave !== b.chave); D.qualidade.sugestoes = D.qualidade.sugestoes.filter(x => x.chave !== b.chave); D.qualidade.suspeitas = (D.qualidade.suspeitas || []).filter(x => x.chave !== b.chave); return {ok: true}; }
@@ -431,7 +448,7 @@ function todosLocal(refIso) {
 
 /* ---------- Abas ---------- */
 function abas(ativa) {
-  const itens = [["oportunidades","Oportunidades"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
+  const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
   if (["master", "head"].includes(EU?.papel)) itens.push(["qualidade","Qualidade"]);
   if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
@@ -526,6 +543,31 @@ function modalAtividade(ctx) {
 }
 
 /* ---------- Oportunidades ---------- */
+const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
+/* Cidade e UF informadas à mão: valem sobre Receita, Pipedrive e LinkedIn e decidem a praça de Saúde sem consulta. */
+function editarLocal(id, cidade, uf, nome) {
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-local" aria-labelledby="t-local">
+    <h2 id="t-local">Cidade e UF</h2><div class="sub">${esc(nome)}</div>
+    <div class="form-linha"><label>UF<select id="local-uf"><option value="">—</option>${UFS.map(u => `<option ${u === uf ? "selected" : ""}>${u}</option>`).join("")}</select></label>
+      <label style="flex:1">Cidade<input id="local-cidade" value="${esc(cidade)}" placeholder="ex.: Campinas"></label></div>
+    <p class="nota">Onde está a maior parte das pessoas da empresa. Vale sobre a Receita, o Pipedrive e o LinkedIn e decide a praça de Saúde sem gastar consulta. Deixe a cidade em branco para voltar ao automático.</p>
+    <p class="erro" id="local-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="local-cancelar">Cancelar</button><button class="btn">Salvar</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("local-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("local-cidade").focus();
+  document.getElementById("f-local").onsubmit = async e => {
+    e.preventDefault();
+    const c = document.getElementById("local-cidade").value.trim(), u = document.getElementById("local-uf").value;
+    try {
+      await api.post(`/api/empresas/${id}/local`, {cidade: c || null, uf: u || null});
+      fechar(); aviso(c ? "Cidade salva" : "Cidade voltou ao automático");
+      OPS_RESP = null; render();
+    } catch (err) { const el = document.getElementById("local-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
 /* Número de funcionários informado à mão: vale sobre o do LinkedIn por 180 dias; vazio volta ao automático. */
 function editarFuncionarios(id, atual, nome) {
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-func" aria-labelledby="t-func">
@@ -555,9 +597,11 @@ function opHTML(o) {
     <td>${celulaScore(o)}</td>
     <td style="min-width:170px"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><div>${o.cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}${o.empresa.funcionarios ? ` <span class="sub" title="${esc(o.empresa.funcionariosOrigem || "")}">· ${o.empresa.funcionarios.toLocaleString("pt-BR")} func.</span>` : ""}
       <button type="button" class="lapis" data-func="${o.empresa.id}" data-func-atual="${o.empresa.funcionarios || ""}" data-func-nome="${esc(o.empresa.nome)}" title="Informar o número de funcionários">${o.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
-      <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}</div></td>
+      <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}
+        <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
     <td class="negociando"><div class="chips">${o.negociando.map(v => `<span title="${esc(v.produto)}${v.etapa ? " · " + esc(v.etapa) : ""}">${vchip(v.vertical, v.produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
-    <td>${vchip(o.vertical, o.verticalNome)}</td>
+    <td>${vchip(o.vertical, o.verticalNome)}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
+      ${o.analisada === false ? `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>` : ""}</td>
     <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
     <td>${celulaVigentes(o)}</td>
     <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
@@ -584,7 +628,9 @@ function mostrarOps() {
   const r = OPS_RESP;
   OPS = r.itens; filtroOp.pagina = r.pagina;
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
-  document.getElementById("contagem-op").textContent = `${r.total} de ${r.totalGeral} oportunidades`;
+  const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
+  document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
+    + (fila ? ` · <span title="Empresas esperando a análise (cidade, funcionários, setor). A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
   ligarPaginacao("op", async n => { filtroOp.pagina = n;
     try { if (await buscarOps()) { mostrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); } }
@@ -630,7 +676,7 @@ function desenharOportunidades() {
   <section style="display:grid;gap:10px">
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
-      ${Object.entries(V).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
+      ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
@@ -640,7 +686,7 @@ function desenharOportunidades() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas (em Saúde: praça, funcionários e setor conhecidos); as outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Linhas Financeiras e RE entram quando o fluxo delas estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -969,7 +1015,9 @@ async function telaRotina() {
     ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),
      "Busca no Google Notícias as manchetes que citam as empresas da tabela.", U.noticias],
     ["var(--lf)", "Receita Federal", cad("uma vez por empresa"),
-     `Porte, CNAE e sócios pelo CNPJ: até ${r.receitaLote} empresas novas por rodada.`, U.receita],
+     `Porte, CNAE, sócios e cidade sede pelo CNPJ: até ${r.receitaLote} empresas novas por rodada. A cidade informada à mão vale sobre a da Receita.`, U.receita],
+    ["var(--lf)", "CNPJ no site", cad("uma vez por empresa"),
+     "Para empresas sem CNPJ no Pipedrive, procura o CNPJ no rodapé do site e só aceita se o nome na Receita bater com o da empresa. Com o CNPJ vêm a cidade sede, o porte e o CNAE.", U.cnpjSites],
     ["var(--canal)", "Site da empresa", cad("uma vez por empresa"),
      `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada, sem gastar consulta do LinkedIn.`, U.linkedinSites],
     ["var(--accent)", "LinkedIn", L.configurado ? cad(`toda hora · relê a cada ${L.validadeDias} dias`) : desligado("desligado"),
@@ -1038,6 +1086,48 @@ async function telaRotina() {
 }
 
 /* ---------- To-dos da semana ---------- */
+/* ---------- Negócios em aberto ---------- */
+const filtroNeg = {funil: "", dono: "", q: "", pagina: 1};
+let NEG_BUSCA = 0;
+async function telaNegocios() {
+  await carregarBase();
+  const qs = new URLSearchParams({pagina: filtroNeg.pagina});
+  ["funil", "dono", "q"].forEach(k => filtroNeg[k] && qs.set(k, filtroNeg[k]));
+  const r = await api.get("/api/negocios?" + qs);
+  if (!document.getElementById("neg-lista")) {
+    document.getElementById("app").innerHTML = `
+    <section style="display:grid;gap:14px">
+      <div class="semana"><h1>Negócios em aberto</h1><span class="sub" id="neg-contagem"></span></div>
+      <div class="filtros">
+        <input id="neg-q" type="search" placeholder="Buscar empresa ou negócio" value="${esc(filtroNeg.q)}" aria-label="Buscar">
+        <select id="neg-funil" aria-label="Funil"></select>
+        <select id="neg-dono" aria-label="Responsável"></select>
+      </div>
+      <div id="neg-lista"></div>
+      <p class="nota">Todos os negócios abertos no Pipedrive nos funis de Linhas Financeiras, RE, Saúde e Pipo Saúde. <b>Também em Oportunidades</b> marca a empresa que tem cross sell analisado para outra vertical.</p>
+    </section>`;
+    const q = document.getElementById("neg-q");
+    q.oninput = () => { clearTimeout(NEG_BUSCA); NEG_BUSCA = setTimeout(() => { filtroNeg.q = q.value.trim(); filtroNeg.pagina = 1; telaNegocios(); }, 300); };
+    document.getElementById("neg-funil").onchange = e => { filtroNeg.funil = e.target.value; filtroNeg.pagina = 1; telaNegocios(); };
+    document.getElementById("neg-dono").onchange = e => { filtroNeg.dono = e.target.value; filtroNeg.pagina = 1; telaNegocios(); };
+  }
+  document.getElementById("neg-funil").innerHTML = `<option value="">Funil: todos</option>${r.funis.map(f => `<option ${f === filtroNeg.funil ? "selected" : ""}>${esc(f)}</option>`).join("")}`;
+  document.getElementById("neg-dono").innerHTML = `<option value="">Responsável: todos</option>${r.donos.map(d => `<option value="${esc(d)}" ${d === filtroNeg.dono ? "selected" : ""}>${esc(nomeDe(d))}</option>`).join("")}`;
+  document.getElementById("neg-contagem").textContent = `${r.total} de ${r.totalGeral} negócios`;
+  document.getElementById("neg-lista").innerHTML = `<div class="tabela"><table>
+    <thead><tr><th>Empresa</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
+    <tbody>${r.itens.map(n => `<tr>
+      <td>${n.empresa ? `<a href="#empresa-${n.empresa.id}"><b>${esc(n.empresa.nome)}</b></a>${n.empresa.cliente ? ' <span class="chip" style="--c:var(--good)">cliente</span>' : ""}
+        <div class="sub">${esc(n.empresa.local || "")}${n.temOportunidade ? ' · <span style="color:var(--good)">também em Oportunidades</span>' : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
+      <td>${esc(n.produto)}${n.pessoa ? `<div class="sub">${esc(n.pessoa)}</div>` : ""}</td>
+      <td>${vchip(n.vertical, V[n.vertical] || n.vertical)}<div class="sub">${esc(n.funil)}${n.etapa ? " · " + esc(n.etapa) : ""}</div></td>
+      <td class="num">${brl(n.valor)}</td>
+      <td class="small">${esc(n.donoNome || "")}</td>
+      <td class="small">${n.proximaAtividade ? `${esc(n.proximaAtividade.assunto)}<div class="sub num">${dt(n.proximaAtividade.vencimento)}</div>` : '<span class="mute">nenhuma</span>'}</td>
+    </tr>`).join("") || '<tr><td colspan="6" class="vazio">Nenhum negócio aberto com esses filtros.</td></tr>'}</tbody></table></div>${paginacao(r, "neg")}`;
+  ligarPaginacao("neg", n => { filtroNeg.pagina = n; telaNegocios(); });
+}
+
 async function telaTodos() {
   await carregarBase();
   const r = await api.get("/api/todos?ref=" + iso(refSemana));
@@ -1221,8 +1311,10 @@ async function telaEmpresa(id) {
   <a href="#oportunidades" class="small">← Oportunidades</a>
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
-    <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.cidade && `${e.cidade}${e.uf ? "/" + e.uf : ""}`, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
+    <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
       <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button>${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
+    <div class="sub">${e.cidade ? esc(`${e.cidade}${e.uf ? "/" + e.uf : ""}`) + (e.cidadeFonte === "manual" ? " (informada à mão)" : e.cidadeFonte ? ` (${e.cidadeFonte === "receita" ? "Receita" : e.cidadeFonte === "pipedrive" ? "Pipedrive" : "LinkedIn"})` : "") : "local não informado"}${e.praca ? ` · praça de Saúde: <b>${e.praca === "alvo" ? "alvo" : "fora"}</b>` : ""}
+      <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.cidade ? "✎ cidade" : "+ cidade"}</button></div>
     <div>${vig.length ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'} <span class="sub">· relacionamento ${Math.round(e.score)} de 100</span></div>
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>
     ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${vig.some(n => n.vertical === "saude") ? "checked" : ""}> Cliente Saúde${e.negocios.some(n => n.vertical === "saude" && n.status === "ganho" && !n.fim) ? " (ganho no Pipedrive; desmarque se cancelou)" : " (fora da planilha do Zeca)"}</label>`}
@@ -1247,6 +1339,7 @@ async function telaEmpresa(id) {
 document.addEventListener("click", ev => {
   const o = ev.target.closest("[data-ativ-op]"); if (o && !o.disabled) abrirAtividadeOp(o.dataset.ativOp);
   const f = ev.target.closest("[data-func]"); if (f) editarFuncionarios(f.dataset.func, f.dataset.funcAtual, f.dataset.funcNome);
+  const l = ev.target.closest("[data-local]"); if (l) editarLocal(l.dataset.local, l.dataset.localCidade, l.dataset.localUf, l.dataset.localNome);
 });
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
@@ -1258,7 +1351,7 @@ document.addEventListener("change", async ev => {
 });
 
 async function render() {
-  const h = location.hash && location.hash !== "#negocios" ? location.hash : "#oportunidades";
+  const h = location.hash || "#oportunidades";
   const m = h.match(/^#empresa-(\d+)$/);
   VEZ++;
   abas(m ? "oportunidades" : h.slice(1));
@@ -1266,6 +1359,7 @@ async function render() {
   try {
     if (m) await telaEmpresa(m[1]);
     else if (h === "#todos") await telaTodos();
+    else if (h === "#negocios") await telaNegocios();
     else if (h === "#qualidade") await telaQualidade();
     else if (h === "#melhorias") await telaMelhorias();
     else if (h === "#rotina") await telaRotina();

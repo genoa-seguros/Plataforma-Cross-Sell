@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela, temperatura
 from crosssell.normalize import AREA_LABEL
-from crosssell.potencial import criterios, influencia
+from crosssell.potencial import criterios, influencia, praca
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -304,6 +304,30 @@ def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depen
     return {"funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte}
 
 
+class LocalIn(BaseModel):
+    cidade: str | None = None
+    uf: str | None = None
+
+
+@app.post("/api/empresas/{empresa_id}/local")
+def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Cidade e UF informadas à mão: valem sobre Receita, Pipedrive e LinkedIn e decidem a praça de Saúde.
+    Em branco volta ao automático (a próxima consulta à Receita preenche)."""
+    e = db.get(Empresa, empresa_id)
+    if e is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    cidade, uf = (dados.cidade or "").strip(), (dados.uf or "").strip().upper()
+    if not cidade:
+        if e.cidade_fonte == "manual":
+            e.cidade_fonte, e.cidade_em, e.enriquecido_em = None, None, None  # a Receita volta a preencher
+    else:
+        if uf not in pd.UFS.values():
+            raise HTTPException(400, "Escolha a UF.")
+        e.cidade, e.uf, e.cidade_fonte, e.cidade_em = cidade, uf, "manual", datetime.utcnow()
+    db.commit()
+    return {"cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte, "local": tabela.local(e)}
+
+
 @app.get("/api/empresas/{empresa_id}")
 def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     e = db.get(Empresa, empresa_id)
@@ -311,7 +335,8 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         raise HTTPException(404, "Empresa não encontrada.")
     return {
         "id": e.id, "nome": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
-        "cidade": e.cidade, "uf": e.uf, "funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte,
+        "cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte, "praca": praca(e),
+        "funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte,
         "funcionariosEm": e.funcionarios_em.isoformat(timespec="minutes") if e.funcionarios_em else None,
         "score": e.score_relacionamento,
         "comp": e.score_componentes,
@@ -520,16 +545,40 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                       _u: Usuario = Depends(usuario_atual)):
     """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
     rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead."""
-    itens, relacoes = OPORTUNIDADES.obter(db)
-    if empresa is not None:
-        return {"itens": [o for o in itens if o["empresa"]["id"] == empresa]}
+    todas, relacoes = OPORTUNIDADES.obter(db)
+    if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
+        return {"itens": [o for o in todas if o["empresa"]["id"] == empresa]}
+    # Na tela, só as verticais com fluxo definido e as empresas já analisadas; o resto está na fila de análise
+    visiveis = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
+    itens = [o for o in visiveis if o["analisada"]]
+    fila = {v: len({o["empresa"]["id"] for o in visiveis if o["vertical"] == v and not o["analisada"]})
+            for v in tabela.VERTICAIS_OPORTUNIDADES}
     busca = q.strip().lower()
     filtradas = [o for o in itens
                  if (not vertical or o["vertical"] == vertical)
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())
                  and (not tipo or (tipo == "cliente") == o["cliente"])
                  and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
-    return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes}
+    return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
+            "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila}
+
+
+@app.get("/api/negocios")
+def api_negocios(pagina: int = 1, funil: str = "", dono: str = "", q: str = "", db: Session = Depends(get_db),
+                 _u: Usuario = Depends(usuario_atual)):
+    """Negócios em aberto (LF, RE, Saúde, Pipo), uma página por vez, com quais empresas têm oportunidade analisada."""
+    todos = tabela.negocios_abertos(db, get_settings())
+    com_op = {o["empresa"]["id"] for o in OPORTUNIDADES.obter(db)[0]
+              if o["analisada"] and o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES}
+    busca = q.strip().lower()
+    filtrados = [n for n in todos if (not funil or n["funil"] == funil) and (not dono or n["dono"] == dono)
+                 and (not busca or busca in ((n["empresa"] or {}).get("nome") or "").lower()
+                      or busca in (n["titulo"] or "").lower())]
+    p = qualidade.pagina(filtrados, pagina)
+    for n in p["itens"]:
+        n["temOportunidade"] = bool(n["empresa"]) and n["empresa"]["id"] in com_op
+    return {**p, "totalGeral": len(todos), "funis": sorted({n["funil"] for n in todos}),
+            "donos": sorted({n["dono"] for n in todos if n["dono"]})}
 
 
 PRIORIDADES = ("alta", "media", "baixa")
@@ -739,7 +788,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
     s = get_settings()
     direto = lk.direto(s)
     fontes = {"pipedrive": "pipedrive", "email": "email", "noticias": "noticias", "receita": "receita",
-              "linkedinSites": "linkedin-sites", "linkedin": "linkedin" if direto else "linkedin-disparo",
+              "linkedinSites": "linkedin-sites", "cnpjSites": "cnpj-sites", "linkedin": "linkedin" if direto else "linkedin-disparo",
               "qualidade": "qualidade"}
     caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
                                               Usuario.senha_hash.is_not(None))).all()

@@ -31,7 +31,7 @@ def _rotina_exemplo(r: dict, hoje: date) -> dict:
     dia = hoje.isoformat()
     ok = lambda minuto, n: {"em": f"{dia}T09:{minuto:02d}", "registros": n, "erro": None}  # noqa: E731
     r["ultimos"] = {"pipedrive": ok(0, 128), "email": ok(2, 46), "noticias": ok(4, 12), "receita": ok(6, 9),
-                    "linkedinSites": ok(7, 3), "linkedin": ok(8, 10), "qualidade": ok(10, 57)}
+                    "linkedinSites": ok(7, 3), "cnpjSites": ok(1, 4), "linkedin": ok(8, 10), "qualidade": ok(10, 57)}
     r["interna"] = True
     r["email"].update(configurado=True, temperatura=True, caixas=4)
     r["linkedin"].update(configurado=True, ultimas24h=18)
@@ -61,6 +61,8 @@ def exportar(como: str | None) -> dict:
         "equipe": [webapp._usuario_json(u) for u in usuarios],
         "atividades": [tabela.item_atividade(a, hoje) for a in db.scalars(select(Atividade))],
         "oportunidades": tabela.oportunidades(db, s),
+        "verticaisOportunidades": list(tabela.VERTICAIS_OPORTUNIDADES),
+        "negocios": tabela.negocios_abertos(db, s),
         "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db),
                       "suspeitas": qualidade.suspeitas(db)},
         "rotina": _rotina_exemplo(webapp.api_rotina(db=db, _u=None), hoje),

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela, temperatura
 from crosssell.normalize import AREA_LABEL
-from crosssell.potencial import criterios, influencia, praca
+from crosssell.potencial import criterios, influencia, praca, fatia_minima
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -802,7 +802,11 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
         "linkedin": {"configurado": lk.configurado(s), "direto": direto, "lote": s.linkedin_lote,
                      "limiteDia": s.linkedin_limite_dia, "validadeDias": s.linkedin_validade_dias,
                      "buscaDias": lk.BUSCA_VALIDADE.days, "prazoHoras": int(lk.PRAZO_PEDIDO.total_seconds() // 3600),
-                     "ultimas24h": lk._pedidos_24h(db, datetime.utcnow())},
+                     "ultimas24h": lk._pedidos_24h(db, datetime.utcnow()),
+                     "salesNavigator": s.linkedin_sales_navigator, "fatiaMinima": fatia_minima(),
+                     "cotas": [{"vertical": v, "grupo": g, "cota": c, "usadas24h": usadas.get((v, g), 0)}
+                               for usadas in [lk._usadas_24h(db, datetime.utcnow())]
+                               for (v, g), c in lk.cotas(s).items()]},
         "ultimos": {k: _ultimo(db, f) for k, f in fontes.items()},
     }
 

@@ -150,6 +150,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .lk-passos li div{display:grid;gap:3px;font-size:13px}
 .lk-n{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-content:center;background:var(--accent);color:#fff;font:800 14px/1 var(--f-display)}
 .lk-rodape{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}
+.lk-cotas{display:grid;gap:6px;margin-top:4px}.lk-cotas table{border-collapse:collapse;width:fit-content!important;min-width:0!important}.lk-cotas td{padding:3px 12px 3px 0;border:0}
 .lk-ritmo,.lk-exemplo{display:grid;gap:6px;align-content:start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
 .lk-exemplo{background:color-mix(in srgb,var(--accent) 6%,transparent)}
 .negociando{max-width:170px}
@@ -1004,6 +1005,7 @@ function rotStatus(u) {
   return `<span class="rot-st ok"><i></i>última: ${hora(u.em)} · ${u.registros.toLocaleString("pt-BR")} registros</span>`;
 }
 async function telaRotina() {
+  await carregarBase();
   const r = await api.get("/api/rotina"), L = r.linkedin, E = r.email, U = r.ultimos;
   const desligado = txt => `<span class="chip" style="--c:var(--mute)">${txt}</span>`;
   const cad = txt => `<span class="chip" style="--c:var(--accent)">${txt}</span>`;
@@ -1066,12 +1068,19 @@ async function telaRotina() {
       <h2>LinkedIn, passo a passo</h2>
       <p style="margin:0">A plataforma usa o LinkedIn para saber <b>o tamanho da empresa</b>, <b>quem trabalha lá</b> e <b>o cargo de cada pessoa</b>. Cada consulta tem custo e o LinkedIn bloqueia contas que consultam demais, então ela vai <b>aos poucos, de hora em hora</b>, começando pelo que mais importa.${L.configurado ? "" : " <b>Hoje está desligado</b>: faltam as chaves da Linked API no servidor."}</p>
       <ol class="lk-passos">
-        <li><span class="lk-n">1</span><div><b>Escolhe quem consultar</b><span>Primeiro as empresas das Oportunidades com maior Score, depois as dos negócios abertos, e as pessoas de cada uma.</span></div></li>
-        <li><span class="lk-n">2</span><div><b>Acha a página certa</b><span>Procura o link do LinkedIn no site da empresa (sem custo). Se não acha, busca pelo nome e confere se é a mesma empresa ou pessoa antes de aceitar.</span></div></li>
-        <li><span class="lk-n">3</span><div><b>Lê a página</b><span><b>Empresa:</b> funcionários (vale mais que o número do Pipedrive), setor, sede, decisores e posts. <b>Pessoa:</b> título no LinkedIn e empresa atual (avisa se mudou de empresa).</span></div></li>
-        <li><span class="lk-n">4</span><div><b>Procura quem decide</b><span>Se ninguém da área que decide está cadastrado (ex.: RH para Saúde), lê a lista de funcionários da empresa e cadastra quem é dessa área.</span></div></li>
-        <li><span class="lk-n">5</span><div><b>Volta depois</b><span>Relê cada empresa e pessoa a cada <b>${L.validadeDias} dias</b>. Quem não foi encontrado é procurado de novo em <b>${L.buscaDias} dias</b>. Consulta sem resposta espera <b>${L.prazoHoras} horas</b> antes de ser pedida de novo.</span></div></li>
+        <li><span class="lk-n">1</span><div><b>Escolhe quem consultar</b><span>Pela ordem do Score: primeiro as empresas das Oportunidades, depois as dos negócios abertos. Quem paga a consulta é a vertical da oportunidade de maior Score da empresa; o que for lido serve a todas.</span></div></li>
+        <li><span class="lk-n">2</span><div><b>Saúde: a empresa</b><span>Acha a página (link no site, sem custo, ou busca pelo nome conferindo se é a mesma empresa) e lê funcionários, setor e sede. Se os funcionários foram informados à mão e o setor já é conhecido, não gasta consulta.</span></div></li>
+        <li><span class="lk-n">3</span><div><b>Saúde: a praça</b><span>Cidade informada à mão ou cidade alvo decide sozinha. Fora disso, ${L.salesNavigator ? "o Sales Navigator mostra onde estão os funcionários" : "<b>quando o Sales Navigator for ligado</b>, ele mostra onde estão os funcionários"}: com pelo menos <b>${Math.round(100 * L.fatiaMinima)}%</b> em cidades alvo, a empresa vale; senão fica <i>fora da praça</i> (continua em Oportunidades, com Score baixo).</span></div></li>
+        <li><span class="lk-n">4</span><div><b>Saúde: quem decide</b><span>Só na praça. ${L.salesNavigator ? "Lista do Sales Navigator filtrada por cargo" : "Lista de funcionários da empresa"} (diretor de RH, CHRO, Head de People, Founder, CFO): atualiza o cargo de quem já conhecemos pelos e-mails e cadastra quem falta.</span></div></li>
+        <li><span class="lk-n">5</span><div><b>Linhas Financeiras e RE</b><span>Por enquanto, a leitura geral: página da empresa, perfil dos contatos e funcionários da área que decide. O fluxo próprio de cada uma vem a seguir.</span></div></li>
+        <li><span class="lk-n">6</span><div><b>Volta depois</b><span>Relê empresas, praça e pessoas a cada <b>${L.validadeDias} dias</b>. Quem não foi encontrado é procurado de novo em <b>${L.buscaDias} dias</b>. Consulta sem resposta espera <b>${L.prazoHoras} horas</b> antes de ser pedida de novo.</span></div></li>
       </ol>
+      <div class="lk-cotas">
+        <b>Consultas por dia, por vertical</b>
+        <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)}${c.vertical === "saude" ? ` <span class="sub">${c.grupo === "pessoas" ? "quem decide" : "empresa e praça"}</span>` : ""}</td>
+          <td class="num">${c.usadas24h} de ${c.cota}</td></tr>`).join("")}</tbody></table>
+        <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras.</span>
+      </div>
       <div class="lk-rodape">
         <div class="lk-ritmo">
           <b>Ritmo</b>
@@ -1079,7 +1088,7 @@ async function telaRotina() {
           <div class="rot-medidor" role="img" aria-label="${L.ultimas24h} de ${L.limiteDia} consultas nas últimas 24 horas"><i style="width:${pct}%"></i></div>
           <span class="sub">Nas últimas 24 h: ${L.ultimas24h} de ${L.limiteDia}</span>
         </div>
-        <div class="lk-exemplo"><b>Exemplo</b><span>A Voke entra nas Oportunidades de Saúde. Na hora seguinte, a plataforma acha o LinkedIn dela pelo site e lê a página: 320 funcionários, sede em São Paulo. Como não há ninguém de RH cadastrado, lê a lista de funcionários e encontra a gerente de Pessoas, que passa a aparecer em <i>Quem decide</i>. Daqui a ${L.validadeDias} dias, tudo é relido.</span></div>
+        <div class="lk-exemplo"><b>Exemplo</b><span>A Voke entra na fila de Saúde. Na hora seguinte, a plataforma acha o LinkedIn dela pelo site e lê a página: 320 funcionários, matriz em Joinville. Joinville não é cidade alvo, então consulta onde estão os funcionários: 45% em São Paulo. Está na praça e passa a aparecer em Oportunidades. Depois, a lista por cargo traz a gerente de Pessoas, que entra em <i>Quem decide</i>. Daqui a ${L.validadeDias} dias, tudo é relido.</span></div>
       </div>
     </div>
   </section>`;

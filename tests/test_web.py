@@ -339,7 +339,7 @@ def test_aba_rotina(cenario, db):
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
     r = c.get("/api/rotina").json()
     assert r["minutos"] == 60 and r["dias"] == 2 and r["qualidadeDias"] == 7
-    assert r["linkedin"]["validadeDias"] == 90 and r["linkedin"]["limiteDia"] == 50 and r["linkedin"]["buscaDias"] == 30
+    assert r["linkedin"]["validadeDias"] == 180 and r["linkedin"]["limiteDia"] == 50 and r["linkedin"]["buscaDias"] == 30
     assert r["ultimos"]["pipedrive"] == {"em": "2026-10-06T13:00", "registros": 42, "erro": None}
     assert r["ultimos"]["email"]["erro"].startswith("1 de 2") and r["ultimos"]["linkedin"] is None
 

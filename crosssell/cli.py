@@ -121,6 +121,34 @@ def linkedin():
         typer.echo(registrar(db, "linkedin-disparo", lk.disparar, db, s))
 
 
+@app.command("linkedin-teste")
+def linkedin_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das empresas (ex.: 123 \"Salvy\")"),
+                   aplicar: bool = typer.Option(False, help="Gravar o resultado na empresa")):
+    """Testa o Sales Navigator com empresas escolhidas: lê a página, mede onde estão os funcionários (praça
+    de Saúde) e lista quem decide por cargo. Gasta até 3 consultas por empresa e espera cada resultado.
+    Depois do teste, ligue LINKEDIN_SALES_NAVIGATOR=true no deploy/.env."""
+    from sqlalchemy import select
+
+    from crosssell.connectors import linkedin as lk
+    from crosssell.models import Empresa
+    from crosssell.normalize import normalizar_nome_empresa
+
+    db, s = _db(), get_settings()
+    if not lk.direto(s):
+        raise typer.BadParameter("Linked API não configurada (LINKED_API_TOKEN e LINKED_API_IDENTIFICATION_TOKEN).")
+    client = lk._cliente(s)
+    for chave in empresas:
+        e = db.get(Empresa, int(chave)) if chave.isdigit() else db.scalar(
+            select(Empresa).where(Empresa.nome_normalizado.contains(normalizar_nome_empresa(chave))).limit(1))
+        if e is None:
+            typer.echo(f"\n{chave}: empresa não encontrada")
+            continue
+        try:
+            typer.echo(lk.testar_sales_navigator(db, s, e, client, aplicar=aplicar, saida=typer.echo))
+        except Exception as exc:  # uma empresa com problema não impede as outras
+            typer.echo(f"  ERRO: {exc}")
+
+
 @app.command("linkedin-sites")
 def linkedin_sites(limite: int = 50):
     """Procura o link do LinkedIn no site de cada empresa da tabela (sem usar a Linked API)."""

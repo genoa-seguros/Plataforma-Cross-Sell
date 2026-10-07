@@ -51,7 +51,16 @@ class Settings(BaseSettings):
     n8n_token: str = ""
     plataforma_url: str = ""  # endereço público da plataforma, para o n8n devolver os resultados
     linkedin_lote: int = 10  # consultas iniciadas por rodada (a rotina roda de hora em hora)
-    linkedin_validade_dias: int = 90  # reler perfis com mais de N dias
+    linkedin_validade_dias: int = 180  # reler empresas e pessoas com mais de N dias
+    # Consultas por dia de cada vertical (paga a vertical de maior Score da empresa; a sobra de uma passa às
+    # outras). Em Saúde, linkedin_cota_saude_pessoas vai para a lista de quem decide e o resto para a empresa.
+    linkedin_cota_saude: int = 30
+    linkedin_cota_saude_pessoas: int = 12
+    linkedin_cota_lf: int = 10
+    linkedin_cota_re: int = 10
+    # Sales Navigator na conta do LinkedIn: onde estão os funcionários (praça) e a lista de quem decide por cargo.
+    # Ligar só depois de testar com `crosssell linkedin-teste` no servidor.
+    linkedin_sales_navigator: bool = False
 
     # Rotina dentro do servidor (hospedagem de um container só, ex.: AWS App Runner/Lightsail)
     rotina_interna: bool = False

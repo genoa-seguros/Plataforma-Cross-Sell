@@ -99,15 +99,17 @@ def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], d
             verticais[eid].append(op["vertical"])
         for c in op["contatos"]:
             pessoas.setdefault(c["id"], "contato da empresa")
-    ops = set(verticais)
     for linha in tabela.montar(db, settings):
         if linha["empresa"]:
             eid = linha["empresa"]["id"]
             empresas.setdefault(eid, f"{linha['funil']}: {linha['titulo']}")
-            if linha["vertical"] and eid not in ops and linha["vertical"] not in verticais.setdefault(eid, []):
+            # Vertical do negócio aberto depois das oportunidades (quem paga é a oportunidade de maior Score)
+            if linha["vertical"] and linha["vertical"] not in verticais.setdefault(eid, []):
                 verticais[eid].append(linha["vertical"])
-        if linha["pessoa"]:
-            pessoas.setdefault(linha["pessoa"]["id"], "contato do negócio")
+        if linha["pessoa"] and linha["pessoa"]["doNegocio"]:
+            pessoas[linha["pessoa"]["id"]] = "contato do negócio"
+        elif linha["pessoa"]:
+            pessoas.setdefault(linha["pessoa"]["id"], "contato da empresa")
         for c in linha["contatos"]:
             pessoas.setdefault(c["id"], "contato da empresa")
     return empresas, pessoas, verticais
@@ -163,6 +165,7 @@ VERTICAL_PADRAO = "ramos_elementares"  # empresa sem vertical conhecida (raro): 
 URN = "urn"  # chave em Empresa.linkedin_areas: urn da página da empresa (abre o Sales Navigator)
 PRACA = "praca"  # ... pedido da distribuição dos funcionários (praça de Saúde)
 PESSOAS = "pessoas"  # ... última lista de quem decide pelo Sales Navigator
+PESSOAS_LF = "pessoas_lf"  # ... última lista de cargos-chave de Linhas Financeiras pelo Sales Navigator
 
 
 def _quando(e: Empresa, chave: str) -> datetime | None:
@@ -208,49 +211,112 @@ def _passos_saude(e: Empresa, settings: Settings, validade: int, agora: datetime
     return passos
 
 
+def grupo_lf(e: Empresa, settings: Settings) -> str:
+    """Cota de LF dividida: empresas com card no funil Pipo Saúde e as dos outros funis."""
+    pipo = any(n.pipeline_id == settings.linkedin_funil_pipo and n.status == "aberto" for n in e.negocios)
+    return "pipo" if pipo else "outros"
+
+
+def _ultima_ma(e: Empresa) -> datetime | None:
+    """Data da notícia de M&A/aporte mais recente (antecipa a releitura dos cargos-chave)."""
+    from crosssell.potencial import noticias_ma
+
+    datas = [x.publicada_em or x.coletada_em for x in noticias_ma(e)]
+    return max((d for d in datas if d), default=None)
+
+
+def _passos_lf(e: Empresa, settings: Settings, validade: int, agora: datetime) -> list[dict]:
+    """Fluxo de Linhas Financeiras:
+    1. página da empresa só se faltar algo (venture capital, setor, funcionários ou o urn do Sales Navigator);
+    2. lista de cargos-chave (CFO, CEO, founder, conselho, jurídico, riscos, compliance, CTO, CISO, DPO) pelo
+       Sales Navigator, relida depois da validade ou antes, se sair notícia de M&A/aporte depois da última leitura.
+       Sem Sales Navigator, a lista comum de funcionários (classificada pela área do título)."""
+    from crosssell.connectors.linkedapi import pagina_sales_navigator
+    from crosssell.potencial import cargos_lf, funcionarios_validos
+
+    sn = settings.linkedin_sales_navigator
+    motivo = "Linhas Financeiras"
+    sales = pagina_sales_navigator((e.linkedin_areas or {}).get(URN))
+    falta = (e.linkedin_em is None or e.setor_fonte not in ("linkedin", "manual") or not funcionarios_validos(e)
+             or (sn and not sales))
+    if not e.linkedin_url:
+        acao = _acao(e, validade, agora) if falta else None
+        return [_alvo_empresa(e, acao, motivo)] if acao else []
+    passos = []
+    if falta and _precisa(e.linkedin_em, e.linkedin_pedido_em, validade, agora):
+        passos.append(_alvo_empresa(e, "ler", motivo))
+    if sn and sales:
+        lida, ma = _quando(e, PESSOAS_LF), _ultima_ma(e)
+        if _precisa(lida, None, validade, agora) or (ma and lida and ma > lida):
+            passos.append({**_alvo_empresa(e, "pessoas", motivo if not (ma and lida and ma > lida) else
+                                           "Linhas Financeiras: notícia de M&A/aporte"),
+                           "sales_url": sales, "cargos": cargos_lf(), "area": "linhas_financeiras"})
+    elif not sn:
+        passos += _alvos_area(e, {"linhas_financeiras"}, validade, agora, motivo)
+    return passos
+
+
 def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> list[dict]:
     """Alvos pendentes, na ordem de prioridade (Score), cada um com a vertical que paga e o grupo da cota.
-    Empresas com oportunidade de Saúde seguem o fluxo de Saúde; as outras, a leitura geral (página da
-    empresa, perfis dos contatos e funcionários da área que decide)."""
+    Empresas com oportunidade de Saúde ou de LF seguem o fluxo da vertical (Saúde primeiro; a página da empresa
+    é lida uma vez só); as outras, a leitura geral (página da empresa, perfis dos contatos e funcionários da área
+    que decide)."""
     agora = agora or datetime.utcnow()
     validade = settings.linkedin_validade_dias
     empresas, pessoas, verticais = _candidatos_alvo(db, settings)
     ordem_e = {eid: i for i, eid in enumerate(empresas)}
     paga = {eid: (vs[0] if vs else VERTICAL_PADRAO) for eid, vs in verticais.items()}
-
-    def marca(eid: int, grupo: str, a: dict) -> dict:
-        v = paga.get(eid, VERTICAL_PADRAO)
-        return {**a, "vertical": v, "grupo": grupo if v == "saude" else "geral"}
+    fluxos = {"saude", "linhas_financeiras"}
+    grupos_lf: dict[int, str] = {}
 
     saida = []
-    so_saude = set()
+    so_fluxo = set()
     for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresas))):
-        vs = set(verticais.get(e.id, []))
+        vs = verticais.get(e.id, [])
+        feitos: set[str] = set()
         if "saude" in vs:
-            saida += [(ordem_e[e.id], 0, marca(e.id, g, a)) for g, a in _passos_saude(e, settings, validade, agora)]
-            if vs <= {"saude"}:
-                so_saude.add(e.id)  # quem decide vem da lista por cargo, sem ler perfil por perfil
+            for g, a in _passos_saude(e, settings, validade, agora):
+                saida.append((ordem_e[e.id], 0, {**a, "vertical": "saude", "grupo": g}))
+                feitos.add(a["acao"])
+        if "linhas_financeiras" in vs:
+            grupos_lf[e.id] = grupo_lf(e, settings)
+            for a in _passos_lf(e, settings, validade, agora):
+                if a["acao"] in ("ler", "buscar", "area") and a["acao"] in feitos:
+                    continue  # a página (ou a lista comum, que vem sem filtro de cargo) já vai ser lida para Saúde
+                saida.append((ordem_e[e.id], 0, {**a, "vertical": "linhas_financeiras", "grupo": grupos_lf[e.id]}))
+                feitos.add(a["acao"])
+        if fluxos & set(vs):
+            if set(vs) <= fluxos:
+                so_fluxo.add(e.id)  # quem decide vem da lista por cargo, sem ler perfil por perfil
             continue
+        geral = {"vertical": vs[0] if vs else VERTICAL_PADRAO, "grupo": "geral"}
         acao = _acao(e, validade, agora)
-        if acao:
-            saida.append((ordem_e[e.id], 0, marca(e.id, "caracteristicas", _alvo_empresa(e, acao, empresas[e.id]))))
-        saida += [(ordem_e[e.id], 2, marca(e.id, "pessoas", a))
-                  for a in _alvos_area(e, vs, validade, agora, empresas[e.id])]
+        if acao and acao not in feitos:
+            saida.append((ordem_e[e.id], 0, {**_alvo_empresa(e, acao, empresas[e.id]), **geral}))
+        saida += [(ordem_e[e.id], 2, {**a, **geral}) for a in _alvos_area(e, set(vs), validade, agora, empresas[e.id])]
+
+    def marca_pessoa(eid: int | None, a: dict) -> dict:
+        v = paga.get(eid, VERTICAL_PADRAO)
+        grupo = "pessoas" if v == "saude" else grupos_lf.get(eid, "outros") if v == "linhas_financeiras" else "geral"
+        return {**a, "vertical": v, "grupo": grupo}
+
     for p in db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas))):
-        if p.empresa_id in so_saude and pessoas[p.id] != "contato do negócio":
+        if p.empresa_id in so_fluxo and pessoas[p.id] != "contato do negócio":
             continue  # o contato do negócio aberto é lido (cargo de quem já fala conosco); os outros vêm da lista
         acao = _acao(p, validade, agora)
         if acao:
             saida.append((ordem_e.get(p.empresa_id, len(ordem_e)), 1,
-                          marca(p.empresa_id, "pessoas", _alvo_pessoa(p, acao, pessoas[p.id]))))
+                          marca_pessoa(p.empresa_id, _alvo_pessoa(p, acao, pessoas[p.id]))))
     return [a for *_, a in sorted(saida, key=lambda x: (x[0], x[1]))]
 
 
 def cotas(settings: Settings) -> dict[tuple[str, str], int]:
-    """Consultas por dia de cada vertical e grupo (Saúde dividida entre a empresa e quem decide)."""
+    """Consultas por dia de cada vertical e grupo (Saúde dividida entre a empresa e quem decide; LF entre as
+    empresas do funil Pipo Saúde e as dos outros funis)."""
     pes = min(settings.linkedin_cota_saude_pessoas, settings.linkedin_cota_saude)
+    pipo = min(settings.linkedin_cota_lf_pipo, settings.linkedin_cota_lf)
     return {("saude", "caracteristicas"): settings.linkedin_cota_saude - pes, ("saude", "pessoas"): pes,
-            ("linhas_financeiras", "geral"): settings.linkedin_cota_lf,
+            ("linhas_financeiras", "pipo"): pipo, ("linhas_financeiras", "outros"): settings.linkedin_cota_lf - pipo,
             ("ramos_elementares", "geral"): settings.linkedin_cota_re}
 
 
@@ -645,7 +711,8 @@ def aplicar_praca(e: Empresa, r: dict, quando: datetime) -> None:
 
 def _aplicar_pessoas(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     """Lista de quem decide (Sales Navigator, filtrada por cargo): atualiza o cargo de quem já conhecemos
-    (contatos dos e-mails e do Pipedrive) e cria os que faltam. O cargo do Sales Navigator é o atual."""
+    (contatos dos e-mails e do Pipedrive) e cria os que faltam. O cargo do Sales Navigator é o atual.
+    A lista de Saúde (RH) e a de Linhas Financeiras (cargos-chave) têm datas próprias."""
     novos = 0
     for f in _lista(r.get("funcionarios_area"))[:25]:
         nome, cargo = f.get("nome"), (f.get("headline") or "").strip()
@@ -660,7 +727,8 @@ def _aplicar_pessoas(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
         p.senioridade = classificar_senioridade(p.cargo or cargo)
         p.linkedin_em = quando
         novos += ja is None
-    e.linkedin_areas = {**(e.linkedin_areas or {}), PESSOAS: quando.isoformat(timespec="seconds")}
+    chave = PESSOAS_LF if r.get("area") == "linhas_financeiras" else PESSOAS
+    e.linkedin_areas = {**(e.linkedin_areas or {}), chave: quando.isoformat(timespec="seconds")}
     return novos
 
 
@@ -789,7 +857,8 @@ def iniciar(db: Session, settings: Settings, client, agora: datetime | None = No
         db.add(LinkedinPedido(workflow_id=wid, id_alvo=a["id_alvo"], acao=a["acao"], area=a.get("area"), criado_em=agora,
                               vertical=a.get("vertical"), grupo=a.get("grupo")))
         obj = db.get(Pessoa if a["tipo"] == "pessoa" else Empresa, int(a["id_alvo"][1:]))
-        chave = {"area": FUNCIONARIOS, "praca": PRACA, "pessoas": PESSOAS}.get(a["acao"])
+        chave = {"area": FUNCIONARIOS, "praca": PRACA,
+                 "pessoas": PESSOAS_LF if a.get("area") == "linhas_financeiras" else PESSOAS}.get(a["acao"])
         if chave:
             obj.linkedin_areas = {**(obj.linkedin_areas or {}), chave: agora.isoformat(timespec="seconds")}
         else:

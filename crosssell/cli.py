@@ -97,13 +97,13 @@ def emails(dias: int = 30, temperatura: bool = typer.Option(True, help="Classifi
 
 @app.command()
 def noticias(horas: int = typer.Option(24, help="Não rebuscar empresas atualizadas há menos de N horas")):
-    """Busca notícias das empresas que estão na tabela de negócios abertos."""
-    from crosssell import tabela
+    """Busca notícias das empresas com negócio aberto ou oportunidade (busca geral e nos portais de negócios)."""
+    from crosssell.connectors import linkedin as lk
     from crosssell.connectors import noticias as nt
     from crosssell.pipeline import registrar
 
     db, s = _db(), get_settings()
-    ids = sorted({x["empresa"]["id"] for x in tabela.montar(db, s) if x["empresa"]})
+    ids = sorted(lk._candidatos_alvo(db, s)[0])
     typer.echo(registrar(db, "noticias", nt.atualizar, db, ids, horas=horas))
 
 
@@ -159,6 +159,84 @@ def linkedin_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes 
             typer.echo(lk.testar_sales_navigator(db, s, e, client, aplicar=aplicar, saida=typer.echo, limite_s=minutos * 60))
         except Exception as exc:  # uma empresa com problema não impede as outras
             typer.echo(f"  ERRO: {exc}")
+
+
+def _empresas_lf(db, s) -> list[int]:
+    """Empresas com oportunidade de Linhas Financeiras, do maior Score para o menor (MEI fica de fora)."""
+    from crosssell import tabela
+
+    ids = []
+    for o in tabela.oportunidades(db, s):
+        if o["vertical"] == "linhas_financeiras" and "MEI" not in o["faltando"] and o["empresa"]["id"] not in ids:
+            ids.append(o["empresa"]["id"])
+    return ids
+
+
+@app.command("sites-ia")
+def sites_ia(limite: int = typer.Option(0, help="Sites por rodada (0 = SITE_IA_LOTE)")):
+    """Lê pela IA o site das empresas com oportunidade de Linhas Financeiras (fundos e investidores, grandes
+    clientes, serviço intelectual, site profissional). Só roda com SITE_IA_ATIVO=true."""
+    from crosssell import site_ia
+    from crosssell.pipeline import registrar
+    from crosssell.temperatura import modelo_em_uso
+
+    db, s = _db(), get_settings()
+    if not s.site_ia_ativo:
+        typer.echo("Leitura de sites pela IA desligada (SITE_IA_ATIVO). Teste antes com `crosssell site-teste`.")
+        return
+    leitor = site_ia.LeitorSite(s, modelo=modelo_em_uso(db, s)[0])
+    typer.echo(registrar(db, "sites-ia", site_ia.atualizar, db, _empresas_lf(db, s), leitor, limite=limite or s.site_ia_lote))
+
+
+@app.command("site-teste")
+def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das empresas (ex.: 123 \"Salvy\")"),
+               aplicar: bool = typer.Option(False, help="Gravar o resultado na empresa")):
+    """Testa a leitura do site pela IA com empresas escolhidas (10 a 20 conhecidas) e mostra o que ela achou.
+    Uma chamada à Claude API por empresa. Depois do teste, ligue SITE_IA_ATIVO=true no deploy/.env."""
+    from datetime import datetime
+
+    import httpx
+    from sqlalchemy import select
+
+    from crosssell import site_ia
+    from crosssell.models import Empresa
+    from crosssell.normalize import normalizar_nome_empresa
+    from crosssell.temperatura import modelo_em_uso
+
+    db, s = _db(), get_settings()
+    leitor = site_ia.LeitorSite(s, modelo=modelo_em_uso(db, s)[0])
+    http = httpx.Client(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    typer.echo(f"Modelo: {leitor.modelo}")
+    for chave in empresas:
+        e = db.get(Empresa, int(chave)) if chave.isdigit() else db.scalar(
+            select(Empresa).where(Empresa.nome_normalizado.contains(normalizar_nome_empresa(chave))).limit(1))
+        if e is None:
+            typer.echo(f"\n{chave}: empresa não encontrada")
+            continue
+        typer.echo(f"\n{e.id} · {e.razao_social} · {site_ia.endereco(e) or 'sem site'}")
+        try:
+            res = site_ia.ler_empresa(e, leitor, http)
+        except Exception as exc:  # uma empresa com problema não impede as outras
+            typer.echo(f"  ERRO: {exc}")
+            continue
+        if res is None:
+            typer.echo("  a IA não respondeu (veja o log)")
+            continue
+        if "erro" in res:
+            typer.echo(f"  {res['erro']}")
+        else:
+            sim = lambda v: "sim" if v else "não"  # noqa: E731
+            typer.echo(f"  fundo/gestora: {sim(res['fundo_gestora'])} · fundos/investidores: "
+                       f"{sim(res['fundos_investidores'])} {', '.join(res['investidores'])}")
+            typer.echo(f"  grandes clientes: {sim(res['grandes_clientes'])} {', '.join(res['clientes'])}")
+            typer.echo(f"  serviço intelectual: {sim(res['servico_intelectual'])} ({res['servico']}) · "
+                       f"site profissional: {sim(res['site_profissional'])}")
+            typer.echo(f"  resumo: {res['resumo']}")
+            typer.echo(f"  páginas lidas: {', '.join(res['paginas'])}")
+        if aplicar:
+            e.site_ia, e.site_ia_em = res, datetime.utcnow()
+            db.commit()
+            typer.echo("  gravado na empresa")
 
 
 @app.command("linkedin-sites")
@@ -249,6 +327,8 @@ def _rodar_rotina(dias: int) -> None:
               ("cnpj-sites", cnpj_sites), ("dominios", dominios), ("emails", lambda: emails(dias=dias, temperatura=True)),
               ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
               ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
+    if get_settings().site_ia_ativo:
+        passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", sites_ia))
     if lk.configurado(get_settings()):
         passos.insert(len(passos) - 1, ("linkedin", linkedin))  # antes de recalcular
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal

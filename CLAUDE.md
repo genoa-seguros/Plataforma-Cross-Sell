@@ -19,7 +19,8 @@ pytest                                       # all tests (tests/)
 pytest tests/test_fluxo.py::test_regra_de_vigencia   # single test
 crosssell initdb                             # apply DB migrations only; users are created by a master on the Equipe screen
 crosssell serve                              # web app at http://localhost:8000 (set COOKIE_SEGURO=false locally)
-crosssell rotina                             # hourly job: pipedrive, pipedrive-excluidas, cnpj-sites, dominios, emails, noticias, receita, linkedin, recalcular, qualidade (weekly)
+crosssell rotina                             # hourly job: pipedrive, pipedrive-excluidas, cnpj-sites, dominios, emails, noticias, receita, linkedin-sites, sites-ia (SITE_IA_ATIVO), linkedin, recalcular, qualidade (weekly)
+crosssell site-teste 123 "Nome"              # test the site AI reading on chosen companies (--aplicar saves)
 DATABASE_URL=sqlite:///demo.db python scripts/demo.py                         # fake demo data
 DATABASE_URL=sqlite:///demo.db python scripts/exportar_preview.py preview.html --exemplo   # static single-file preview
 ```
@@ -50,13 +51,18 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   API to classify contact openness from e-mail replies. E-mail text is never stored. The model is the one a master
   picked on the Equipe screen (`configuracoes` table, `temperatura.modelo_em_uso`), else `ANTHROPIC_MODEL`; only
   models in `temperatura.MODELOS` are offered (they must accept effort, structured output and the server fallback).
+  `site_ia.py` uses the same model and call pattern to read a company's site for LF (fundos/investidores, grandes
+  clientes, serviço intelectual, site profissional) into `Empresa.site_ia`; the site text is never stored. Off until
+  `SITE_IA_ATIVO=true`.
 - **LinkedIn** (`connectors/linkedin.py`, `linkedapi.py`): calls Linked API directly when
   `LINKED_API_TOKEN`/`LINKED_API_IDENTIFICATION_TOKEN` are set. Otherwise it falls back to an n8n webhook
   (`n8n/`, `docs/linkedin-n8n.md`). Targets come from `linkedin.alvos()` in Score order, each tagged with the
   vertical that pays (the company's highest-Score opportunity) and a quota group; `escolher()` applies the daily
   per-vertical quotas (`LINKEDIN_COTA_*`, leftover passes to others). Saúde companies follow `_passos_saude`
   (page → praça via Sales Navigator employee locations → decision makers by cargo; SN actions only with
-  `LINKEDIN_SALES_NAVIGATOR=true`, test first with `crosssell linkedin-teste`). Rate-limited by
+  `LINKEDIN_SALES_NAVIGATOR=true`, test first with `crosssell linkedin-teste`). LF companies follow `_passos_lf` (page
+  only if VC/setor/funcionários/urn is missing → SN list of `linhas_financeiras.linkedin_cargos`, stored under
+  `linkedin_areas["pessoas_lf"]`, re-read early after an M&A news item); LF quota split by `grupo_lf` (Pipo funnel or not). Rate-limited by
   `LINKEDIN_LOTE`/`LINKEDIN_LIMITE_DIA` and tracked in
   `LinkedinPedido` rows.
 - **Web** (`crosssell/web/app.py`): server-rendered Jinja templates for auth pages only. The main UI is a
@@ -66,9 +72,13 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
   master-only routes use `somente_master`; Qualidade routes use `acesso_qualidade` (master or `papel="head"`).
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
-- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`, today only `saude`; `tabela.faltando()`
-  says what is missing: praça/cidade, funcionários, setor, quem decide, ponte por e-mail; "fora da praça" is final and
-  never enters, not even the queue). Employees and sector count only from LinkedIn or manual
+- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`: `saude` and `linhas_financeiras`;
+  `tabela.faltando()` says what is missing. Saúde: praça/cidade, funcionários, setor. LF (`faltando_lf`): Receita,
+  notícias, site (IA), cargos-chave. Both: quem decide, ponte por e-mail. `tabela.FINAIS` ("fora da praça", "MEI") never
+  enter, not even the queue). LF is per product (`potencial.FITS`: E&O, D&O, Cyber, IMI; `tabela.produtos_da_empresa`):
+  one row per company with suggested products, `tipo` "cross" (default view) or "mais_lf" (`?oferta=mais_lf`), and
+  `etiquetas` from open and lost (`Negocio.perdido_em`) LF deals. LF Score: profissionalização, momento (news from
+  `noticias.PORTAIS` weigh more), produto, influência. Employees and sector count only from LinkedIn or manual
   (`potencial.funcionarios_validos` / `setor_valido`); Pipedrive's are ignored and CNAE is not a sector. The ponte is
   e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled
   mailbox reads 12 months once (`Usuario.historico_em`). `potencial.praca(e)` decides the Saúde praça: a manual city

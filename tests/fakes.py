@@ -47,7 +47,8 @@ DADOS = {
         # Saúde com faixa de vidas informada
         deal(11, 34, "open", 10, 100, "Saúde Pipo", owner=1,
              **{"0b51bac054685ca49b31360b65782bab350a150b": {"id": 3, "label": "100 - 500"}}),
-        deal(6, 1, "lost", 20, 200, "D&O 2025", **{POSSUI_SAUDE: {"id": 452, "label": "Sim"}}),
+        {**deal(6, 1, "lost", 20, 200, "D&O 2025", **{POSSUI_SAUDE: {"id": 452, "label": "Sim"}}),
+         "lost_time": "2025-03-10 14:00:00"},
         # Fora da tabela: Garantia (40), Flash (38), M&A (31, nem configurado)
         deal(7, 40, "open", 20, 200, "Garantia nova"),
         deal(8, 38, "open", 20, 200, "Lead Flash"),

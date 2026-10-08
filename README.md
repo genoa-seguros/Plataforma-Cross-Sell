@@ -22,7 +22,14 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   (contador "X analisadas · Y na fila"), que anda pela ordem do Score; a ficha da empresa mostra
   também as não analisadas, com o que falta. **Fora da praça não entra em Oportunidades** (nem na fila),
   mesmo com a cidade informada à mão: aparece só na ficha e em Negócios em aberto, com a etiqueta.
-  Por enquanto só Saúde: Linhas Financeiras e RE entram quando o fluxo de cada uma estiver pronto.
+  Em **Linhas Financeiras**: **Receita** lida (MEI fica de fora, nem entra na fila), **notícias**
+  buscadas, **site lido pela IA** (quando a empresa tem site), **cargos-chave** do LinkedIn lidos,
+  **quem decide** (Financeiro, Jurídico, Riscos ou, sem eles, um executivo) e **ponte por e-mail**. LF
+  conta **por produto** (E&O, D&O, Cyber, IMI; Garantia e Fiança ficam de fora): uma linha por empresa
+  com os produtos sugeridos, os que ela ainda não tem nem negocia. O padrão da tela é o *cross sell*
+  (empresas sem LF); o filtro *Mais produtos em LF* mostra quem já tem ou negocia LF, com as etiquetas
+  *negociando X agora* e *X ofertado em mm/aaaa, perdido* (data de perda do Pipedrive). RE entra quando
+  o fluxo dela estiver pronto.
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
   (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,
@@ -72,7 +79,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   acessa a Qualidade) e ligar a **leitura de e-mails** de cada uma
   (desligada por padrão; só para quem já entrou). A caixa também precisa estar no grupo
   `crosssell-equipe` do Microsoft 365; a tela mostra o resultado da última leitura.
-- **Ficha da empresa**: seguros vigentes, pessoas e temperatura, histórico de produtos e notícias.
+- **Ficha da empresa**: seguros vigentes, pessoas e temperatura, histórico de produtos, o que a IA leu
+  no site (Linhas Financeiras) e notícias (os portais de negócios em destaque).
 
 ## Regras
 
@@ -99,11 +107,17 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   - *Saúde*: influência 30, funcionários (ou vidas) 25, qualificação do time 20 (startups,
     fintechs, fundos, multinacionais, tecnologia, farmacêuticas × indústria, transporte, varejo,
     restaurantes), localização 15 (interior perde para a Unimed local) e RH estruturado 10.
-  - *Linhas Financeiras*: influência 35 e encaixe do produto 65. E&O: serviço intelectual
-    (advocacia, contabilidade, tecnologia, saúde, consultoria). D&O: gestão profissional (venture
-    capital, notícias de M&A ou investimento (comprou, foi comprada, fusão, recebeu investimento;
-    lista `ma`), aporte/conselho nas notícias, S.A., diretoria executiva, porte); fundos e gestoras:
-    IMI. Cyber: CTO ou DPO na empresa, setor com muitos dados.
+  - *Linhas Financeiras*: profissionalização 40, influência 25, encaixe do produto 20 e momento 15.
+    *Profissionalização*: fundos e investidores (venture capital no LinkedIn ou no site), S.A.,
+    diretoria e conselho (lista `executivos`: CFO, CTO, conselho, jurídico, riscos, compliance), grandes
+    clientes e site profissional (lidos pela IA), porte; capital social alto
+    (`capital_social_alto`) soma um pouco, baixo não tira; fundo ou gestora vale 1. *Momento*: notícia de
+    M&A, aporte ou investimento (listas `ma` e `aporte`) nos portais de negócios (NeoFeed, Brazil Journal,
+    Valor, Exame) vale mais que no Google Notícias; aparecer nos portais também conta. *Encaixe do
+    produto*: o melhor entre os que a empresa ainda não tem nem negocia. E&O: serviço intelectual
+    (advocacia, contabilidade, tecnologia, saúde, consultoria, ou o site lido pela IA). D&O: gestão
+    profissional. Cyber: CTO ou DPO na empresa, setor com muitos dados. IMI: fundos e gestoras (no
+    lugar de D&O e E&O). Produto com encaixe a partir de 0,5 é sugerido.
   - *RE*: influência 30, perfil 45 (galpões, indústrias, transportadoras; empresa grande em
     escritório: empresarial e fiança) e porte 25.
   - Dados usados: setor e descrição do LinkedIn, CNAE e natureza jurídica da Receita, cidade/UF,
@@ -126,9 +140,10 @@ site da página do LinkedIn e o e-mail da Receita quando lembra o nome da empres
 contador). Um domínio de empresas diferentes não decide nada. Quando um domínio passa a ser
 conhecido, os e-mails já lidos dele são religados à empresa.
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
-| Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
+| Google Notícias | RSS, duas buscas: geral e só nos portais (NeoFeed, Brazil Journal, Valor, Exame) | manchetes recentes de cada empresa com negócio aberto ou oportunidade |
+| Site da empresa | página inicial e até 3 internas, lidas pela Claude API (`crosssell sites-ia`) | LF: fundos e investidores, grandes clientes, serviço intelectual, site profissional (o texto não é guardado) |
 | LinkedIn | Linked API, chamada direto (`api.linkedapi.io`) | perfis, cargos, decisores, funcionários da área que decide, posts, nº de funcionários; aviso de contato que mudou de empresa |
-| Receita Federal (BrasilAPI) | API pública | porte, CNAE, capital social, sócios |
+| Receita Federal (BrasilAPI) | API pública | porte (e se é MEI), CNAE, natureza jurídica, capital social, sócios |
 
 ### LinkedIn (Linked API)
 
@@ -139,9 +154,10 @@ conhecido, os e-mails já lidos dele são religados à empresa.
    na ordem do Score (Oportunidades primeiro, depois as empresas dos negócios abertos).
 
 **Cotas por vertical** (consultas por dia): Saúde 30 (`LINKEDIN_COTA_SAUDE`, das quais 20 para
-quem decide, `LINKEDIN_COTA_SAUDE_PESSOAS`), Linhas Financeiras 10 (`LINKEDIN_COTA_LF`) e RE 10
-(`LINKEDIN_COTA_RE`). Paga a vertical da oportunidade de maior Score da empresa, e o que for lido
-serve a todas. A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por
+quem decide, `LINKEDIN_COTA_SAUDE_PESSOAS`), Linhas Financeiras 10 (`LINKEDIN_COTA_LF`, das quais 5 para
+empresas com card no funil Pipo Saúde, `LINKEDIN_COTA_LF_PIPO`, e o resto para os outros funis) e RE 10
+(`LINKEDIN_COTA_RE`). Cada passo do fluxo de Saúde ou de LF paga a cota da sua vertical; na leitura
+geral paga a vertical da oportunidade de maior Score, e o que for lido serve a todas. A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por
 não ter o que consultar) passa para as outras.
 
 **Fluxo de Saúde**, um passo por vez:
@@ -157,7 +173,17 @@ não ter o que consultar) passa para as outras.
    quem já conhecemos pelos e-mails e cadastra quem falta. Sem Sales Navigator, usa a lista comum de
    funcionários da página.
 
-Linhas Financeiras e RE seguem, por enquanto, a leitura geral: **ler** (perfil, ou página da
+**Fluxo de Linhas Financeiras**:
+
+1. *Empresa*: a página só é lida se faltar algo: venture capital, setor (o mais específico),
+   funcionários ou o urn do Sales Navigator. Se a empresa também tem Saúde, é lida uma vez só.
+2. *Cargos-chave*: a lista do Sales Navigator filtrada por `linhas_financeiras.linkedin_cargos` (CFO,
+   diretor financeiro, CEO, founder, conselho, jurídico, riscos, compliance, CTO, CISO, DPO), com data
+   própria (`pessoas_lf`). Notícia de M&A ou aporte depois da última leitura antecipa a releitura. Sem
+   Sales Navigator, usa a lista comum de funcionários da página.
+
+Nas empresas com Saúde ou LF, só o perfil do contato do negócio aberto é lido; os outros vêm das listas.
+RE segue, por enquanto, a leitura geral: **ler** (perfil, ou página da
 empresa com decisores e posts), **buscar** (procura pelo nome; a pessoa só é aceita se o nome e a
 empresa conferirem no título, e a empresa pelo domínio ou pelo nome com local no Brasil) e
 **funcionários** (lista de até 50 pessoas da página da empresa, quando falta alguém da área que
@@ -180,6 +206,20 @@ Enquanto espera, o comando mostra a cada minuto se a consulta está na fila da c
 (uma consulta de antes desta versão entra com `--workflow wf-...`).
 
 Se a praça e as pessoas fizerem sentido, ponha `LINKEDIN_SALES_NAVIGATOR=true` no `deploy/.env`.
+
+### Site lido pela IA (Linhas Financeiras)
+
+`SITE_IA_ATIVO` vem desligado. Antes de ligar, teste no servidor com 10 a 20 empresas conhecidas (uma
+chamada à Claude API por empresa, com o modelo escolhido na tela Equipe):
+
+```bash
+docker compose exec web crosssell site-teste 123 456 "Nome da Empresa"   # só mostra o que a IA achou
+docker compose exec web crosssell site-teste 123 --aplicar               # grava na empresa
+```
+
+Se as respostas fizerem sentido, ponha `SITE_IA_ATIVO=true` no `deploy/.env` (`SITE_IA_LOTE`: sites por
+rodada, 20). Relê cada site depois de 180 dias. Enquanto a leitura estiver desligada, nenhuma empresa com
+site fica analisada em LF.
 
 Tokens: `LINKED_API_TOKEN` e `LINKED_API_IDENTIFICATION_TOKEN` (painel da Linked API). O caminho
 antigo pelo n8n continua disponível se esses tokens não forem definidos
@@ -207,7 +247,9 @@ crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividad
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell cnpj-sites              # a cada hora: CNPJ no site de empresas sem CNPJ (só se o nome bater)
 crosssell dominios                # a cada hora: outros domínios de e-mail (site, redirecionamento)
-crosssell noticias                # diário
+crosssell noticias                # diário (geral e portais de negócios)
+crosssell sites-ia                # a cada hora, com SITE_IA_ATIVO=true: site lido pela IA (LF)
+crosssell site-teste 123 "Nome"   # testa a leitura do site pela IA (só mostra; --aplicar grava)
 crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário
 crosssell qualidade               # semanal (a rotina já roda): duplicadas e razão social

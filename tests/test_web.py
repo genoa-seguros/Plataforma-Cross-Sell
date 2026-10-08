@@ -140,14 +140,25 @@ def test_criar_atividade_e_marcar_saude_pela_api(cenario):
 def test_oportunidades_e_atividade_na_organizacao(cenario, db):
     c, fake = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
-    # Beta já tem Saúde (marcado no Pipedrive) e negócios abertos em Saúde e LF (Garantia): falta RE.
-    # Alfa tem LF vigente e negócios abertos de RE e Saúde: nenhuma oportunidade.
-    # RE ainda não tem fluxo de análise: fica fora da tela, mas aparece na ficha da empresa
+    # Beta já tem Saúde (marcado no Pipedrive) e negócios abertos em Saúde e LF (Garantia): falta RE e, em LF,
+    # os produtos (Garantia não é um deles). Alfa tem D&O vigente e negócios abertos de RE e Saúde: mais
+    # produtos de LF. RE ainda não tem fluxo de análise: fica fora da tela, mas aparece na ficha da empresa
     assert c.get("/api/oportunidades").json()["itens"] == []
     beta_id = db.scalar(select(Empresa.id).where(Empresa.pipedrive_org_id == 20))
     ops = c.get(f"/api/oportunidades?empresa={beta_id}").json()["itens"]
-    assert [(o["empresa"]["nome"], o["vertical"], o["analisada"]) for o in ops] == [("Beta Serviços SA", "ramos_elementares", False)]
-    beta = ops[0]
+    assert sorted((o["empresa"]["nome"], o["vertical"], o["analisada"]) for o in ops) == [
+        ("Beta Serviços SA", "linhas_financeiras", False), ("Beta Serviços SA", "ramos_elementares", False)]
+    lf = next(o for o in ops if o["vertical"] == "linhas_financeiras")
+    # Negocia LF (Garantia): "mais produtos em LF", com a etiqueta do D&O ofertado e perdido. Sem dados ainda,
+    # nenhum produto passa do encaixe mínimo: sugere o melhor (Cyber)
+    assert lf["tipo"] == "mais_lf" and lf["etiquetas"] == ["D&O ofertado em 03/2025, perdido"]
+    assert [x["produto"] for x in lf["produtos"]] == ["Cyber"]
+    assert lf["faltando"][:3] == ["Receita", "notícias", "cargos-chave"]
+    alfa_id = db.scalar(select(Empresa.id).where(Empresa.pipedrive_org_id == 10))
+    alfa_lf = next(o for o in c.get(f"/api/oportunidades?empresa={alfa_id}").json()["itens"]
+                   if o["vertical"] == "linhas_financeiras")
+    assert alfa_lf["tipo"] == "mais_lf" and "D&O" not in [x["produto"] for x in alfa_lf["produtos"]]  # já tem D&O
+    beta = next(o for o in ops if o["vertical"] == "ramos_elementares")
     assert beta["quemDecide"]["areas"] == ["Operações", "Riscos", "Financeiro"]
     victor = next(u for u in c.get("/api/tabela").json()["usuarios"] if u["email"].startswith("victor"))
     r = c.post("/api/atividades", headers=H, json={"empresa_id": beta["empresa"]["id"], "assunto": "Abrir conversa de RE",
@@ -178,7 +189,10 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     db.commit()
     r = c.get("/api/oportunidades").json()
     assert (len(r["itens"]), r["total"], r["totalGeral"], r["pagina"], r["paginas"]) == (20, 25, 25, 1, 2)
-    assert r["verticais"] == ["saude"] and r["fila"] == {"saude": 1}
+    # Os leads negociam D&O: em LF são "mais produtos", ainda em análise (falta Receita, notícias, cargos-chave),
+    # como a Alfa e a Beta do Pipedrive falso
+    assert r["verticais"] == ["saude", "linhas_financeiras"] and r["fila"] == {"saude": 1, "linhas_financeiras": 28}
+    assert r["ofertas"] == {"cross": 25, "mais_lf": 0}
     assert len(c.get("/api/oportunidades?pagina=2").json()["itens"]) == 5
     assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 2
     assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25
@@ -189,7 +203,7 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     assert r["relacoes"] == ["victor.boldrini@innoaseguros.com.br"]
     lead3 = db.scalar(select(Empresa).where(Empresa.razao_social == "Lead 3 SA"))
     assert {o["vertical"] for o in c.get(f"/api/oportunidades?empresa={lead3.id}").json()["itens"]} == \
-        {"saude", "ramos_elementares"}  # a ficha mostra todas
+        {"saude", "ramos_elementares", "linhas_financeiras"}  # a ficha mostra todas
 
     # A lista fica guardada: o que muda direto no banco só aparece quando a plataforma altera algo
     lead(91)
@@ -514,7 +528,9 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     itens = c.get("/api/negocios").json()["itens"]
     n = next(x for x in itens if x["empresa"] and x["empresa"]["id"] == e.id)
     eid = n["empresa"]["id"]
-    assert n["faltaParaOportunidade"] == ["cidade", "funcionários", "quem decide", "ponte por e-mail"]
+    saude = lambda n: next(f["faltando"] for f in n["faltaParaOportunidade"] if f["vertical"] == "saude")  # noqa: E731
+    assert saude(n) == ["cidade", "funcionários", "quem decide", "ponte por e-mail"]
+    assert [f["nome"] for f in n["faltaParaOportunidade"]] == ["Saúde", "Linhas Financeiras"]
     assert not n["temOportunidade"]
     assert {"funcionarios", "cidade", "uf", "cidadeFonte"} <= set(n["empresa"])
     # Preencher cidade e funcionários na própria aba leva a empresa para mais perto de Oportunidades
@@ -524,12 +540,13 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
     assert depois["empresa"]["funcionarios"] == 120 and depois["empresa"]["cidadeFonte"] == "manual"
     # Os dados à mão encurtam a busca, mas sem quem decide e ponte por e-mail ainda não vira oportunidade
-    assert depois["faltaParaOportunidade"] == ["quem decide", "ponte por e-mail"] and not depois["temOportunidade"]
+    assert saude(depois) == ["quem decide", "ponte por e-mail"] and not depois["temOportunidade"]
     mapear_rh(db, e, 7)
     db.commit()
     c.post(f"/api/empresas/{eid}/setor", json={"setor": "Fintech de pagamentos"}, headers=hdr)  # limpa a lista guardada
     depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
-    assert depois["temOportunidade"] and depois["faltaParaOportunidade"] == []  # agora está em Oportunidades
+    assert depois["temOportunidade"]  # agora está em Oportunidades de Saúde
+    assert [f["vertical"] for f in depois["faltaParaOportunidade"]] == ["linhas_financeiras"]  # LF ainda em análise
     assert depois["empresa"]["setor"] == "Fintech de pagamentos"
 
 
@@ -565,8 +582,8 @@ def test_fora_da_praca_nao_entra_em_oportunidades_nem_na_fila(cenario, db):
     mapear_rh(db, e, 5)  # mesmo com quem decide e ponte: cidade à mão fora das cidades alvo decide
     db.commit()
     r = c.get("/api/oportunidades").json()
-    assert not any(o["empresa"]["id"] == e.id for o in r["itens"]) and r["fila"] == {"saude": 0}
+    assert not any(o["empresa"]["id"] == e.id for o in r["itens"]) and r["fila"]["saude"] == 0
     ficha = next(o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"] if o["vertical"] == "saude")
     assert ficha["faltando"] == ["fora da praça"] and ficha["praca"] == "fora"
     n = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == e.id)
-    assert n["faltaParaOportunidade"] == ["fora da praça"]
+    assert next(f for f in n["faltaParaOportunidade"] if f["vertical"] == "saude")["faltando"] == ["fora da praça"]

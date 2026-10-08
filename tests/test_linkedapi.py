@@ -282,13 +282,15 @@ def test_saude_com_sales_navigator_decide_a_praca_e_acha_quem_decide(db, setting
     assert alfa.praca == "alvo" and alfa.praca_fatia == 0.667
     assert potencial.praca(alfa) == "alvo"
     # Na praça: lista de quem decide por cargo (Sales Navigator), paga pela cota de pessoas de Saúde
-    pessoas = [p["def"] for p in api.pedidos.values() if p["def"]["actionType"] == "nv.openCompanyPage"
-               and p["def"]["then"][0].get("filter")]
-    assert len(pessoas) == 1 and "diretor de rh" in pessoas[0]["then"][0]["filter"]["positions"]
-    # Paga a vertical de maior Score da Alfa (a leitura serve a todas); grupo "pessoas" só na cota de Saúde
-    ped = db.scalar(select(LinkedinPedido).where(LinkedinPedido.acao == "pessoas"))
-    paga = lk._candidatos_alvo(db, s)[2][alfa.id][0]
-    assert ped.vertical == paga and ped.grupo == ("pessoas" if paga == "saude" else "geral")
+    pessoas = [p["def"]["then"][0]["filter"]["positions"] for p in api.pedidos.values()
+               if p["def"]["actionType"] == "nv.openCompanyPage" and p["def"]["then"][0].get("filter")]
+    # Uma lista de Saúde (RH) e uma de Linhas Financeiras (cargos-chave): a Alfa tem as duas oportunidades
+    assert sorted("diretor de rh" in x for x in pessoas) == [False, True]
+    assert any("cfo" in x and "dpo" in x for x in pessoas)
+    # Cada lista paga a cota da sua vertical: Saúde (grupo pessoas) e LF (a Alfa tem card no funil Pipo Saúde)
+    peds = {p.area: p for p in db.scalars(select(LinkedinPedido).where(LinkedinPedido.acao == "pessoas"))}
+    assert (peds[None].vertical, peds[None].grupo) == ("saude", "pessoas")
+    assert (peds["linhas_financeiras"].vertical, peds["linhas_financeiras"].grupo) == ("linhas_financeiras", "pipo")
     lk.executar(db, s, client)
     db.expire_all()
     ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
@@ -310,8 +312,8 @@ def test_fora_da_praca_nao_gasta_consulta_com_pessoas(db, settings):
         lk.executar(db, s, api.client())
     alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
     assert alfa.praca == "fora" and alfa.praca_fatia == 0.111
-    assert not any(p["def"]["then"][0].get("filter") for p in api.pedidos.values()
-                   if p["def"]["actionType"] == "nv.openCompanyPage")
+    assert not any("diretor de rh" in p["def"]["then"][0].get("filter", {}).get("positions", [])
+                   for p in api.pedidos.values() if p["def"]["actionType"] == "nv.openCompanyPage")
     # fora da praça é definitivo: não vai para Oportunidades
     assert potencial.praca(alfa) == "fora" and potencial.faltando_saude(alfa) == ["fora da praça"]
 
@@ -324,10 +326,11 @@ def test_cidade_alvo_dispensa_a_consulta_da_praca(db, settings):
     alfa.funcionarios, alfa.funcionarios_fonte, alfa.funcionarios_em = 300, "manual", datetime.utcnow()
     alfa.setor, alfa.setor_fonte = "Metalurgia", "manual"
     db.commit()
-    assert [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"] == []  # nem página, nem praça
+    saude = lambda: [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}" and a["vertical"] == "saude"]  # noqa: E731
+    assert saude() == []  # nem página, nem praça
     alfa.linkedin_url = "https://www.linkedin.com/company/metalurgica-alfa"
     db.commit()
-    assert not [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"]  # fora da praça: nem pessoas
+    assert not saude()  # fora da praça: nem pessoas
 
 
 def test_cotas_por_vertical_e_sobra():

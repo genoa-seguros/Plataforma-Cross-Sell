@@ -245,6 +245,7 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
         neg.inicio_vigencia = parse_data(campos.get(campos_cfg.get("inicio_vigencia")))
         neg.fim_vigencia = parse_data(campos.get(campos_cfg.get("fim_vigencia")))
         neg.ganho_em = parse_data((d.get("won_time") or "")[:10]) or neg.ganho_em
+        neg.perdido_em = parse_data((d.get("lost_time") or "")[:10]) or neg.perdido_em
         neg.pipedrive_owner_id = d.get("owner_id")
         # Saúde: "Quantidade de Vidas" (número) ou "Faixa de Vidas" (limite superior da faixa)
         qtd = campos.get(campos_cfg.get("vidas")) if campos_cfg.get("vidas") else None

@@ -53,6 +53,10 @@ class Empresa(Base):
     site_cnpj_em: Mapped[datetime | None]  # última procura do CNPJ no site da empresa
     dominios_extras: Mapped[list | None] = mapped_column(JSON)  # outros domínios de e-mail (site, LinkedIn, Receita)
     dominios_em: Mapped[datetime | None]  # última procura de domínios de e-mail
+    # Leitura do site pela IA (Linhas Financeiras): fundos/investidores, grandes clientes, serviço intelectual,
+    # site profissional. Só o resultado fica guardado, não o texto do site
+    site_ia: Mapped[dict | None] = mapped_column(JSON)
+    site_ia_em: Mapped[datetime | None]
     pipedrive_org_id: Mapped[int | None] = mapped_column(index=True)
     enriquecido_em: Mapped[datetime | None]
 
@@ -174,6 +178,7 @@ class Negocio(Base):
     inicio_vigencia: Mapped[date | None] = mapped_column(Date)
     fim_vigencia: Mapped[date | None] = mapped_column(Date)
     ganho_em: Mapped[date | None] = mapped_column(Date)  # Pipedrive won_time
+    perdido_em: Mapped[date | None] = mapped_column(Date)  # Pipedrive lost_time ("D&O ofertado em 03/2026, perdido")
     valor: Mapped[float | None]
     vidas: Mapped[int | None]
     responsavel_email: Mapped[str | None]
@@ -274,6 +279,7 @@ class Noticia(Base):
     empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
     titulo: Mapped[str]
     fonte: Mapped[str | None]
+    site: Mapped[str | None]  # endereço do veículo (Google Notícias): reconhece os portais de negócios
     url: Mapped[str]
     publicada_em: Mapped[datetime | None] = mapped_column(index=True)
     coletada_em: Mapped[datetime] = mapped_column(default=_now)

@@ -74,6 +74,15 @@ CARGOS = ["CFO", "Diretora Financeira", "Gerente de RH", "Sócio-Administrador",
 MOTIVOS = {"muita": "Responde no mesmo dia, envia documentos sem precisar pedir e sugeriu uma reunião.",
            "media": "Responde de forma cordial e objetiva, mas só ao que foi perguntado.",
            "pouca": "Respostas curtas; disse que o tema não é prioridade neste trimestre."}
+# Site lido pela IA (Linhas Financeiras): o que a leitura traria
+SITE_IA = {
+    "Fintech Ágil Pagamentos": {"fundos_investidores": True, "investidores": ["Fundo Exemplo Ventures"], "grandes_clientes": True,
+                                "clientes": ["Rede Exemplo"], "servico_intelectual": True, "servico": "meios de pagamento"},
+    "Grupo Vértice Tecnologia": {"grandes_clientes": True, "clientes": ["Banco Exemplo", "Varejo Exemplo"],
+                                 "servico_intelectual": True, "servico": "software sob medida"},
+    "Clínica Horizonte": {"servico_intelectual": True, "servico": "clínica e hospital-dia"},
+    "Laboratório Prisma": {"grandes_clientes": True, "clientes": ["Hospital Exemplo"]},
+}
 NOTICIAS = ["{n} anuncia expansão com nova unidade no interior de SP", "{n} conclui captação para financiar crescimento",
             "{n} troca diretoria financeira", "{n} é citada entre as empresas que mais crescem no setor"]
 
@@ -135,7 +144,9 @@ def main():
         if i in (0, 7):
             marcar_saude(db, e.id, True)
         for k, modelo in enumerate(random.sample(NOTICIAS, k=random.choice([0, 1, 2]))):
-            db.add(Noticia(empresa_id=e.id, titulo=modelo.format(n=nome), fonte="Exemplo", url=f"exemplo-{i}-{k}",
+            portal = k == 0 and i % 2 == 0  # parte vem dos portais de negócios (pesam mais em LF)
+            db.add(Noticia(empresa_id=e.id, titulo=modelo.format(n=nome), fonte="NeoFeed" if portal else "Exemplo",
+                           site="https://neofeed.com.br" if portal else None, url=f"exemplo-{i}-{k}",
                            publicada_em=AGORA - timedelta(days=random.randint(2, 60))))
         db.commit()
 
@@ -178,6 +189,18 @@ def main():
         db.add(Pessoa(nome=nome, nome_normalizado=normalizar_nome_pessoa(nome), empresa_id=e.id, cargo=cargo,
                       senioridade=classificar_senioridade(cargo), fonte="linkedin", linkedin_url=f"https://www.linkedin.com/in/exemplo-dm-{i}",
                       linkedin_headline=f"{cargo} | {e.razao_social.replace(' (exemplo)', '')}", linkedin_em=AGORA))
+    # Linhas Financeiras: Receita, site lido pela IA e lista de cargos-chave do LinkedIn (o que viria da rotina)
+    for i, e in enumerate(empresas):
+        e.enriquecido_em = AGORA
+        if i in (5, 8):
+            continue  # na fila de análise: site e cargos-chave ainda não lidos
+        nome = EMPRESAS[i][0]
+        e.site_ia_em = AGORA
+        e.site_ia = {"fundo_gestora": False, "fundos_investidores": False, "investidores": [], "grandes_clientes": False,
+                     "clientes": [], "servico_intelectual": False, "site_profissional": True, "servico": "",
+                     "resumo": f"Site institucional da {nome} (exemplo).", "site": f"https://{e.dominio}",
+                     **SITE_IA.get(nome, {})}
+        e.linkedin_areas = {**(e.linkedin_areas or {}), "pessoas_lf": AGORA.isoformat(timespec="seconds")}
     # Qualidade do cadastro: uma organização duplicada no Pipedrive e razões sociais da Receita
     dup = Empresa(razao_social="Transportadora Rota Sul Ltda (exemplo)", nome_normalizado=empresas[1].nome_normalizado,
                   cnpj=empresas[1].cnpj, pipedrive_org_id=990, cidade="São Paulo", uf="SP")

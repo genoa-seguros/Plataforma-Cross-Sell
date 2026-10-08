@@ -16,27 +16,58 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
-from crosssell.connectors.linkedin import mudou_de_empresa
+from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS_LF, mudou_de_empresa
+from crosssell.connectors.noticias import portal
+from crosssell.site_ia import endereco
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.normalize import AREA_LABEL, classificar_area
-from crosssell.potencial import (faltando_saude, funcionarios_validos, influencia, melhor_contato,
-                                 motivos as motivos_potencial, potencial, praca, setor_valido)
+from crosssell.potencial import (FITS, faltando_saude, funcionarios_validos, influencia, mei, melhor_contato,
+                                 motivos as motivos_potencial, potencial, praca, produto_lf, produtos_lf, setor_valido)
 
 # Verticais que já têm fluxo de análise definido e aparecem em Oportunidades (RE entra quando o dela for definido)
-VERTICAIS_OPORTUNIDADES = ("saude",)
+VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras")
+# Nunca entram em Oportunidades, nem na fila de análise
+FINAIS = ("fora da praça", "MEI")
+
+
+def faltando_lf(e: Empresa | None) -> list[str]:
+    """Linhas Financeiras: Receita lida, notícias buscadas, site lido pela IA (quando há site) e a lista de
+    cargos-chave do LinkedIn lida. MEI nunca entra."""
+    if mei(e):
+        return ["MEI"]
+    if e is None:
+        return ["Receita"]
+    falta = []
+    # Sem CNPJ, depois de procurado no site sem sucesso, a Receita não tem como ser lida: não trava a análise
+    if e.enriquecido_em is None and (e.cnpj or (e.dominio and e.site_cnpj_em is None)):
+        falta.append("Receita")
+    if e.noticias_em is None:
+        falta.append("notícias")
+    if e.site_ia_em is None and endereco(e):
+        falta.append("site (IA)")
+    # Empresa não encontrada no LinkedIn também não trava (quem decide pode vir dos e-mails)
+    lida = (e.linkedin_areas or {}).get(PESSOAS_LF) or (e.linkedin_areas or {}).get(FUNCIONARIOS)
+    if not lida and not (e.linkedin_nao_encontrado and not e.linkedin_url):
+        falta.append("cargos-chave")
+    return falta
 
 
 def faltando(vertical: str, e: Empresa | None, decide: dict | None = None, tem_ponte: bool = False) -> list[str]:
     """O que falta para a empresa entrar em Oportunidades na vertical (vazio = analisada).
-    Saúde: praça alvo, funcionários e setor (LinkedIn ou à mão), quem decide mapeado (RH ou executivo) e ponte
-    por e-mail (alguém da empresa que troca e-mails com a equipe). Sem isso a equipe teria de buscar na mão."""
-    if vertical != "saude":
+    Saúde: praça alvo, funcionários e setor (LinkedIn ou à mão). LF: Receita, notícias, site e cargos-chave.
+    Nas duas: quem decide mapeado (a área da vertical ou um executivo) e ponte por e-mail (alguém da empresa que
+    troca e-mails com a equipe). Sem isso a equipe teria de buscar na mão."""
+    if vertical == "saude":
+        falta = faltando_saude(e)
+    elif vertical == "linhas_financeiras":
+        falta = faltando_lf(e)
+    else:
         return ["fluxo da vertical"]
-    falta = faltando_saude(e)
-    if falta == ["fora da praça"]:
-        return falta
-    # Alguém da área (RH) ou, sem RH, um executivo (founder, CEO, CFO). Sócio que só veio da Receita não conta:
-    # numa empresa maior, o sócio-administrador registrado raramente é quem decide o plano
+    if any(f in FINAIS for f in falta):
+        return [f for f in falta if f in FINAIS]
+    # Alguém da área (RH em Saúde; financeiro, jurídico ou riscos em LF) ou, sem ela, um executivo (founder, CEO,
+    # CFO). Sócio que só veio da Receita não conta: numa empresa maior, o sócio-administrador registrado raramente
+    # é quem decide
     mapeados = [p for p in (decide or {}).get("pessoas", []) if (decide or {}).get("daArea") or p.get("fonte") != "receita"]
     if not mapeados:
         falta.append("quem decide")
@@ -301,6 +332,31 @@ def negocios_abertos(db: Session, settings: Settings) -> list[dict]:
     return sorted(saida, key=lambda x: ((x["empresa"] or {}).get("nome") or "").lower())
 
 
+def produtos_da_empresa(e: Empresa, vigentes: list[Negocio]) -> dict:
+    """Linhas Financeiras por produto (E&O, D&O, Cyber, IMI): sugere os que a empresa não tem nem negocia, com
+    as etiquetas do que está em negociação e do que já foi ofertado e perdido. Garantia e Fiança não entram."""
+    lf = [n for n in e.negocios if n.vertical == "linhas_financeiras"]
+    chave = lambda n: produto_lf(n.produto or n.titulo)  # noqa: E731
+    tem = {chave(n) for n in vigentes if n.vertical == "linhas_financeiras"} - {None}
+    abertos = [n for n in lf if n.status == "aberto"]
+    negociando = {chave(n) for n in abertos} - {None}
+    perdidos: dict[str, Negocio] = {}
+    for n in lf:
+        k = chave(n)
+        if n.status == "perdido" and k and k not in tem | negociando:
+            if k not in perdidos or (n.perdido_em or date.min) > (perdidos[k].perdido_em or date.min):
+                perdidos[k] = n
+    excluir = tem | negociando
+    todos = produtos_lf(e, excluir)
+    sugeridos = [x for x in todos if x["sugerido"]] or todos[:1]
+    etiquetas = [f"negociando {FITS[k][0]} agora" for k in sorted(negociando)]
+    etiquetas += [f"{FITS[k][0]} ofertado em {n.perdido_em:%m/%Y}, perdido" if n.perdido_em
+                  else f"{FITS[k][0]} já ofertado, perdido" for k, n in sorted(perdidos.items())]
+    ja_lf = any(n.vertical == "linhas_financeiras" for n in vigentes) or bool(abertos)
+    return {"tipo": "mais_lf" if ja_lf else "cross", "excluir": excluir, "etiquetas": etiquetas,
+            "produtos": [{"produto": x["produto"], "valor": x["valor"], "texto": x["texto"]} for x in sugeridos]}
+
+
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
     """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente) e
     leads com algum card aberto no Pipedrive (negócio aberto com vertical, em qualquer funil).
@@ -340,12 +396,16 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
         relacoes = sorted(relacoes_de[e.id])
         for v in VERTICAIS:
-            if v in tem or v in negociando:
+            lf = produtos_da_empresa(e, vigentes) if v == "linhas_financeiras" else None
+            if lf is not None:
+                if not lf["produtos"]:
+                    continue  # já tem ou negocia todos os produtos de LF
+            elif v in tem or v in negociando:
                 continue
             decide = quem_decide(db, e, v, nomes, pontes, relacao)
             alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
             contato = alvo or melhor_contato(e)
-            pot = potencial(v, e, contato)
+            pot = potencial(v, e, contato, excluir=lf["excluir"] if lf else frozenset())
             prox = proxima_de.get(e.id)
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
@@ -357,7 +417,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                             "noPipedrive": bool(e.pipedrive_org_id), "local": local(e), "cidade": e.cidade, "uf": e.uf,
                             "cidadeFonte": e.cidade_fonte},
                 "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
-                "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
+                "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
                 "relacoes": relacoes,
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
@@ -369,6 +429,11 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas))),
                 "analisada": not falta,
                 "praca": praca(e) if v == "saude" else None,
+                # LF: "cross" (a empresa ainda não tem nem negocia LF) ou "mais_lf" (mais produtos para quem já tem);
+                # produtos sugeridos e etiquetas ("negociando D&O agora", "Cyber ofertado em 03/2026, perdido")
+                "tipo": lf["tipo"] if lf else "cross",
+                "produtos": lf["produtos"] if lf else [],
+                "etiquetas": lf["etiquetas"] if lf else [],
             })
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 

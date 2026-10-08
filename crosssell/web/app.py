@@ -14,12 +14,13 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from crosssell import auth, qualidade, tabela, temperatura
+from crosssell import auth, qualidade, site_ia, tabela, temperatura
 from crosssell.normalize import AREA_LABEL, classificar_senioridade
 from crosssell.potencial import criterios, fatia_minima, funcionarios_validos, influencia, praca, setor_valido
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
+from crosssell.connectors.noticias import PORTAIS, portal
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, Pessoa, SyncLog, Usuario
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
@@ -401,8 +402,11 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
                       "ini": n.inicio_vigencia.isoformat() if n.inicio_vigencia else None,
                       "fim": n.fim_vigencia.isoformat() if n.fim_vigencia else None, "valor": n.valor}
                      for n in e.negocios],
-        "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url,
+        "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                       "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:10]],
+        # Leitura do site pela IA (Linhas Financeiras): só o resultado, o texto do site não é guardado
+        "siteIa": {**(e.site_ia or {}), "em": e.site_ia_em.isoformat(timespec="minutes")} if e.site_ia_em else None,
+        "capitalSocial": e.capital_social, "naturezaJuridica": e.natureza_juridica,
     }
 
 
@@ -587,19 +591,21 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 
 @app.get("/api/oportunidades")
 def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: str = "", q: str = "",
-                      empresa: int | None = None, db: Session = Depends(get_db),
+                      oferta: str = "cross", empresa: int | None = None, db: Session = Depends(get_db),
                       _u: Usuario = Depends(usuario_atual)):
     """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
-    rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead."""
+    rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead.
+    oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais_lf (mais produtos de LF para quem
+    já tem ou negocia LF)."""
     todas, relacoes = OPORTUNIDADES.obter(db)
     if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
         return {"itens": [o for o in todas if o["empresa"]["id"] == empresa]}
     # Na tela, só as verticais com fluxo definido e as empresas já analisadas; o resto está na fila de análise
     visiveis = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
     itens = [o for o in visiveis if o["analisada"]]
-    # Fora da praça não está na fila: é definitivo e não vai para Oportunidades
+    # Fora da praça e MEI não estão na fila: é definitivo, não vão para Oportunidades
     fila = {v: len({o["empresa"]["id"] for o in visiveis if o["vertical"] == v and not o["analisada"]
-                    and "fora da praça" not in o["faltando"]})
+                    and not set(o["faltando"]) & set(tabela.FINAIS)})
             for v in tabela.VERTICAIS_OPORTUNIDADES}
     busca = q.strip().lower()
     filtradas = [o for o in itens
@@ -607,8 +613,20 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())
                  and (not tipo or (tipo == "cliente") == o["cliente"])
                  and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
+    ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais_lf")}
+    filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ofertas else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
-            "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila}
+            "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas}
+
+
+def falta_por_vertical(visiveis: list[dict]) -> dict[int, list[dict]]:
+    """O que falta para cada empresa entrar em Oportunidades, por vertical ainda não analisada."""
+    falta: dict[int, list[dict]] = {}
+    for o in visiveis:
+        if not o["analisada"]:
+            falta.setdefault(o["empresa"]["id"], []).append(
+                {"vertical": o["vertical"], "nome": o["verticalNome"], "faltando": o["faltando"]})
+    return falta
 
 
 @app.get("/api/negocios")
@@ -618,13 +636,10 @@ def api_negocios(pagina: int = 1, funil: str = "", dono: str = "", q: str = "", 
     todos = tabela.negocios_abertos(db, get_settings())
     visiveis = [o for o in OPORTUNIDADES.obter(db)[0] if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
     com_op = {o["empresa"]["id"] for o in visiveis if o["analisada"]}
-    # O que falta para a empresa entrar em Oportunidades (cidade, funcionários, setor, quem decide, ponte por e-mail);
-    # "fora da praça" avisa que ela não entra
-    falta: dict[int, list] = {}
-    for o in visiveis:
-        if not o["analisada"] and o["empresa"]["id"] not in com_op:
-            falta.setdefault(o["empresa"]["id"], [])
-            falta[o["empresa"]["id"]] += [x for x in o["faltando"] if x not in falta[o["empresa"]["id"]]]
+    # O que falta, por vertical, para a empresa entrar em Oportunidades (Saúde: cidade, funcionários, setor;
+    # LF: Receita, notícias, site, cargos-chave; nas duas: quem decide e ponte por e-mail). "fora da praça" e
+    # "MEI" avisam que ela não entra
+    falta = falta_por_vertical(visiveis)
     busca = q.strip().lower()
     filtrados = [n for n in todos if (not funil or n["funil"] == funil) and (not dono or n["dono"] == dono)
                  and (not busca or busca in ((n["empresa"] or {}).get("nome") or "").lower()
@@ -845,7 +860,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
     direto = lk.direto(s)
     fontes = {"pipedrive": "pipedrive", "excluidas": "pipedrive-excluidas", "email": "email", "noticias": "noticias", "receita": "receita",
               "linkedinSites": "linkedin-sites", "cnpjSites": "cnpj-sites", "dominios": "dominios", "linkedin": "linkedin" if direto else "linkedin-disparo",
-              "qualidade": "qualidade"}
+              "qualidade": "qualidade", "sitesIa": "sites-ia"}
     caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
                                               Usuario.senha_hash.is_not(None))).all()
     return {
@@ -854,6 +869,10 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
         "qualidadeDias": QUALIDADE_DIAS,
         "cidadesAlvo": len(criterios()["saude"]["metropoles"]), "verticaisOportunidades": list(tabela.VERTICAIS_OPORTUNIDADES),
         "funcionariosManualDias": lk.FUNCIONARIOS_MANUAL_DIAS,
+        "siteIa": {"ativo": s.site_ia_ativo, "lote": s.site_ia_lote, "validadeDias": site_ia.VALIDADE_DIAS,
+                   "configurado": bool(s.anthropic_api_key)},
+        "lf": {"pesos": criterios()["linhas_financeiras"]["pesos"], "cargos": criterios()["linhas_financeiras"].get("linkedin_cargos", []),
+               "portais": list(PORTAIS.values()), "funilPipo": s.linkedin_funil_pipo},
         "email": {"configurado": bool(s.ms_tenant_id and s.ms_client_id), "temperatura": bool(s.anthropic_api_key),
                   "maxEmails": s.temperatura_max_emails, "caixas": len(caixas),
                   "recusadas": sum(u.leitura_erro == "recusada" for u in caixas)},

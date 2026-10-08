@@ -126,7 +126,7 @@ def resultado(id_alvo: str, tipo: str, acao: str, area: str | None, completion) 
         lista = [_pessoa_curta(x) for x in _lista(then.get("nv.retrieveCompanyEmployees"))]
         if acao == "praca":
             return {**base, "total": d.get("employeesCount"), "locais": [x["local"] for x in lista]}
-        return {**base, "funcionarios_area": lista}
+        return {**base, "area": area, "funcionarios_area": lista}
     if acao == "area":
         return {**base, "area": area,
                 "funcionarios_area": [_pessoa_curta(x) for x in _lista(then.get("st.retrieveCompanyEmployees"))]}

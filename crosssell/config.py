@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-5-5"
     temperatura_max_emails: int = 5
+    # Leitura do site pela IA (Linhas Financeiras), mesmo modelo da temperatura. Ligar só depois de testar com
+    # `crosssell site-teste` no servidor. site_ia_lote: sites lidos por rodada da rotina.
+    site_ia_ativo: bool = False
+    site_ia_lote: int = 20
 
     # LinkedIn pela Linked API, chamada direto (painel da Linked API: linked-api-token e identification-token).
     linked_api_token: str = ""
@@ -57,6 +61,8 @@ class Settings(BaseSettings):
     linkedin_cota_saude: int = 30
     linkedin_cota_saude_pessoas: int = 20
     linkedin_cota_lf: int = 10
+    linkedin_cota_lf_pipo: int = 5  # da cota de LF, para empresas com card no funil Pipo Saúde (o resto, outros funis)
+    linkedin_funil_pipo: int = 34
     linkedin_cota_re: int = 10
     # Sales Navigator na conta do LinkedIn: onde estão os funcionários (praça) e a lista de quem decide por cargo.
     # Ligar só depois de testar com `crosssell linkedin-teste` no servidor.

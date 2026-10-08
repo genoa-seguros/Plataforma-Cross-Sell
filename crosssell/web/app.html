@@ -222,7 +222,7 @@ async function carregarBase() {
   const b = await api.get("/api/base"); USUARIOS = b.usuarios; V = b.verticais; PESOS = b.pesos || {};
 }
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
-const filtroOp = {vertical:"", q:"", tipo:"", rel:"", pagina:1};
+const filtroOp = {vertical:"", q:"", tipo:"", rel:"", oferta:"cross", pagina:1};
 const POR_PAGINA = 20;
 /* Recorte de uma lista no navegador, no mesmo formato que o servidor devolve ({itens, total, pagina, paginas}). */
 function pagLocal(lista, n) {
@@ -257,7 +257,7 @@ function aviso(msg){ if (msg === OBSOLETA) return; const a = document.getElement
 
 /* ---------- Explicação dos títulos das colunas (passar o mouse ou focar com Tab) ---------- */
 const AJUDA = {
-  "Potencial": "<b>Quão bom é este negócio pelos critérios da vertical</b>, de 0 a 100. Ordena a tabela.<br>• <b>Saúde</b>: influência 30, funcionários 25, qualificação do time 20, localização 15, RH estruturado 10.<br>• <b>Linhas Financeiras</b>: influência 35, encaixe do produto 65 (E&O: serviço intelectual; D&O: gestão profissional, aporte, fundo; Cyber: CTO ou DPO).<br>• <b>RE</b>: influência 30, perfil 45 (galpão, indústria, frota), porte 25.<br>Passe o mouse no número para ver a nota de cada critério. Abaixo dele, o Score de Influência do contato.",
+  "Potencial": "<b>Quão bom é este negócio pelos critérios da vertical</b>, de 0 a 100. Ordena a tabela.<br>• <b>Saúde</b>: influência 30, funcionários 25, qualificação do time 20, localização 15, RH estruturado 10.<br>• <b>Linhas Financeiras</b>: profissionalização 40, influência 25, encaixe do produto 20 (E&O, D&O, Cyber, IMI), momento 15 (M&A e aporte nas notícias).<br>• <b>RE</b>: influência 30, perfil 45 (galpão, indústria, frota), porte 25.<br>Passe o mouse no número para ver a nota de cada critério. Abaixo dele, o Score de Influência do contato.",
   "op:Score": "<b>Score da oportunidade</b>, de 0 a 100, com os critérios da vertical da oportunidade (veja <i>Critérios do Score</i> acima da tabela). Ordena a tabela. Passe o mouse no número para ver a nota de cada critério; abaixo dele, a influência de quem decide. O porquê está na coluna <i>Por quê</i>.",
   "op:Próxima atividade": "<b>Próxima atividade aberta</b> para esta empresa fora de negócios. <i>Criar atividade</i> registra no Pipedrive, na organização (e na pessoa, se escolhida), e aparece em To-dos da semana.",
   "op:Empresa": "<b>Empresa da oportunidade.</b> <b>Cliente</b>: tem seguro vigente conosco. <b>Lead</b>: ainda não tem. Funcionários (✎ para informar à mão: vale sobre o LinkedIn por 180 dias) e local (cidade/UF da Receita, do endereço no Pipedrive ou da sede no LinkedIn).",
@@ -309,16 +309,21 @@ function marcarAjuda(raiz = document) {
 })();
 
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
+// O que nunca entra em Oportunidades (nem na fila): Saúde fora da praça e MEI em Linhas Financeiras
+const FINAIS = ["fora da praça", "MEI"];
+const FINAL_TXT = {"fora da praça": "fora da praça: não entra em Oportunidades de Saúde", "MEI": "MEI: não entra em Linhas Financeiras"};
 // Prévia (exportar_preview.py, sem servidor): os mesmos filtros e a paginação de /api/oportunidades
 function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
   if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
   const visiveis = tudo.filter(o => verticais.includes(o.vertical)), todas = visiveis.filter(o => o.analisada);
-  const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.includes("fora da praça")).map(o => o.empresa.id)).size]));
-  const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel");
-  const ls = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
+  const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.some(f => FINAIS.includes(f))).map(o => o.empresa.id)).size]));
+  const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel"), oferta = p.get("oferta") || "cross";
+  const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
-  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila};
+  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais_lf: filtradas.filter(o => o.tipo === "mais_lf").length};
+  const ls = filtradas.filter(o => (o.tipo || "cross") === oferta);
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas};
 }
 function negociosPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), todos = D.negocios || [];
@@ -326,8 +331,8 @@ function negociosPrevia(path) {
   const ls = todos.filter(n => (!f || n.funil === f) && (!d || n.dono === d) && (!q || (n.empresa?.nome || "").toLowerCase().includes(q) || (n.titulo || "").toLowerCase().includes(q)));
   const com = new Set((D.oportunidades || []).filter(o => o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical)).map(o => o.empresa.id));
   const falta = {};
-  (D.oportunidades || []).filter(o => !o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical) && !com.has(o.empresa.id))
-    .forEach(o => falta[o.empresa.id] = [...new Set([...(falta[o.empresa.id] || []), ...o.faltando])]);
+  (D.oportunidades || []).filter(o => !o.analisada && (D.verticaisOportunidades || ["saude"]).includes(o.vertical))
+    .forEach(o => (falta[o.empresa.id] = falta[o.empresa.id] || []).push({vertical: o.vertical, nome: o.verticalNome, faltando: o.faltando}));
   ls.forEach(n => { n.temOportunidade = !!n.empresa && com.has(n.empresa.id); n.faltaParaOportunidade = (n.empresa && falta[n.empresa.id]) || []; });
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todos.length, funis: [...new Set(todos.map(n => n.funil))].sort(), donos: [...new Set(todos.map(n => n.dono).filter(Boolean))].sort()};
 }
@@ -515,7 +520,7 @@ function celulaDecide(d, vertical, solo = false) {
     ${d.pessoas.slice(0, 2).map(pessoa).join("")}
     ${d.ponte ? `<div class="ponte"><span class="mute">Ponte:</span> ${esc(d.ponte.nome)}<div class="sub">${esc(d.ponte.cargo || "cargo não informado")} ${btnCargo(d.ponte)}${d.ponte.quemFala ? " · fala com " + esc(d.ponte.quemFala) : ""}</div></div>` : ""}${contatoHTML(d.contato)}</div>`;
 }
-const NOME_CRIT = {influencia:"Influência", funcionarios:"Funcionários", qualificacao:"Qualificação do time", localizacao:"Localização", rh:"RH estruturado", produto:"Encaixe do produto", perfil:"Perfil (galpão/indústria)", porte:"Porte"};
+const NOME_CRIT = {influencia:"Influência", funcionarios:"Funcionários", qualificacao:"Qualificação do time", localizacao:"Localização", rh:"RH estruturado", produto:"Encaixe do produto", perfil:"Perfil (galpão/indústria)", porte:"Porte", profissionalizacao:"Profissionalização", momento:"Momento"};
 function celulaScore(x) {
   const det = (x.criterios || []).map(c => `${NOME_CRIT[c.nome] || c.nome}: ${Math.round(c.valor * 100)} (peso ${c.peso})`).join("\n");
   return `<div class="score" title="${esc(det)}"><b>${x.score.toFixed(0)}</b><div class="bar"><i style="width:${x.score}%"></i></div>
@@ -668,6 +673,8 @@ function editarFuncionarios(id, atual, nome) {
     } catch (err) { const el = document.getElementById("func-erro"); el.textContent = err.message; el.hidden = false; }
   };
 }
+// Notícia com o veículo; os portais de negócios (pesam mais em Linhas Financeiras) ganham destaque
+const noticiaHTML = n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${n.portal ? `<b title="Portal de negócios">${esc(n.portal)}</b>` : esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`;
 function opHTML(o) {
   const prox = o.proximaAtividade;
   return `<tr>
@@ -677,13 +684,15 @@ function opHTML(o) {
       <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}
         <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
     <td class="negociando"><div class="chips">${o.negociando.map(v => `<span title="${esc(v.produto)}${v.etapa ? " · " + esc(v.etapa) : ""}">${vchip(v.vertical, v.produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
-    <td>${vchip(o.vertical, o.verticalNome)}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
-      ${o.analisada === false ? (o.faltando.includes("fora da praça") ? '<div class="sub" style="margin-top:4px">fora da praça: não entra em Oportunidades</div>'
+    <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais_lf" ? ' <span class="sub" title="A empresa já tem ou negocia Linhas Financeiras">mais produtos</span>' : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
+      ${(o.produtos || []).length ? `<div class="chips" style="margin-top:4px" aria-label="Produtos sugeridos">${o.produtos.map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")} · encaixe ${Math.round(x.valor * 100)}">${esc(x.produto)}</span>`).join("")}</div>` : ""}
+      ${(o.etiquetas || []).map(t => `<div><span class="chip" style="--c:var(--warn);margin-top:4px">${esc(t)}</span></div>`).join("")}
+      ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
         : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
     <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
     <td>${celulaVigentes(o)}</td>
     <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
-    <td class="not" style="min-width:190px;max-width:240px">${o.noticias.length ? o.noticias.map(n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
+    <td class="not" style="min-width:190px;max-width:240px">${o.noticias.length ? o.noticias.map(noticiaHTML).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
     <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
       <button class="btn sec" data-ativ-op="${esc(o.id)}" ${o.empresa.noPipedrive || o.contatos.length ? "" : 'disabled title="A empresa não está no Pipedrive"'}>Criar atividade</button></div></td>
   </tr>`;
@@ -692,7 +701,7 @@ function opHTML(o) {
 let OPS_RESP = null, OPS_SEQ = 0, OPS_BUSCA = 0;
 function urlOps() {
   const p = new URLSearchParams({pagina: filtroOp.pagina});
-  for (const k of ["vertical", "tipo", "rel", "q"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
+  for (const k of ["vertical", "tipo", "rel", "q", "oferta"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
   return "/api/oportunidades?" + p;
 }
 async function buscarOps() {  // devolve null se um pedido mais novo (outro filtro ou página) passou na frente
@@ -707,8 +716,10 @@ function mostrarOps() {
   OPS = r.itens; filtroOp.pagina = r.pagina;
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
+  const of = r.ofertas || {}, sel = document.getElementById("f-oferta-op");
+  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais_lf" ${filtroOp.oferta === "mais_lf" ? "selected" : ""}>Mais produtos em LF (${of.mais_lf ?? 0})</option>`;
   document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
-    + (fila ? ` · <span title="Empresas esperando a análise (cidade, funcionários, setor). A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
+    + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
   ligarPaginacao("op", async n => { filtroOp.pagina = n;
     try { if (await buscarOps()) { mostrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); } }
@@ -734,8 +745,10 @@ const EXPLICA_CRIT = {
           qualificacao: "a favor: startups, fintechs, fundos, multinacionais, tecnologia, farmacêuticas · contra: indústria, transporte, varejo, restaurantes",
           localizacao: "capitais e regiões metropolitanas; no interior a Unimed local costuma ser forte",
           rh: "RH que cuida de cultura, benefícios e pessoas, não só de folha"},
-  linhas_financeiras: {influencia: "de quem decide (Financeiro, Jurídico, Riscos): relação por e-mail e nível do cargo",
-          produto: "E&O: serviço intelectual (TI, advocacia, saúde, consultoria) · D&O: gestão profissional, aporte, fundo, notícia de M&A ou investimento (comprou, foi comprada, fusão) · Cyber: tem CTO ou DPO"},
+  linhas_financeiras: {influencia: "de quem decide (Financeiro, Jurídico, Riscos ou executivo): relação por e-mail e nível do cargo",
+          profissionalizacao: "fundos e investidores (LinkedIn ou site), S.A., conselho e diretoria (CFO, CTO, jurídico, riscos), grandes clientes e site profissional (lidos pela IA), porte; capital social alto soma um pouco",
+          momento: "notícia de M&A, aporte ou investimento: mais peso nos portais (NeoFeed, Brazil Journal, Valor, Exame) que no Google Notícias",
+          produto: "o melhor produto que a empresa ainda não tem nem negocia · E&O: serviço intelectual · D&O: gestão profissional · Cyber: CTO, DPO ou setor com muitos dados · IMI: fundos e gestoras"},
   ramos_elementares: {influencia: "de quem decide (Operações, Riscos, Financeiro): relação por e-mail e nível do cargo",
           perfil: "galpão, armazém, indústria, transportadora, frota",
           porte: "número de funcionários"},
@@ -755,6 +768,7 @@ function desenharOportunidades() {
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
+      <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF."></select>
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
@@ -764,7 +778,7 @@ function desenharOportunidades() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão), quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Linhas Financeiras e RE entram quando o fluxo delas estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); nas duas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras, uma linha por empresa com os produtos sugeridos (E&O, D&O, Cyber, IMI); "Mais produtos em LF" mostra quem já tem ou negocia LF, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. RE entra quando o fluxo dela estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -772,6 +786,7 @@ function desenharOportunidades() {
   document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtroOp.pagina = 1;
     clearTimeout(OPS_BUSCA); OPS_BUSCA = setTimeout(filtrarOps, 250); };  // espera parar de digitar
   document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-oferta-op").onchange = e => { filtroOp.oferta = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
 }
 
@@ -1104,8 +1119,11 @@ async function telaRotina() {
      `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}). Caixa recém-ligada: lê os últimos 12 meses uma vez; depois, só o que chegou.`,
      "Achar a ponte (quem da empresa troca e-mails com a equipe), medir o relacionamento e a temperatura de cada contato.", U.email, "Coleta"],
     ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),
-     "Busca no Google Notícias as manchetes que citam as empresas da tabela.",
-     "Motivos para puxar conversa e sinais de momento. Os portais de negócios (Neofeed, Brazil Journal, Valor, Exame) entram com o fluxo de Linhas Financeiras.", U.noticias, "Coleta"],
+     `Busca no Google Notícias as manchetes que citam as empresas com negócio aberto ou oportunidade, em duas buscas: a geral e só nos portais de negócios (${(r.lf?.portais || []).join(", ")}).`,
+     "Motivos para puxar conversa e sinais de momento. Em Linhas Financeiras, M&A e aporte contam no Score (mais nos portais) e antecipam a releitura dos cargos-chave.", U.noticias, "Coleta"],
+    ["var(--lf)", "Site lido pela IA", r.siteIa?.ativo ? cad(`até ${r.siteIa.lote} por rodada · relê a cada ${r.siteIa.validadeDias} dias`) : desligado("desligado: em teste"),
+     "Nas empresas com oportunidade de Linhas Financeiras, a IA (o mesmo modelo da temperatura) lê a página inicial e até 3 internas (sobre, clientes, investidores, serviços). Só o resultado fica guardado, não o texto do site.",
+     `Fundos e investidores, grandes clientes, serviço intelectual e site profissional.${r.siteIa?.ativo ? "" : " Para ligar: teste no servidor com <code>crosssell site-teste</code> (10 a 20 empresas conhecidas) e ponha <code>SITE_IA_ATIVO=true</code> no deploy/.env."}`, U.sitesIa, "Coleta"],
     ["var(--canal)", "LinkedIn no site", cad("uma vez por empresa"),
      `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada.`,
      "Achar a página certa da empresa sem gastar consulta do LinkedIn.", U.linkedinSites, "Coleta"],
@@ -1198,7 +1216,7 @@ async function telaRotina() {
         </div>
         <div class="lk-cotas">
           <b>Consultas por dia, por vertical</b>
-          <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)}${c.vertical === "saude" ? ` <span class="sub">${c.grupo === "pessoas" ? "quem decide" : "empresa e praça"}</span>` : ""}</td>
+          <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)} <span class="sub">${{pessoas: "quem decide", caracteristicas: "empresa e praça", pipo: "funil Pipo Saúde", outros: "outros funis"}[c.grupo] || ""}</span></td>
             <td class="num">${c.usadas24h} de ${c.cota}</td></tr>`).join("")}</tbody></table>
           <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras. Relê tudo a cada ${L.validadeDias} dias; quem não foi encontrado é procurado de novo em ${L.buscaDias} dias.</span>
         </div>
@@ -1250,24 +1268,44 @@ async function telaRotina() {
     </div>
 
     <div class="rot-secao" id="rot-lf">
-      ${cabVertical("linhas_financeiras", "fluxo definido · em construção · ainda não aparece em Oportunidades")}
+      ${cabVertical("linhas_financeiras", "fluxo ativo · aparece em Oportunidades")}
+      <div class="rot-painel">
+        <h2>Condições para virar oportunidade</h2>
+        <p style="margin:0">Uma empresa com card aberto entra na <b>fila de análise</b> de Linhas Financeiras e só aparece em Oportunidades quando <b>todas</b> as condições abaixo estão cumpridas. <b>MEI não entra</b> (nem na fila).</p>
+        ${lista([
+          ["Receita lida", "Pelo CNPJ do Pipedrive ou do rodapé do site: natureza jurídica (S.A.), capital social e sócios."],
+          ["Notícias buscadas", "Google Notícias e os portais de negócios."],
+          ["Site lido pela IA", `Quando a empresa tem site.${r.siteIa?.ativo ? "" : " <b>Enquanto a leitura estiver desligada (em teste), nenhuma empresa com site fica analisada em LF.</b>"}`],
+          ["Cargos-chave lidos", `${sn ? "Lista do Sales Navigator" : "Lista de funcionários do LinkedIn"}: CFO, diretor financeiro, CEO, founder, conselho, jurídico, riscos, compliance, CTO, CISO, DPO.`],
+          ["Quem decide e ponte", "Alguém de Financeiro, Jurídico ou Riscos (ou, sem eles, um executivo) mapeado, e alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses."],
+        ])}
+      </div>
       <div class="rot-paineis">
         <div class="rot-painel">
-          <h2>Fluxo de pesquisa (definido)</h2>
-          <p class="sub" style="margin:0">Cota: ${cota("linhas_financeiras", "geral").cota} consultas por dia (metade para empresas do funil Pipo Saúde, metade para os outros funis). Hoje roda a leitura geral do LinkedIn.</p>
+          <h2>Fluxo de pesquisa no LinkedIn</h2>
+          <p class="sub" style="margin:0">Cota: ${cota("linhas_financeiras", "pipo").cota} consultas por dia para empresas do funil Pipo Saúde e ${cota("linhas_financeiras", "outros").cota} para os outros funis (a sobra de uma passa à outra).</p>
           ${lista([
-            ["Receita", "Só MEI fica de fora. Capital social alto soma pontos; baixo não tira."],
-            ["Notícias", "Neofeed, Brazil Journal, Valor e Exame com mais peso que o Google Notícias. Notícia de M&A antecipa a releitura das pessoas."],
-            ["Site lido pela IA", "Fundos e investidores, grandes clientes, serviço intelectual e site profissional. Será testado com 10 a 20 empresas conhecidas antes de ligar."],
-            ["LinkedIn", "Setor (o mais específico) e lista de cargos-chave: CFO, diretor financeiro, CEO, founder, conselho, jurídico, riscos, compliance, CTO, CISO, DPO."],
+            ["A empresa", "A página só é lida se faltar algo: venture capital, setor (o mais específico, ex.: \"fintech\"), funcionários ou o endereço do Sales Navigator. Se a empresa também tem Saúde, a página é lida uma vez só."],
+            ["Cargos-chave", `${sn ? "Lista do Sales Navigator filtrada por cargo" : "Lista de funcionários (classificada pela área do título)"}. Atualiza o cargo de quem já conhecemos e cadastra quem falta.`],
+            ["Notícia de M&A", "Se sai notícia de M&A ou aporte depois da última leitura, a lista de cargos-chave é relida antes dos 180 dias (diretoria nova, conselho novo)."],
+            ["Contato do negócio", "O perfil de quem está no card aberto é lido para trazer o cargo atual."],
           ])}
         </div>
         <div class="rot-painel">
           <h2>Critérios do Score</h2>
-          <p class="sub" style="margin:0"><b>Planejado:</b> Profissionalização 40 · Momento 15 · Encaixe do produto 20 · Influência 25. Produtos: E&O, D&O, Cyber e IMI (Garantia e Fiança fora), uma linha por empresa com os produtos sugeridos.</p>
-          <p class="sub" style="margin:0"><b>Hoje:</b></p>
+          <p class="sub" style="margin:0">Ordenam as oportunidades. Os pesos somam 100.</p>
           ${criteriosHTML("linhas_financeiras")}
         </div>
+      </div>
+      <div class="rot-painel">
+        <h2>Uma linha por empresa, com os produtos sugeridos</h2>
+        <p style="margin:0">Produtos: <b>E&O</b> (serviço intelectual), <b>D&O</b> (gestão profissional), <b>Cyber</b> (CTO, DPO ou setor com muitos dados) e <b>IMI</b> (fundos e gestoras, no lugar de D&O e E&O). Garantia e Fiança ficam de fora. Sugere os que a empresa ainda não tem nem negocia.</p>
+        ${lista([
+          ["Cross sell", "Padrão da tela: empresas que ainda não têm nem negociam Linhas Financeiras."],
+          ["Mais produtos em LF", "Filtro: quem já tem ou negocia LF, com os produtos que faltam (ex.: negocia D&O, a plataforma sugere Cyber e E&O)."],
+          ["Negociando X agora", "Etiqueta com o produto de LF em negociação no Pipedrive."],
+          ["X ofertado em mm/aaaa, perdido", "Etiqueta com o produto já ofertado e perdido (data do Pipedrive)."],
+        ])}
       </div>
     </div>
 
@@ -1288,9 +1326,10 @@ async function telaRotina() {
     <div class="rot-painel" id="rot-glossario">
       <h2>Palavras da plataforma</h2>
       <dl class="rot-glossario">
-        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa com algum card aberto no Pipedrive.</dd></div>
-        <div><dt>Analisada</dt><dd>Empresa que cumpre todas as condições da vertical (em Saúde: praça, funcionários, setor, quem decide e ponte). Só as analisadas aparecem em Oportunidades.</dd></div>
+        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa com algum card aberto no Pipedrive. Em Linhas Financeiras, conta por produto (E&O, D&O, Cyber, IMI).</dd></div>
+        <div><dt>Analisada</dt><dd>Empresa que cumpre todas as condições da vertical (em Saúde: praça, funcionários, setor, quem decide e ponte; em LF: Receita, notícias, site, cargos-chave, quem decide e ponte). Só as analisadas aparecem em Oportunidades.</dd></div>
         <div><dt>Fila de análise</dt><dd>Empresas esperando essas condições. Anda pela ordem do Score.</dd></div>
+        <div><dt>Mais produtos em LF</dt><dd>Em Linhas Financeiras, oportunidade de outros produtos (E&O, D&O, Cyber, IMI) para quem já tem ou negocia LF. Filtro da tela Oportunidades; o padrão é o cross sell.</dd></div>
         <div><dt>Fora da praça</dt><dd>Em Saúde, empresa onde não somos competitivos (cidade fora das cidades alvo e menos de ${Math.round(100 * L.fatiaMinima)}% dos funcionários nelas). Não entra em Oportunidades.</dd></div>
         <div><dt>Score (Potencial)</dt><dd>De 0 a 100, o quanto a oportunidade vale a pena, pelos critérios de cada vertical.</dd></div>
         <div><dt>Score de Influência</dt><dd>De 0 a 100, o peso da pessoa: metade pelo relacionamento por e-mail (valoriza o recente), metade pelo cargo.</dd></div>
@@ -1337,9 +1376,9 @@ async function telaNegocios() {
     <thead><tr><th>Empresa</th><th>Funcionários · cidade · setor</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
     <tbody>${r.itens.map(n => `<tr>
       <td>${n.empresa ? `<a href="#empresa-${n.empresa.id}"><b>${esc(n.empresa.nome)}</b></a>${n.empresa.cliente ? ' <span class="chip" style="--c:var(--good)">cliente</span>' : ""}
-        <div class="sub">${n.temOportunidade ? '<span style="color:var(--good)">também em Oportunidades</span>'
-          : n.faltaParaOportunidade.includes("fora da praça") ? '<span class="mute" title="Cidade fora das cidades alvo de Saúde (ou menos de 30% dos funcionários nelas)">fora da praça: não entra em Oportunidades</span>'
-          : n.faltaParaOportunidade.length ? `<span style="color:var(--warn)" title="Cross sell de Saúde esperando a análise. Cidade, funcionários e setor podem ser informados à mão; quem decide e a ponte por e-mail vêm do LinkedIn e das caixas de e-mail.">falta para Oportunidades: ${esc(n.faltaParaOportunidade.join(", "))}</span>` : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
+        ${n.temOportunidade ? '<div class="sub" style="color:var(--good)">também em Oportunidades</div>' : ""}
+        ${n.faltaParaOportunidade.map(f => `<div class="sub">${f.faltando.some(x => FINAIS.includes(x)) ? `<span class="mute">${esc(FINAL_TXT[f.faltando[0]] || f.faltando[0])}</span>`
+          : `<span style="color:var(--warn)" title="Cross sell esperando a análise. Cidade, funcionários e setor podem ser informados à mão; Receita, notícias, site e LinkedIn vêm da rotina; quem decide e a ponte por e-mail, do LinkedIn e das caixas de e-mail.">${esc(f.nome)}: falta ${esc(f.faltando.join(", "))}</span>`}</div>`).join("")}` : '<span class="mute">sem empresa</span>'}</td>
       <td class="small" style="white-space:nowrap">${n.empresa ? `<div>${n.empresa.funcionarios ? `${n.empresa.funcionarios.toLocaleString("pt-BR")} func.` : '<span class="mute">—</span>'}
           <button type="button" class="lapis" data-func="${n.empresa.id}" data-func-atual="${n.empresa.funcionarios || ""}" data-func-nome="${esc(n.empresa.nome)}" title="Informar o número de funcionários">${n.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
         <div>${n.empresa.local ? esc(n.empresa.local) : '<span class="mute">—</span>'}
@@ -1526,6 +1565,17 @@ async function telaLinkedin() {
 }
 
 /* ---------- Ficha da empresa ---------- */
+// Site lido pela IA (Linhas Financeiras): só o resultado fica guardado
+function siteIaHTML(x) {
+  if (!x) return "";
+  if (x.erro) return `<section><h2>Site (IA)</h2><div class="grupo" style="padding:12px 14px"><span class="sub">${esc(x.erro)} · ${dia(x.em)}</span></div></section>`;
+  const item = (ok, txt, nomes) => `<div${ok ? "" : ' class="mute"'}>${ok ? "✓" : "–"} ${txt}${ok && nomes && nomes.length ? `: <span class="sub">${esc(nomes.join(", "))}</span>` : ""}</div>`;
+  return `<section><h2>Site (IA)</h2><div class="grupo" style="padding:12px 14px">
+    <p style="margin:0 0 6px">${esc(x.resumo || "")}</p>
+    <div style="display:grid;gap:2px">${item(x.fundo_gestora, "fundo ou gestora")}${item(x.fundos_investidores, "fundos e investidores", x.investidores)}
+      ${item(x.grandes_clientes, "grandes clientes", x.clientes)}${item(x.servico_intelectual, "serviço intelectual" + (x.servico ? ` (${esc(x.servico)})` : ""))}${item(x.site_profissional, "site profissional")}</div>
+    <div class="sub" style="margin-top:6px">Lido em ${dia(x.em)}${x.site ? ` · <a href="${esc(x.site)}" target="_blank" rel="noopener">${esc(x.site)}</a>` : ""}</div></div></section>`;
+}
 async function telaEmpresa(id) {
   await carregarBase();
   const e = await api.get("/api/empresas/" + id);
@@ -1559,7 +1609,8 @@ async function telaEmpresa(id) {
     <thead><tr><th>Vertical</th><th>Produto</th><th>Situação</th><th>Vigência</th><th>Valor</th><th>Origem</th></tr></thead>
     <tbody>${e.negocios.filter(n => n.vertical).map(n => `<tr><td>${vchip(n.vertical)}</td><td>${esc(n.produto)}</td><td>${situacao(n)}</td>
       <td class="small num">${dt(n.ini)}${n.fim ? " → " + dt(n.fim) : ""}</td><td class="num">${brl(n.valor)}</td><td class="small">${esc(n.fonte)}</td></tr>`).join("") || '<tr><td colspan="6" class="vazio">Nenhum produto.</td></tr>'}</tbody></table></div></section>
-  <section><h2>Notícias</h2><div class="grupo not" style="padding:12px 14px">${e.noticias.length ? e.noticias.map(n => `${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>` : `<span>${esc(n.titulo)}</span>`}<div class="sub">${esc(n.fonte || "")}${n.data ? " · " + dt(n.data) : ""}</div>`).join("") : '<span class="sub">Sem notícias recentes.</span>'}</div></section>`;
+  ${siteIaHTML(e.siteIa)}
+  <section><h2>Notícias</h2><div class="grupo not" style="padding:12px 14px">${e.noticias.length ? e.noticias.map(noticiaHTML).join("") : '<span class="sub">Sem notícias recentes.</span>'}</div></section>`;
 }
 
 /* ---------- Eventos globais ---------- */

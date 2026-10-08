@@ -49,7 +49,12 @@ saude:
   rh_basico: [assistente, auxiliar, departamento pessoal, folha de pagamento, dp]
 
 linhas_financeiras:
-  pesos: {influencia: 35, produto: 65}
+  # Profissionalização: fundos e investidores, S.A., conselho e diretoria, grandes clientes, site profissional, porte.
+  # Momento: notícias de M&A, aporte ou investimento (mais peso nos portais: NeoFeed, Brazil Journal, Valor, Exame).
+  # Encaixe do produto: o melhor entre E&O, D&O, Cyber e IMI que a empresa ainda não tem nem negocia.
+  pesos: {profissionalizacao: 40, momento: 15, produto: 20, influencia: 25}
+  # Capital social a partir do qual soma um pouco na profissionalização (capital baixo não tira ponto)
+  capital_social_alto: 1000000
   # E&O: serviços intelectuais
   eo: [advocacia, advogad, juridic, contab, contador, tecnologia, technology, software, saas, ti, desenvolvimento de programas,
     hospital, clinica, medic, saude, laboratorio, ciberseguranca, cybersecurity, seguranca da informacao, consultoria,
@@ -67,6 +72,14 @@ linhas_financeiras:
     seguranca da informacao, information security]
   cyber_setor: [tecnologia, software, saas, fintech, financeir, banco, pagamento, e-commerce, ecommerce, varejo online,
     hospital, clinica, laboratorio, saude, telecom]
+  # Diretoria e conselho que contam como gestão profissional (cargos do LinkedIn e dos e-mails)
+  executivos: [cfo, coo, cto, ciso, chief, diretor financeiro, diretora financeira, conselh, board, general counsel,
+    compliance, riscos, risk]
+  # Cargos-chave procurados na lista de funcionários do Sales Navigator (filtro de cargo)
+  linkedin_cargos: [cfo, chief financial officer, diretor financeiro, diretora financeira, ceo, chief executive officer,
+    founder, fundador, fundadora, cofundador, co-founder, conselho, conselheiro, conselheira, board member, juridico,
+    legal, general counsel, riscos, risk, compliance, cto, chief technology officer, ciso, seguranca da informacao, dpo,
+    data protection, encarregado de dados]
 
 ramos_elementares:
   pesos: {influencia: 30, perfil: 45, porte: 25}

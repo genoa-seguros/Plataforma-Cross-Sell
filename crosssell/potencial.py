@@ -5,8 +5,9 @@ Influência = relacionamento (e-mails com a equipe, ajustado pela temperatura) +
 
 Potencial  = critérios da vertical, pesos e palavras em config/criterios.yaml:
   Saúde   influência · funcionários · qualificação do time · localização · RH estruturado
-  LF      influência · encaixe do produto (E&O: serviço intelectual; D&O: gestão profissional,
-          aporte, fundo; Cyber: CTO/DPO)
+  LF      influência · profissionalização (investidores, S.A., conselho, grandes clientes, site) ·
+          momento (M&A/aporte nas notícias, mais peso nos portais) · encaixe do produto (E&O:
+          serviço intelectual; D&O: gestão profissional; Cyber: CTO/DPO; IMI: fundos e gestoras)
   RE      influência · perfil (galpões, indústrias, transportadoras) · porte
   Canais  só influência
 
@@ -191,6 +192,10 @@ def cargos_saude() -> list[str]:
     return list(criterios()["saude"].get("linkedin_cargos") or [])
 
 
+def cargos_lf() -> list[str]:
+    return criterios()["linhas_financeiras"].get("linkedin_cargos", [])
+
+
 def praca(e: Empresa | None) -> str | None:
     """Praça de Saúde: "alvo", "fora" ou None (ainda não dá para decidir).
 
@@ -276,7 +281,9 @@ def _noticias(e: Empresa | None) -> str:
 
 def produto_lf(produto: str | None) -> str | None:
     t = _norm(produto)
-    if re.search(r"\b(d&o|do|imi)\b|d & o", t):
+    if re.search(r"\bimi\b", t):
+        return "imi"
+    if re.search(r"\b(d&o|do)\b|d & o", t):
         return "do"
     if "cyber" in t or "ciber" in t:
         return "cyber"
@@ -285,35 +292,65 @@ def produto_lf(produto: str | None) -> str | None:
     return None
 
 
+def mei(e: Empresa | None) -> bool:
+    """MEI fica fora de Linhas Financeiras (a Receita marca a opção pelo MEI; ver enriquecer_receita)."""
+    return e is not None and (e.porte or "").upper() == "MEI"
+
+
+def site_ia(e: Empresa | None) -> dict:
+    """Resultado da leitura do site pela IA (vazio se ainda não lido ou se o site não abriu)."""
+    r = (e.site_ia if e is not None else None) or {}
+    return {} if "erro" in r else r
+
+
+def e_fundo(e: Empresa | None) -> bool:
+    return bool(_acha(texto_empresa(e), criterios()["linhas_financeiras"]["fundo"]) or site_ia(e).get("fundo_gestora"))
+
+
+def _executivos(e: Empresa | None) -> str | None:
+    return _acha(_cargos(e), criterios()["linhas_financeiras"].get("executivos", []))
+
+
+def _investidores(e: Empresa | None) -> bool:
+    return bool((e is not None and e.investida) or site_ia(e).get("fundos_investidores"))
+
+
+def noticias_ma(e: Empresa | None) -> list:
+    """Notícias de M&A, aporte ou investimento (mais recentes primeiro)."""
+    c = criterios()["linhas_financeiras"]
+    return [x for x in (e.noticias if e else []) if _acha(_norm(x.titulo), c.get("ma", []) + c["aporte"])]
+
+
+def fit_imi(e: Empresa | None) -> tuple[float, str | None, str]:
+    if e_fundo(e):
+        return 1.0, "IMI: fundo/gestora (D&O + E&O num seguro só)", "+"
+    return 0.0, None, ""
+
+
 def fit_eo(e: Empresa | None) -> tuple[float, str | None, str]:
-    achou = _acha(texto_empresa(e), criterios()["linhas_financeiras"]["eo"])
-    if achou:
-        return 1.0, f"E&O: presta serviço intelectual ({_setor_rotulo(e)})", "+"
-    return (0.2, "E&O: não parece serviço intelectual", "-") if texto_empresa(e) else (SEM_DADO, "setor desconhecido", "?")
+    if _acha(texto_empresa(e), criterios()["linhas_financeiras"]["eo"]) or site_ia(e).get("servico_intelectual"):
+        rotulo = setor_valido(e) or site_ia(e).get("servico") or _setor_rotulo(e)
+        return 1.0, f"E&O: presta serviço intelectual ({rotulo})", "+"
+    if texto_empresa(e) or site_ia(e):
+        return 0.2, "E&O: não parece serviço intelectual", "-"
+    return SEM_DADO, "E&O: setor desconhecido", "?"
 
 
 def fit_do(e: Empresa | None) -> tuple[float, str | None, str]:
-    c, t = criterios()["linhas_financeiras"], texto_empresa(e)
-    if _acha(t, c["fundo"]):
-        return 1.0, "fundo/gestora: oferecer IMI (D&O + E&O)", "+"
-    sinais, valor = [], 0.15
-    if e is not None and e.investida:
-        sinais.append("recebeu venture capital"); valor += 0.4
-    ma = _acha(_noticias(e), c.get("ma", []))
-    if ma:  # comprou, foi comprada, fundiu, recebeu investimento: momento de D&O (e W&I na operação)
-        sinais.append(f"notícia de M&A/investimento ({ma})"); valor += 0.35
-    elif _acha(_noticias(e), c["aporte"]):
-        sinais.append("notícia de aporte/conselho"); valor += 0.3
+    sinais, valor = [], 0.2
+    if _investidores(e):
+        sinais.append("fundos/investidores"); valor += 0.4
     if e is not None and "anonima" in _norm(e.natureza_juridica):
         sinais.append("S.A."); valor += 0.25
-    executivos = re.search(r"\b(cfo|coo|cto|chief|diretor financeiro|diretora financeira|conselh)", _cargos(e))
-    if executivos:
-        sinais.append("diretoria executiva"); valor += 0.2
+    if _executivos(e):
+        sinais.append("diretoria/conselho"); valor += 0.2
+    if noticias_ma(e):
+        sinais.append("M&A/aporte nas notícias"); valor += 0.2
     if (funcionarios_validos(e) or 0) >= 200:
         sinais.append("porte"); valor += 0.1
     if sinais:
-        return min(1.0, valor), "D&O: gestão profissional (" + ", ".join(sinais) + ")", "+"
-    return valor, "D&O: sem sinal de gestão profissional (pode ser familiar)", "-"
+        return min(1.0, valor), "D&O: " + ", ".join(sinais), "+"
+    return valor, "D&O: sem sinal de gestão profissional", "-"
 
 
 def fit_cyber(e: Empresa | None) -> tuple[float, str | None, str]:
@@ -327,17 +364,90 @@ def fit_cyber(e: Empresa | None) -> tuple[float, str | None, str]:
     return 0.3, "Cyber: nenhum CTO ou DPO mapeado", "?"
 
 
-FITS = {"eo": ("E&O", fit_eo), "do": ("D&O", fit_do), "cyber": ("Cyber", fit_cyber)}
+# Produtos de Linhas Financeiras que a plataforma sugere (Garantia e Fiança ficam de fora)
+FITS = {"eo": ("E&O", fit_eo), "do": ("D&O", fit_do), "cyber": ("Cyber", fit_cyber), "imi": ("IMI", fit_imi)}
+SUGERE_A_PARTIR = 0.5  # encaixe mínimo para o produto ser sugerido
 
 
-def c_produto_lf(e: Empresa | None, produto: str | None) -> dict:
+def produtos_lf(e: Empresa | None, excluir: set[str] = frozenset()) -> list[dict]:
+    """Encaixe de cada produto de LF, do melhor para o pior, sem os de `excluir` (já tem ou negocia).
+    Fundo/gestora: IMI no lugar de D&O e E&O (o IMI cobre os dois)."""
+    fundo = e_fundo(e)
+    saida = []
+    for chave, (nome, f) in FITS.items():
+        if chave in excluir or (fundo and chave in ("do", "eo")) or (not fundo and chave == "imi"):
+            continue
+        v, txt, sinal = f(e)
+        saida.append({"chave": chave, "produto": nome, "valor": round(v, 3), "texto": txt, "sinal": sinal,
+                      "sugerido": v >= SUGERE_A_PARTIR})
+    return sorted(saida, key=lambda x: -x["valor"])
+
+
+def c_produto_lf(e: Empresa | None, produto: str | None, excluir: set[str] = frozenset()) -> dict:
     alvo = produto_lf(produto)
     if alvo:
         v, txt, sinal = FITS[alvo][1](e)
         return _crit("produto", v, txt, sinal)
-    melhores = sorted(((f(e), nome) for nome, f in FITS.values()), key=lambda x: -x[0][0])
-    (v, txt, sinal), nome = melhores[0]
-    return _crit("produto", v, txt or f"melhor encaixe: {nome}", sinal or "+")
+    melhores = produtos_lf(e, excluir)
+    if not melhores:
+        return _crit("produto", 0.0, "já tem ou negocia todos os produtos de LF", "")
+    m = melhores[0]
+    return _crit("produto", m["valor"], m["texto"] or f"melhor encaixe: {m['produto']}", m["sinal"] or "+")
+
+
+def c_profissionalizacao(e: Empresa | None) -> dict:
+    """Gestão profissional: quem tem investidor, conselho e diretoria, grandes clientes e site cuidado compra
+    Linhas Financeiras; empresa familiar pequena, raramente."""
+    c = criterios()["linhas_financeiras"]
+    if e_fundo(e):
+        return _crit("profissionalizacao", 1.0, "fundo/gestora de investimentos", "+")
+    if e is None or (e.site_ia_em is None and e.linkedin_em is None and e.enriquecido_em is None
+                     and not funcionarios_validos(e)):
+        return _crit("profissionalizacao", SEM_DADO, "profissionalização: ainda sem Receita, site e LinkedIn", "?")
+    ia, sinais, valor = site_ia(e), [], 0.1
+    if _investidores(e):
+        nomes = ", ".join(ia.get("investidores", [])[:2])
+        sinais.append(f"tem fundos/investidores{f' ({nomes})' if nomes else ''}"); valor += 0.35
+    if "anonima" in _norm(e.natureza_juridica):
+        sinais.append("S.A."); valor += 0.2
+    ex = _executivos(e)
+    if ex:
+        sinais.append(f"diretoria/conselho ({ex.upper() if len(ex) <= 4 else ex})"); valor += 0.2
+    if ia.get("grandes_clientes"):
+        nomes = ", ".join(ia.get("clientes", [])[:2])
+        sinais.append(f"grandes clientes{f' ({nomes})' if nomes else ''}"); valor += 0.15
+    if ia.get("site_profissional"):
+        sinais.append("site profissional"); valor += 0.1
+    func = funcionarios_validos(e) or 0
+    if func >= 200:
+        sinais.append(f"{func} funcionários"); valor += 0.1
+    elif func >= 50:
+        valor += 0.05
+    if (e.capital_social or 0) >= c.get("capital_social_alto", 1_000_000):
+        sinais.append("capital social alto"); valor += 0.05
+    if sinais:
+        return _crit("profissionalizacao", min(1.0, valor), "profissional: " + ", ".join(sinais), "+")
+    return _crit("profissionalizacao", valor, "sem sinal de gestão profissional (pode ser familiar)", "-")
+
+
+def c_momento(e: Empresa | None) -> dict:
+    """Notícias recentes: M&A, aporte ou investimento é a hora de D&O (e W&I); nos portais de negócios pesa mais."""
+    from crosssell.connectors.noticias import portal
+
+    if e is None or e.noticias_em is None:
+        return _crit("momento", SEM_DADO, "notícias ainda não buscadas", "?")
+    ma = noticias_ma(e)
+    ma_portal = next((x for x in ma if portal(x.site)), None)
+    if ma_portal:
+        return _crit("momento", 1.0, f"M&A/aporte no {portal(ma_portal.site)}: {ma_portal.titulo[:80]}", "+")
+    if ma:
+        return _crit("momento", 0.75, f"M&A/aporte nas notícias: {ma[0].titulo[:80]}", "+")
+    no_portal = next((x for x in e.noticias if portal(x.site)), None)
+    if no_portal:
+        return _crit("momento", 0.55, f"em destaque no {portal(no_portal.site)}", "+")
+    if e.noticias:
+        return _crit("momento", 0.4, None, "")
+    return _crit("momento", 0.3, None, "")
 
 
 def c_perfil_re(e: Empresa | None) -> dict:
@@ -362,12 +472,13 @@ def c_influencia(p: Pessoa | None) -> dict:
 # --- Potencial -------------------------------------------------------------------
 
 def potencial(vertical: str | None, e: Empresa | None, p: Pessoa | None, n: Negocio | None = None,
-              produto: str | None = None) -> dict:
+              produto: str | None = None, excluir: set[str] = frozenset()) -> dict:
     """Potencial do negócio (0–100) pelos critérios da vertical, com os critérios usados."""
     if vertical == "saude":
         crit = [c_influencia(p), c_funcionarios(n, e), c_qualificacao(e), c_localizacao(e), c_rh(e)]
     elif vertical == "linhas_financeiras":
-        crit = [c_influencia(p), c_produto_lf(e, produto or (n.produto if n else None))]
+        crit = [c_influencia(p), c_profissionalizacao(e), c_momento(e),
+                c_produto_lf(e, produto or (n.produto if n else None), excluir)]
     elif vertical == "ramos_elementares":
         crit = [c_influencia(p), c_perfil_re(e), c_funcionarios(n, e, saude=False, nome="porte")]
     else:

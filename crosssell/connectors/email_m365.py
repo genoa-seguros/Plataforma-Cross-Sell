@@ -188,6 +188,9 @@ def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, men
     return cont
 
 
+HISTORICO_DIAS = 365
+
+
 def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None,
                 classificador=None) -> dict:
     from crosssell.models import Usuario
@@ -202,8 +205,10 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
     falhas = []
     for u in usuarios:
         parcial: dict[int, list[dict]] = {}
+        # Caixa recém-ligada: lê uma vez os últimos 12 meses (a relação de anos não espera um e-mail novo)
+        inicio = desde if u.historico_em else datetime.utcnow() - timedelta(days=HISTORICO_DIAS)
         try:
-            res = registrar_mensagens(db, settings, u.email, (converter_graph(m) for m in client.mensagens(u.email, desde)),
+            res = registrar_mensagens(db, settings, u.email, (converter_graph(m) for m in client.mensagens(u.email, inicio)),
                                       parcial)
         except httpx.HTTPError as exc:  # ex.: caixa fora da Access Policy (403): as outras seguem
             db.rollback()  # descarta o que esta caixa deixou pela metade
@@ -213,6 +218,7 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
             falhas.append(f"{u.email} ({exc})")
             continue
         u.leitura_em, u.leitura_erro = datetime.utcnow(), None
+        u.historico_em = u.historico_em or u.leitura_em
         db.commit()
         for pessoa_id, lista in parcial.items():
             textos.setdefault(pessoa_id, []).extend(lista)

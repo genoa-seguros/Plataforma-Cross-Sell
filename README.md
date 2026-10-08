@@ -14,23 +14,29 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   qualquer funil) que ainda não têm seguro nem negócio aberto em outra vertical (ex.: tem D&O e está
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
   nada aberto fica de fora (terá uma tela própria, ainda a desenhar). Só aparecem as empresas já
-  **analisadas**: em Saúde, praça decidida (cidade alvo ou ≥ 30% dos funcionários em cidades alvo,
-  `saude.praca_fatia_minima`), funcionários e setor conhecidos. As outras ficam na fila de análise
+  **analisadas**, para a equipe não precisar buscar nada na mão. Em Saúde: **na praça** (cidade alvo ou
+  ≥ 30% dos funcionários em cidades alvo, `saude.praca_fatia_minima`), **funcionários** e **setor** do
+  LinkedIn ou informados à mão, **quem decide** mapeado (RH ou, sem RH, um executivo; sócio vindo só da
+  Receita não conta) e **ponte por e-mail** (alguém da empresa que escreveu para a equipe e recebeu
+  resposta nos últimos 12 meses; o contato do Pipedrive não conta). As outras ficam na fila de análise
   (contador "X analisadas · Y na fila"), que anda pela ordem do Score; a ficha da empresa mostra
-  também as não analisadas, com o que falta. Empresas fora da praça continuam, com Score baixo e a
-  etiqueta *fora da praça*. Por enquanto só Saúde: Linhas Financeiras e RE entram quando o fluxo de
-  cada uma estiver pronto.
+  também as não analisadas, com o que falta. **Fora da praça não entra em Oportunidades** (nem na fila),
+  mesmo com a cidade informada à mão: aparece só na ficha e em Negócios em aberto, com a etiqueta.
+  Por enquanto só Saúde: Linhas Financeiras e RE entram quando o fluxo de cada uma estiver pronto.
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
   (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,
   ? falta informação), Já tem conosco (com as caixas de Saúde), Quem decide e a ponte, Notícias e
   Próxima atividade. Acima da tabela, recolhidos, os *Critérios do Score em cada vertical*, com os
   pesos de `config/criterios.yaml`. O número de funcionários pode ser informado à mão (✎ na coluna
-  Empresa ou na ficha): ele vale sobre o do LinkedIn e do Pipedrive por 180 dias; depois disso, a
-  leitura do LinkedIn volta a atualizar. O local (cidade/UF) vem da Receita pelo CNPJ (inclusive o
+  Empresa ou na ficha): ele vale sobre o do LinkedIn por 180 dias; depois disso, a leitura do LinkedIn
+  volta a atualizar. **Funcionários e setor vêm só do LinkedIn ou do informado à mão**: os do Pipedrive
+  não são usados, e o CNAE não conta como setor (fica só para as regras de Linhas Financeiras). O setor
+  também pode ser informado à mão (✎ na ficha e em Negócios em aberto); quanto mais específico, melhor. O local (cidade/UF) vem da Receita pelo CNPJ (inclusive o
   CNPJ achado no site da empresa, aceito só se o nome bater), do endereço da organização no Pipedrive
   ou da sede no LinkedIn. A cidade e a UF também podem ser informadas à mão (✎ na coluna Empresa ou
-  na ficha): valem sobre todas as fontes e decidem a praça de Saúde sem gastar consulta. Filtros por vertical,
+  na ficha): valem sobre todas as fontes e decidem a praça de Saúde sem gastar consulta, mas só
+  encurtam a busca: cidade fora das cidades alvo fica fora da praça. Filtros por vertical,
   cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
   como cada coluna é calculada. Mostra quem decide, a ponte e o porte (sem ponte por e-mail, o *contato no
   Pipedrive*: a pessoa do negócio aberto mais recente ou da organização). O cargo de qualquer pessoa pode
@@ -39,8 +45,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Negócios em aberto**: todos os negócios abertos no Pipedrive nos funis de Linhas Financeiras,
   RE, Saúde e Pipo Saúde (sem Garantia, Flash e Canais Parceria), com funil, etapa, valor,
   responsável e próxima atividade. Filtros por funil, responsável e busca; marca as empresas que
-  também estão em Oportunidades e, nas que esperam a análise, o que falta para entrar lá. Funcionários
-  e cidade/UF podem ser informados ali mesmo (✎), com as mesmas regras da tela Oportunidades.
+  também estão em Oportunidades e, nas que esperam a análise, o que falta para entrar lá (ou *fora da
+  praça: não entra em Oportunidades*). Funcionários, cidade/UF e setor podem ser informados ali mesmo
+  (✎), com as mesmas regras da tela Oportunidades.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
   atualiza o Pipedrive.
@@ -110,7 +117,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 | Zeca | importação de CSV/XLSX | apólices de Saúde (ausência numa carga completa = cancelada/migrou) |
 | Microsoft 365 | Microsoft Graph (permissões de aplicativo `Mail.Read` e `Mail.Send`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 
-Um e-mail é ligado à empresa pelo endereço da pessoa já cadastrada ou pelo domínio. Valem o domínio do site,
+Ao ligar a leitura de uma caixa, a plataforma lê uma vez os últimos 12 meses (`Usuario.historico_em`);
+depois, de hora em hora, só os últimos dias. Um e-mail é ligado à empresa pelo endereço da pessoa já cadastrada ou pelo domínio. Valem o domínio do site,
 o domínio corporativo dos contatos da empresa (ex.: Pro-Eficiência, site intergado.com.br e contatos
 @pontaagro.com) e os domínios descobertos de graça (passo `dominios` da rotina, nas empresas com negócio aberto
 em LF, RE, Saúde e Pipo, 1x a cada 180 dias): para onde o site redireciona, os e-mails que aparecem no site, o
@@ -130,7 +138,7 @@ conhecido, os e-mails já lidos dele são religados à empresa.
 2. inicia até `LINKEDIN_LOTE` novas (10), sem passar de `LINKEDIN_LIMITE_DIA` (50) em 24 h,
    na ordem do Score (Oportunidades primeiro, depois as empresas dos negócios abertos).
 
-**Cotas por vertical** (consultas por dia): Saúde 30 (`LINKEDIN_COTA_SAUDE`, das quais 12 para
+**Cotas por vertical** (consultas por dia): Saúde 30 (`LINKEDIN_COTA_SAUDE`, das quais 20 para
 quem decide, `LINKEDIN_COTA_SAUDE_PESSOAS`), Linhas Financeiras 10 (`LINKEDIN_COTA_LF`) e RE 10
 (`LINKEDIN_COTA_RE`). Paga a vertical da oportunidade de maior Score da empresa, e o que for lido
 serve a todas. A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por

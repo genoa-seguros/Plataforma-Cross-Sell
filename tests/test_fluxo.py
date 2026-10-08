@@ -338,8 +338,8 @@ def test_noticias_rss():
 
 def test_oportunidades_incluem_leads_em_negociacao(db, settings):
     carregar(db, settings)
-    lead = Empresa(razao_social="Gama Tech SA", nome_normalizado="gama tech", setor="Software", funcionarios=300,
-                   cidade="São Paulo", uf="SP")
+    lead = Empresa(razao_social="Gama Tech SA", nome_normalizado="gama tech", setor="Software", setor_fonte="linkedin",
+                   funcionarios=300, funcionarios_fonte="linkedin", cidade="São Paulo", uf="SP")
     parceiro = Empresa(razao_social="Corretora Parceira", nome_normalizado="corretora parceira")
     db.add_all([lead, parceiro])
     db.flush()
@@ -566,3 +566,67 @@ def test_email_da_receita_so_vale_se_lembrar_o_nome(db):
     e = Empresa(razao_social="Metalurgica Alfa Ltda", nome_normalizado="metalurgica alfa", dominio="alfa.ind.br")
     assert enr.dominio_combina(e, "metalurgicaalfa.com.br")
     assert not enr.dominio_combina(e, "contabilidadesilva.com.br")  # e-mail do contador
+
+
+def test_caixa_ligada_le_12_meses_uma_vez(db, settings):
+    carregar(db, settings)
+    filtros = []
+
+    def graph(req: httpx.Request):
+        if "oauth2" in req.url.path:
+            return httpx.Response(200, json={"access_token": "tok"})
+        filtros.append(req.url.params["$filter"])
+        return httpx.Response(200, json={"value": []})
+
+    client = email_m365.GraphClient(settings, transport=httpx.MockTransport(graph))
+    ligar_leitura(db, "bruno.rodrigues@innoaseguros.com.br")
+    email_m365.sincronizar(db, settings, dias=2, client=client)
+    email_m365.sincronizar(db, settings, dias=2, client=client)
+    desde = [datetime.strptime(f.split(" ge ")[1], "%Y-%m-%dT%H:%M:%SZ") for f in filtros]
+    agora = datetime.utcnow()
+    assert 360 <= (agora - desde[0]).days <= 366  # primeira leitura: 12 meses de histórico
+    assert (agora - desde[1]).days <= 2  # depois, só os últimos dias
+    assert db.scalar(select(Usuario).where(Usuario.email.like("bruno%"))).historico_em is not None
+
+
+def test_ponte_lembra_12_meses_de_emails(db, settings):
+    """Quem trocou e-mails com a equipe (escreveu e recebeu) nos últimos 12 meses é ponte, mesmo sem conversa recente."""
+    e = Empresa(razao_social="Antiga SA", nome_normalizado="antiga")
+    db.add(e)
+    db.flush()
+    ana = Pessoa(nome="Ana", nome_normalizado="ana", empresa=e, email="ana@antiga.com.br", score_relacionamento=5)
+    so_recebeu = Pessoa(nome="Bia", nome_normalizado="bia", empresa=e, email="bia@antiga.com.br")
+    db.add_all([ana, so_recebeu])
+    db.flush()
+    quando = datetime.utcnow() - timedelta(days=200)
+    u = "pamela.silva@innoaseguros.com.br"
+    for i, (p, d) in enumerate([(ana, "enviado"), (ana, "recebido"), (so_recebeu, "enviado")]):
+        db.add(Interacao(message_id=f"x{i}", data=quando, usuario_email=u, email_externo=p.email, direcao=d,
+                         pessoa_id=p.id, empresa_id=e.id))
+    velho = Pessoa(nome="Caio", nome_normalizado="caio", empresa=e, email="caio@antiga.com.br")
+    db.add(velho)
+    db.flush()
+    for i, d in enumerate(("enviado", "recebido")):  # há mais de 12 meses: não conta
+        db.add(Interacao(message_id=f"v{i}", data=datetime.utcnow() - timedelta(days=400), usuario_email=u,
+                         email_externo=velho.email, direcao=d, pessoa_id=velho.id, empresa_id=e.id))
+    db.commit()
+    assert tabela.com_relacao(db, [e.id]) == {ana.id}  # só e-mail enviado (sem resposta) não é ponte
+
+
+def test_quem_decide_saude_rh_ou_executivo_mas_nao_socio_da_receita(db, settings):
+    from crosssell.config import get_settings  # noqa: F401
+    e = Empresa(razao_social="Startup SA", nome_normalizado="startup")
+    db.add(e)
+    db.flush()
+    socio = Pessoa(nome="Sócio Receita", nome_normalizado="socio receita", empresa=e, cargo="Sócio-Administrador",
+                   fonte="receita")
+    db.add(socio)
+    db.flush()
+    nomes = {}
+    decide = tabela.quem_decide(db, e, "saude", nomes)
+    assert "quem decide" in tabela.faltando("saude", e, decide, True)  # só o sócio da Receita: não conta
+    db.add(Pessoa(nome="Clara Founder", nome_normalizado="clara founder", empresa=e, cargo="Founder & CEO", fonte="linkedin"))
+    db.flush()
+    db.refresh(e)
+    decide = tabela.quem_decide(db, e, "saude", nomes)
+    assert "quem decide" not in tabela.faltando("saude", e, decide, True)  # sem RH, a founder decide

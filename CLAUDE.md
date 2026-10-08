@@ -66,8 +66,12 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
   master-only routes use `somente_master`; Qualidade routes use `acesso_qualidade` (master or `papel="head"`).
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
-- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`, today only `saude`; `faltando()` says
-  what is missing: praça, funcionários, setor). `potencial.praca(e)` decides the Saúde praça: a manual city
+- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`, today only `saude`; `tabela.faltando()`
+  says what is missing: praça/cidade, funcionários, setor, quem decide, ponte por e-mail; "fora da praça" is final and
+  never enters, not even the queue). Employees and sector count only from LinkedIn or manual
+  (`potencial.funcionarios_validos` / `setor_valido`); Pipedrive's are ignored and CNAE is not a sector. The ponte is
+  e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled
+  mailbox reads 12 months once (`Usuario.historico_em`). `potencial.praca(e)` decides the Saúde praça: a manual city
   (`cidade_fonte="manual"`) decides alone, a city in `metropoles` is alvo, otherwise `Empresa.praca` (set by the
   employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe

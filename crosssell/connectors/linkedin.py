@@ -185,9 +185,9 @@ def _passos_saude(e: Empresa, settings: Settings, validade: int, agora: datetime
     decide_pela_cidade = bool(cidade) and (e.cidade_fonte == "manual" or cidade_alvo(cidade))
     sales = pagina_sales_navigator((e.linkedin_areas or {}).get(URN))
     na_praca = praca(e) == "alvo"
-    # A página só é lida (ou relida depois da validade) se trouxer algo: funcionários informados à mão e setor
-    # conhecido dispensam, a não ser que falte o urn (Sales Navigator) ou a leitura para procurar quem decide
-    falta = (not manual_em_vigor(e, agora) or not (e.setor or e.cnae)
+    # A página só é lida (ou relida depois da validade) se trouxer algo: funcionários e setor informados à mão
+    # dispensam, a não ser que falte o urn (Sales Navigator) ou a leitura para procurar quem decide
+    falta = (not manual_em_vigor(e, agora) or e.setor_fonte not in ("linkedin", "manual")
              or (sn and not sales and (not decide_pela_cidade or na_praca)) or (not sn and na_praca and not e.linkedin_em))
     if not e.linkedin_url:
         acao = _acao(e, validade, agora) if falta else None
@@ -475,7 +475,8 @@ def manual_em_vigor(e: Empresa, agora: datetime) -> bool:
 
 def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     e.linkedin_url = _txt(r, "linkedin_url") or e.linkedin_url
-    e.setor = _txt(r, "setor") or e.setor
+    if _txt(r, "setor") and e.setor_fonte != "manual":  # o setor informado à mão vale sobre o do LinkedIn
+        e.setor, e.setor_fonte = _txt(r, "setor"), "linkedin"
     func = _num(r.get("funcionarios"))
     # O número do LinkedIn é o mais exato e prevalece sobre Pipedrive/planilha, mas não sobre o informado
     # à mão: esse só é atualizado depois de FUNCIONARIOS_MANUAL_DIAS

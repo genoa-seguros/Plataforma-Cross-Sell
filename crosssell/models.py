@@ -32,6 +32,7 @@ class Empresa(Base):
     website: Mapped[str | None]
     linkedin_url: Mapped[str | None]
     setor: Mapped[str | None]
+    setor_fonte: Mapped[str | None]  # linkedin | manual (só esses valem como setor)
     cnae: Mapped[str | None]
     natureza_juridica: Mapped[str | None]  # Receita (ex.: "205-4 - Sociedade Anônima Fechada")
     descricao: Mapped[str | None]  # "Sobre" e especialidades da página do LinkedIn
@@ -132,6 +133,7 @@ class Usuario(Base):
     le_emails: Mapped[bool] = mapped_column(default=False, server_default=false())
     leitura_em: Mapped[datetime | None]  # última leitura da caixa que deu certo
     leitura_erro: Mapped[str | None]  # erro da última tentativa ("recusada": fora do grupo no Microsoft 365)
+    historico_em: Mapped[datetime | None]  # quando a caixa teve os últimos 12 meses lidos (uma vez, ao ligar)
 
     @property
     def pendente(self) -> bool:

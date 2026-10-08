@@ -102,6 +102,11 @@ class PipedriveClient:
         r.raise_for_status()
         return r.json().get("data") or {}
 
+    def atualizar_pessoa(self, person_id: int, dados: dict) -> dict:
+        r = self.http.patch(f"/v2/persons/{person_id}", json=dados)
+        r.raise_for_status()
+        return r.json().get("data") or {}
+
     def atualizar_atividade(self, atividade_id: int, dados: dict) -> dict:
         r = self.http.patch(f"/v2/activities/{atividade_id}", json=dados)
         r.raise_for_status()

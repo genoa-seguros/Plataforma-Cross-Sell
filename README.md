@@ -32,7 +32,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   ou da sede no LinkedIn. A cidade e a UF também podem ser informadas à mão (✎ na coluna Empresa ou
   na ficha): valem sobre todas as fontes e decidem a praça de Saúde sem gastar consulta. Filtros por vertical,
   cliente/lead e quem da equipe tem relação com a empresa. Passe o mouse nos títulos para ver
-  como cada coluna é calculada. Mostra quem decide, a ponte e o porte; *Criar
+  como cada coluna é calculada. Mostra quem decide, a ponte e o porte (sem ponte por e-mail, o *contato no
+  Pipedrive*: a pessoa do negócio aberto mais recente ou da organização). O cargo de qualquer pessoa pode
+  ser informado à mão (✎): vale sobre o do LinkedIn e também é gravado no Pipedrive; *Criar
   atividade* cria a atividade na organização (e na pessoa escolhida) no Pipedrive.
 - **Negócios em aberto**: todos os negócios abertos no Pipedrive nos funis de Linhas Financeiras,
   RE, Saúde e Pipo Saúde (sem Garantia, Flash e Canais Parceria), com funil, etapa, valor,

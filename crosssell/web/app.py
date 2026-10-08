@@ -15,13 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela, temperatura
-from crosssell.normalize import AREA_LABEL
+from crosssell.normalize import AREA_LABEL, classificar_senioridade
 from crosssell.potencial import criterios, influencia, praca, fatia_minima
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, SyncLog, Usuario
+from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, Pessoa, SyncLog, Usuario
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
 
@@ -304,6 +304,31 @@ def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depen
     return {"funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte}
 
 
+class CargoIn(BaseModel):
+    cargo: str | None = None
+
+
+@app.post("/api/pessoas/{pessoa_id}/cargo")
+def api_cargo(pessoa_id: int, dados: CargoIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual),
+              client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Cargo informado à mão (vale sobre o do LinkedIn, que só preenche cargo vazio). Também grava no Pipedrive."""
+    p = db.get(Pessoa, pessoa_id)
+    if p is None:
+        raise HTTPException(404, "Pessoa não encontrada.")
+    cargo = (dados.cargo or "").strip()[:120] or None
+    p.cargo = cargo
+    p.senioridade = classificar_senioridade(cargo or p.linkedin_headline) if (cargo or p.linkedin_headline) else None
+    db.commit()
+    no_pipedrive = False
+    if p.pipedrive_person_id and cargo:
+        try:
+            client.atualizar_pessoa(int(p.pipedrive_person_id), {"job_title": cargo})
+            no_pipedrive = True
+        except Exception:  # o cargo fica na plataforma mesmo se o Pipedrive recusar
+            no_pipedrive = False
+    return {"cargo": p.cargo, "noPipedrive": no_pipedrive}
+
+
 class LocalIn(BaseModel):
     cidade: str | None = None
     uf: str | None = None
@@ -341,7 +366,7 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         "score": e.score_relacionamento,
         "comp": e.score_componentes,
         "linkedin": e.linkedin_url, "setor": e.setor,
-        "pessoas": [{"nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
+        "pessoas": [{"id": p.id, "nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
                      "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""),
                      "influencia": influencia(p)["score"],
                      "fonte": p.fonte, "linkedin": p.linkedin_url, "headline": p.linkedin_headline,

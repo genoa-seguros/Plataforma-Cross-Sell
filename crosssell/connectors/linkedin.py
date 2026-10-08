@@ -237,8 +237,8 @@ def alvos(db: Session, settings: Settings, agora: datetime | None = None) -> lis
         saida += [(ordem_e[e.id], 2, marca(e.id, "pessoas", a))
                   for a in _alvos_area(e, vs, validade, agora, empresas[e.id])]
     for p in db.scalars(select(Pessoa).where(Pessoa.id.in_(pessoas))):
-        if p.empresa_id in so_saude:
-            continue
+        if p.empresa_id in so_saude and pessoas[p.id] != "contato do negócio":
+            continue  # o contato do negócio aberto é lido (cargo de quem já fala conosco); os outros vêm da lista
         acao = _acao(p, validade, agora)
         if acao:
             saida.append((ordem_e.get(p.empresa_id, len(ordem_e)), 1,

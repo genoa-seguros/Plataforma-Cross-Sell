@@ -50,6 +50,8 @@ class Empresa(Base):
     praca_fatia: Mapped[float | None]  # fatia dos funcionários (LinkedIn) em cidades alvo, 0 a 1
     praca_em: Mapped[datetime | None]  # quando a distribuição dos funcionários foi lida
     site_cnpj_em: Mapped[datetime | None]  # última procura do CNPJ no site da empresa
+    dominios_extras: Mapped[list | None] = mapped_column(JSON)  # outros domínios de e-mail (site, LinkedIn, Receita)
+    dominios_em: Mapped[datetime | None]  # última procura de domínios de e-mail
     pipedrive_org_id: Mapped[int | None] = mapped_column(index=True)
     enriquecido_em: Mapped[datetime | None]
 

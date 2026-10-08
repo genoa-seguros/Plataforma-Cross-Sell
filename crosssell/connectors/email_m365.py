@@ -96,11 +96,16 @@ def converter_graph(msg: dict) -> dict:
 
 
 def dominios_empresas(db: Session, internos: set[str]) -> dict[str, Empresa]:
-    """Domínio de e-mail -> empresa. Além do domínio do site, vale o domínio corporativo dos contatos da empresa
-    (Pipedrive, planilha, à mão): a Pro-Eficiência tem site intergado.com.br e e-mails @pontaagro.com.
+    """Domínio de e-mail -> empresa. Além do domínio do site, valem os domínios achados no site, no LinkedIn e na
+    Receita (Empresa.dominios_extras) e o domínio corporativo dos contatos da empresa (Pipedrive, planilha, à mão): a Pro-Eficiência tem site intergado.com.br e e-mails @pontaagro.com.
     Um domínio usado por contatos de mais de uma empresa fica de fora (não dá para saber de qual é)."""
     mapa = {e.dominio: e for e in db.scalars(select(Empresa).where(Empresa.dominio.is_not(None)))}
     donos: dict[str, set[int]] = {}
+    # Domínios achados no site, no LinkedIn e na Receita (Empresa.dominios_extras)
+    for e in db.scalars(select(Empresa).where(Empresa.dominios_extras.is_not(None))):
+        for dom in e.dominios_extras or []:
+            if dom not in internos and dom not in mapa:
+                donos.setdefault(dom, set()).add(e.id)
     for email, empresa_id in db.execute(select(Pessoa.email, Pessoa.empresa_id).where(
             Pessoa.email.is_not(None), Pessoa.empresa_id.is_not(None), Pessoa.fonte != "email")):
         dom = dominio_email(email)

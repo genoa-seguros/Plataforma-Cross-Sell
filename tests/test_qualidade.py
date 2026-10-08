@@ -255,3 +255,37 @@ def test_organizacao_excluida_no_pipedrive_sai_da_plataforma(db, settings, monke
     with pytest.raises(RuntimeError, match="nada foi removido"):
         qualidade.remover_excluidas(db, client)
     assert db.scalar(select(func.count()).select_from(Empresa)) == antes
+
+
+def test_negocio_excluido_no_pipedrive_sai_dos_abertos(db, settings, monkeypatch):
+    """A sincronização incremental não vê exclusão: o negócio excluído lá ficaria aberto aqui para sempre."""
+    import httpx
+
+    from crosssell import tabela
+    from crosssell.connectors import pipedrive
+
+    carregar(db, settings)
+    db.add_all([Negocio(vertical="ramos_elementares", fonte="pipedrive", id_externo="950", pipeline_id=29,
+                        status="aberto", titulo="Excluído lá"),
+                 Negocio(vertical="ramos_elementares", fonte="pipedrive", id_externo="951", pipeline_id=29,
+                         status="aberto", titulo="Perdido lá")])
+    db.commit()
+    abertos_la = [d for d in DADOS["deals"] if d["status"] == "open"]
+
+    def handler(req: httpx.Request):
+        if req.url.params.get("status") == "open":
+            return httpx.Response(200, json={"data": abertos_la, "additional_data": {"next_cursor": None}})
+        ids = req.url.params.get("ids", "").split(",")
+        return httpx.Response(200, json={"data": [{"id": 951, "status": "lost"}] if "951" in ids else []})
+
+    client = pipedrive.PipedriveClient("x", transport=httpx.MockTransport(handler))
+    assert qualidade.fechar_negocios_excluidos(db, client) == {"excluidos": 1, "fechados": 1}
+    status = dict(db.execute(select(Negocio.id_externo, Negocio.status).where(Negocio.id_externo.in_(["950", "951"]))).all())
+    assert status == {"950": "excluido", "951": "perdido"}
+    assert not any(n["titulo"] in ("Excluído lá", "Perdido lá") for n in tabela.negocios_abertos(db, settings))
+    assert qualidade.fechar_negocios_excluidos(db, client) == {"excluidos": 0, "fechados": 0}
+
+    # Lista de abertos vazia: falha da API, nada muda
+    abertos_la.clear()
+    with pytest.raises(RuntimeError, match="nada foi alterado"):
+        qualidade.fechar_negocios_excluidos(db, client)

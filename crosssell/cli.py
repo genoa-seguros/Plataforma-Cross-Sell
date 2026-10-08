@@ -276,13 +276,17 @@ def dominios(limite: int = SITES_LOTE):
 
 @app.command("pipedrive-excluidas")
 def pipedrive_excluidas():
-    """Tira da plataforma as organizações excluídas (ou mescladas) direto no Pipedrive."""
+    """Tira da plataforma as organizações excluídas (ou mescladas) e os negócios excluídos direto no Pipedrive."""
     from crosssell import qualidade as q
     from crosssell.connectors import pipedrive as pd
     from crosssell.pipeline import registrar
 
     db = _db()
-    typer.echo(registrar(db, "pipedrive-excluidas", q.remover_excluidas, db, pd.cliente(get_settings())))
+    client = pd.cliente(get_settings())
+    try:
+        typer.echo(registrar(db, "pipedrive-excluidas", q.remover_excluidas, db, client))
+    finally:  # um não impede o outro
+        typer.echo(registrar(db, "pipedrive-negocios-excluidos", q.fechar_negocios_excluidos, db, client))
 
 
 @app.command()

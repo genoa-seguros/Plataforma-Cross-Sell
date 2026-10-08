@@ -92,6 +92,19 @@ class PipedriveClient:
         """Ids de todas as organizações que existem no Pipedrive (a lista não traz as excluídas)."""
         return {o["id"] for o in self.paginar("organizations") if not o.get("is_deleted")}
 
+    def ids_negocios_abertos(self) -> set[int]:
+        """Ids dos negócios abertos no Pipedrive (a lista não traz os excluídos)."""
+        return {d["id"] for d in self.paginar("deals", status="open") if not d.get("is_deleted")}
+
+    def negocios(self, ids: list[int]) -> dict[int, dict]:
+        """Negócios pelo id, como estão agora no Pipedrive. Os excluídos ficam de fora."""
+        saida = {}
+        for i in range(0, len(ids), 100):
+            r = self.http.get("/v2/deals", params={"ids": ",".join(map(str, ids[i:i + 100])), "limit": 100})
+            r.raise_for_status()
+            saida |= {d["id"]: d for d in r.json().get("data") or [] if not d.get("is_deleted")}
+        return saida
+
     def excluir_organizacao(self, org_id: int) -> None:
         """Exclui a organização no Pipedrive (negócios e pessoas ficam, sem a organização)."""
         r = self.http.delete(f"/v2/organizations/{org_id}")

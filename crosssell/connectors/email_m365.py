@@ -95,6 +95,42 @@ def converter_graph(msg: dict) -> dict:
     }
 
 
+def dominios_empresas(db: Session, internos: set[str]) -> dict[str, Empresa]:
+    """Domínio de e-mail -> empresa. Além do domínio do site, vale o domínio corporativo dos contatos da empresa
+    (Pipedrive, planilha, à mão): a Pro-Eficiência tem site intergado.com.br e e-mails @pontaagro.com.
+    Um domínio usado por contatos de mais de uma empresa fica de fora (não dá para saber de qual é)."""
+    mapa = {e.dominio: e for e in db.scalars(select(Empresa).where(Empresa.dominio.is_not(None)))}
+    donos: dict[str, set[int]] = {}
+    for email, empresa_id in db.execute(select(Pessoa.email, Pessoa.empresa_id).where(
+            Pessoa.email.is_not(None), Pessoa.empresa_id.is_not(None), Pessoa.fonte != "email")):
+        dom = dominio_email(email)
+        if dom and dom not in internos and dom not in mapa:
+            donos.setdefault(dom, set()).add(empresa_id)
+    unicos = {dom: ids.pop() for dom, ids in donos.items() if len(ids) == 1}
+    empresas = {e.id: e for e in db.scalars(select(Empresa).where(Empresa.id.in_(set(unicos.values()))))}
+    mapa.update({dom: empresas[eid] for dom, eid in unicos.items() if eid in empresas})
+    return mapa
+
+
+def religar_interacoes(db: Session, settings: Settings) -> int:
+    """E-mails já lidos de quem ainda não tinha empresa (domínio desconhecido na época) passam para a empresa
+    quando o domínio passa a ser conhecido; o contato é criado como na leitura normal."""
+    mapa = dominios_empresas(db, settings.internal_domain_set)
+    religadas = 0
+    for i in db.scalars(select(Interacao).where(Interacao.empresa_id.is_(None))).all():
+        empresa = mapa.get(dominio_email(i.email_externo) or "")
+        if empresa is None:
+            continue
+        pessoa = db.scalar(select(Pessoa).where(Pessoa.email == i.email_externo)) or \
+            resolver_pessoa(db, email=i.email_externo, empresa=empresa, fonte="email")
+        if pessoa.empresa_id is None:
+            pessoa.empresa_id = empresa.id
+        i.pessoa_id, i.empresa_id = pessoa.id, pessoa.empresa_id
+        religadas += 1
+    db.commit()
+    return religadas
+
+
 def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, mensagens: Iterable[dict],
                         textos: dict[int, list[dict]] | None = None) -> dict:
     """Grava uma Interacao por (mensagem, participante externo).
@@ -107,7 +143,7 @@ def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, men
     internos = settings.internal_domain_set
     usuario_email = usuario_email.lower()
     cont = {"mensagens": 0, "interacoes": 0, "novos_contatos": 0}
-    dominios_empresa = {e.dominio: e for e in db.scalars(select(Empresa).where(Empresa.dominio.is_not(None)))}
+    dominios_empresa = dominios_empresas(db, internos)
 
     for m in mensagens:
         cont["mensagens"] += 1
@@ -177,6 +213,8 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
             textos.setdefault(pessoa_id, []).extend(lista)
         for k, v in res.items():
             total[k] = total.get(k, 0) + v
+    if usuarios:
+        total["religadas"] = religar_interacoes(db, settings)
     if classificador is not None and textos:
         total["temperaturas"] = temperatura.atualizar(db, classificador, textos)
     if falhas:  # o que foi lido já está gravado; o erro fica no log da sincronização

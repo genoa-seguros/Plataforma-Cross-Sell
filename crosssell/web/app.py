@@ -262,7 +262,8 @@ def _usuario_json(u: Usuario) -> dict:
     return {"id": u.id, "email": u.email, "nome": u.nome, "papel": u.papel, "ativo": u.ativo,
             "verticais": u.verticais, "lider": u.lider, "pipedrive": bool(u.pipedrive_user_id),
             "pendente": u.pendente, "leEmails": u.le_emails, "leituraErro": u.leitura_erro,
-            "leituraEm": u.leitura_em.isoformat(timespec="minutes") if u.leitura_em else None}
+            "leituraEm": u.leitura_em.isoformat(timespec="minutes") if u.leitura_em else None,
+            "historicoEm": u.historico_em.isoformat(timespec="minutes") if u.historico_em else None}
 
 
 @app.get("/api/eu")
@@ -506,6 +507,18 @@ def api_convidar(dados: ConviteIn, request: Request, db: Session = Depends(get_d
     verticais = [v for v in dados.verticais if v in VERTICAIS]
     u, token = auth.convidar(db, dados.email, dados.nome, verticais, [v for v in dados.lider if v in verticais])
     return {"usuario": _usuario_json(u), "link": _link(request, token)}
+
+
+@app.post("/api/equipe/reler-historico")
+def api_reler_historico(db: Session = Depends(get_db), _m: Usuario = Depends(somente_master)):
+    """Todas as caixas com a leitura ligada voltam a ler os últimos 12 meses na próxima rodada (como quando a
+    leitura é ligada pela primeira vez). Os e-mails já lidos não se repetem; entram os que faltavam."""
+    caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
+                                              Usuario.senha_hash.is_not(None))).all()
+    for u in caixas:
+        u.historico_em = None
+    db.commit()
+    return {"caixas": len(caixas)}
 
 
 class LeituraIn(BaseModel):

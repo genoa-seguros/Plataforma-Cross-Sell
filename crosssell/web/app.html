@@ -457,6 +457,7 @@ const previa = {
       D.equipe.push(u); return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id};
     }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/desconvidar$/))) { const u = D.equipe.find(x => x.id == m[1]); u.ativo = false; u.leEmails = false; return u; }
+    if (path === "/api/equipe/reler-historico") { const cx = D.equipe.filter(u => u.ativo && u.leEmails && !u.pendente); cx.forEach(u => u.historicoEm = null); return {caixas: cx.length}; }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/emails$/))) { const u = D.equipe.find(x => x.id == m[1]); if (b.ler && u.pendente) throw new Error("A leitura só pode ser ligada depois que a pessoa entrar na plataforma."); u.leEmails = b.ler; return u; }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/nova-senha$/))) { const u = D.equipe.find(x => x.id == m[1]); return {usuario:u, link:"https://(endereço da plataforma)/redefinir/exemplo-" + u.id}; }
     if ((m = path.match(/^\/api\/equipe\/(\d+)\/reenviar$/))) { const u = D.equipe.find(x => x.id == m[1]); u.ativo = true; return {usuario:u, link:"https://(endereço da plataforma)/convite/exemplo-" + u.id}; }
@@ -1452,6 +1453,7 @@ function leitura(u) {
     : !u.leEmails ? '<span class="mute">desligada</span>'
     : u.leituraErro === "recusada" ? '<span style="color:var(--bad)">recusada pelo Microsoft 365: adicione ao grupo crosssell-equipe</span>'
     : u.leituraErro ? `<span style="color:var(--bad)" title="${esc(u.leituraErro)}">erro na última leitura</span>`
+    : u.leituraEm && !u.historicoEm ? `<span style="color:var(--warn)">relê os últimos 12 meses na próxima rodada</span>`
     : u.leituraEm ? `<span style="color:var(--good)">lida em ${hora(u.leituraEm)}</span>`
     : '<span class="mute">ligada, aguardando a próxima rodada</span>';
   return `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-leitura="${u.id}"${u.leEmails ? " checked" : ""}${pode ? "" : " disabled"}> ${estado}</label>`;
@@ -1479,6 +1481,10 @@ async function telaEquipe() {
     </form>
     <div class="grupo" id="ia" style="padding:14px;display:grid;gap:10px"></div>
     <div class="grupo" id="lk" style="padding:14px;display:grid;gap:10px"></div>
+    <div class="grupo" style="padding:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn sec" id="reler-historico">Reler os últimos 12 meses de todas as caixas</button>
+      <span class="sub" style="flex:1;min-width:240px">Na próxima rodada, cada caixa com a leitura ligada volta a ler os últimos 12 meses, como quando foi ligada. E-mails já lidos não se repetem; entram os que faltavam (ex.: de um domínio descoberto depois). A rodada fica mais demorada.</span>
+    </div>
     <div class="tabela"><table>
       <thead><tr><th>Nome</th><th>E-mail</th><th>Papel</th><th>Verticais</th><th>Situação</th><th>Leitura de e-mails</th><th>Pipedrive</th><th></th></tr></thead>
       <tbody>${equipe.map(u => `<tr>
@@ -1523,6 +1529,12 @@ async function telaEquipe() {
       telaEquipe();
     } catch (err) { b.checked = !b.checked; aviso(err.message); }
   });
+  document.getElementById("reler-historico").onclick = async ev => {
+    const b = ev.currentTarget;
+    if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar: reler 12 meses de todas as caixas"; return; }
+    try { const r = await api.post("/api/equipe/reler-historico"); aviso(`${r.caixas} ${r.caixas === 1 ? "caixa relê" : "caixas releem"} os últimos 12 meses na próxima rodada`); telaEquipe(); }
+    catch (err) { aviso(err.message); }
+  };
   document.querySelectorAll("[data-remover]").forEach(b => b.onclick = async () => {
     if (b.dataset.confirmar !== "1") { b.dataset.confirmar = "1"; b.textContent = "Confirmar remoção"; return; }
     await api.post(`/api/equipe/${b.dataset.remover}/desconvidar`); aviso("Acesso removido. Os e-mails dessa pessoa deixam de ser lidos."); telaEquipe();

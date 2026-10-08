@@ -341,6 +341,35 @@ def remover_excluidas(db: Session, client) -> dict:
     return {"removidas": len(sumiram)}
 
 
+def fechar_negocios_excluidos(db: Session, client) -> dict:
+    """Negócios abertos aqui que não estão mais abertos no Pipedrive. A sincronização incremental não vê exclusão
+    (o negócio excluído some da API), então eles ficariam abertos para sempre. Quem ainda existe lá recebe o status
+    de lá (ganho/perdido); quem não existe mais vira "excluido" e sai de Negócios em aberto e das Oportunidades.
+    O registro fica (atividades e histórico apontam para ele)."""
+    from crosssell.connectors.pipedrive import STATUS_MAP
+
+    abertos = db.scalars(select(Negocio).where(Negocio.fonte == "pipedrive", Negocio.status == "aberto")).all()
+    if not abertos:
+        return {"excluidos": 0, "fechados": 0}
+    la = client.ids_negocios_abertos()
+    fora = [n for n in abertos if n.id_externo.isdigit() and int(n.id_externo) not in la]
+    if fora and (not la or len(fora) > max(MINIMO_SUSPEITO, LIMITE_REMOCAO * len(abertos))):
+        raise RuntimeError(f"{len(fora)} de {len(abertos)} negócios abertos sumiram do Pipedrive de uma vez; "
+                           "nada foi alterado (parece falha na consulta). Confira no Pipedrive.")
+    existem = client.negocios([int(n.id_externo) for n in fora]) if fora else {}
+    cont = {"excluidos": 0, "fechados": 0}
+    for n in fora:
+        d = existem.get(int(n.id_externo))
+        if d is None:
+            n.status = "excluido"
+            cont["excluidos"] += 1
+        elif d.get("status") != "open":
+            n.status = STATUS_MAP.get(d.get("status"), d.get("status") or n.status)
+            cont["fechados"] += 1
+    db.commit()
+    return cont
+
+
 # --- Razão social ----------------------------------------------------------------
 
 _MINUSCULAS = {"de", "da", "do", "das", "dos", "e", "em", "para", "com"}

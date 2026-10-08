@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, site_ia, tabela, temperatura
-from crosssell.normalize import AREA_LABEL, classificar_senioridade
+from crosssell.normalize import AREA_LABEL, classificar_senioridade, sem_acento
 from crosssell.potencial import criterios, fatia_minima, funcionarios_validos, influencia, praca, setor_valido
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
@@ -350,6 +350,16 @@ def api_cargo(pessoa_id: int, dados: CargoIn, db: Session = Depends(get_db), _u:
     return {"cargo": p.cargo, "noPipedrive": no_pipedrive}
 
 
+# Estados que também são nome de cidade (a capital) valem como cidade
+_ESTADO_E_CIDADE = {"sao paulo", "rio de janeiro"}
+
+
+def e_estado(cidade: str) -> bool:
+    """Nome ou sigla de estado digitado no campo cidade (ex.: "Bahia", "BA"): decidiria a praça de Saúde errado."""
+    t = sem_acento(cidade).lower().strip(" .")
+    return (t in pd.UFS and t not in _ESTADO_E_CIDADE) or t.upper() in pd.UFS.values()
+
+
 class LocalIn(BaseModel):
     cidade: str | None = None
     uf: str | None = None
@@ -367,6 +377,8 @@ def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), _u
         if e.cidade_fonte == "manual":
             e.cidade_fonte, e.cidade_em, e.enriquecido_em = None, None, None  # a Receita volta a preencher
     else:
+        if e_estado(cidade):
+            raise HTTPException(400, "Isso é um estado; deixe a cidade em branco e escolha só a UF.")
         if uf not in pd.UFS.values():
             raise HTTPException(400, "Escolha a UF.")
         e.cidade, e.uf, e.cidade_fonte, e.cidade_em = cidade, uf, "manual", datetime.utcnow()

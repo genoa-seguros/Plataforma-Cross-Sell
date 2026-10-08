@@ -110,9 +110,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 | Zeca | importação de CSV/XLSX | apólices de Saúde (ausência numa carga completa = cancelada/migrou) |
 | Microsoft 365 | Microsoft Graph (permissões de aplicativo `Mail.Read` e `Mail.Send`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
 
-Um e-mail é ligado à empresa pelo endereço da pessoa já cadastrada ou pelo domínio. Valem o domínio do site
-e o domínio corporativo dos contatos da empresa (ex.: Pro-Eficiência, site intergado.com.br e contatos
-@pontaagro.com); um domínio de contatos de empresas diferentes não decide nada. Quando um domínio passa a ser
+Um e-mail é ligado à empresa pelo endereço da pessoa já cadastrada ou pelo domínio. Valem o domínio do site,
+o domínio corporativo dos contatos da empresa (ex.: Pro-Eficiência, site intergado.com.br e contatos
+@pontaagro.com) e os domínios descobertos de graça (passo `dominios` da rotina, nas empresas com negócio aberto
+em LF, RE, Saúde e Pipo, 1x a cada 180 dias): para onde o site redireciona, os e-mails que aparecem no site, o
+site da página do LinkedIn e o e-mail da Receita quando lembra o nome da empresa (muitas vezes é o do
+contador). Um domínio de empresas diferentes não decide nada. Quando um domínio passa a ser
 conhecido, os e-mails já lidos dele são religados à empresa.
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
@@ -191,6 +194,7 @@ Uma entrada só faz tudo, sem ação manual: `crosssell rotina`, de hora em hora
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
 crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell cnpj-sites              # a cada hora: CNPJ no site de empresas sem CNPJ (só se o nome bater)
+crosssell dominios                # a cada hora: outros domínios de e-mail (site, redirecionamento)
 crosssell noticias                # diário
 crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário

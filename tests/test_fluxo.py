@@ -526,3 +526,43 @@ def test_dominio_dos_contatos_liga_emails_a_empresa(db, settings):
     db.commit()
     from crosssell.connectors.email_m365 import dominios_empresas
     assert "pontaagro.com" not in dominios_empresas(db, settings.internal_domain_set)
+
+
+def test_dominios_achados_no_site_ligam_emails(db, settings):
+    """Site que redireciona para outro domínio e e-mails na página viram domínios da empresa."""
+    from crosssell.connectors import enriquecimento as enr
+    from crosssell.connectors.email_m365 import dominios_empresas, religar_interacoes
+
+    pro = Empresa(razao_social="Pro - Eficiencia Solucao para Agronegocios S.A.", nome_normalizado="pro eficiencia",
+                  dominio="intergado.com.br")
+    vazia = Empresa(razao_social="Sem Site SA", nome_normalizado="sem site", dominio="semsite.com.br")
+    db.add_all([pro, vazia])
+    db.commit()
+    db.add(Interacao(message_id="x", data=datetime.utcnow(), usuario_email="pamela.silva@innoaseguros.com.br",
+                     email_externo="rh@pontaagro.com", direcao="recebido"))
+    db.commit()
+
+    def handler(req):
+        if req.url.host == "intergado.com.br":
+            return httpx.Response(301, headers={"location": "https://pontaagro.com/"})
+        if req.url.host == "pontaagro.com":
+            return httpx.Response(200, text='<a href="mailto:contato@pontaagro.com">fale</a> <img src="logo@2x.png"> '
+                                            'atendimento@gmail.com ana@innoaseguros.com.br vendas@pontaagro-vendas.com.br')
+        return httpx.Response(404)
+    http = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    r = enr.descobrir_dominios(db, settings, [pro.id, vazia.id], http=http)
+    assert r == {"verificadas": 2, "dominios_novos": 2}
+    # redirecionamento + e-mails da página; Gmail, domínio interno e nome de arquivo ficam de fora
+    assert pro.dominios_extras == ["pontaagro.com", "pontaagro-vendas.com.br"]
+    assert enr.descobrir_dominios(db, settings, [pro.id], http=http)["verificadas"] == 0  # só daqui a 180 dias
+    assert dominios_empresas(db, settings.internal_domain_set)["pontaagro.com"].id == pro.id
+    assert religar_interacoes(db, settings) == 1
+    assert db.scalar(select(Interacao).where(Interacao.message_id == "x")).empresa_id == pro.id
+
+
+def test_email_da_receita_so_vale_se_lembrar_o_nome(db):
+    from crosssell.connectors import enriquecimento as enr
+
+    e = Empresa(razao_social="Metalurgica Alfa Ltda", nome_normalizado="metalurgica alfa", dominio="alfa.ind.br")
+    assert enr.dominio_combina(e, "metalurgicaalfa.com.br")
+    assert not enr.dominio_combina(e, "contabilidadesilva.com.br")  # e-mail do contador

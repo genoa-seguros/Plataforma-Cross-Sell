@@ -366,6 +366,7 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         "score": e.score_relacionamento,
         "comp": e.score_componentes,
         "linkedin": e.linkedin_url, "setor": e.setor,
+        "dominios": [d for d in [e.dominio, *(e.dominios_extras or [])] if d],
         "pessoas": [{"id": p.id, "nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
                      "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""),
                      "influencia": influencia(p)["score"],
@@ -820,7 +821,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
     s = get_settings()
     direto = lk.direto(s)
     fontes = {"pipedrive": "pipedrive", "email": "email", "noticias": "noticias", "receita": "receita",
-              "linkedinSites": "linkedin-sites", "cnpjSites": "cnpj-sites", "linkedin": "linkedin" if direto else "linkedin-disparo",
+              "linkedinSites": "linkedin-sites", "cnpjSites": "cnpj-sites", "dominios": "dominios", "linkedin": "linkedin" if direto else "linkedin-disparo",
               "qualidade": "qualidade"}
     caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
                                               Usuario.senha_hash.is_not(None))).all()

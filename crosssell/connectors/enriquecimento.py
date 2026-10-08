@@ -12,7 +12,7 @@
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 import httpx
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from crosssell.config import Settings
 from crosssell.connectors.planilhas import ler_linhas, mapear
 from crosssell.models import Empresa
-from crosssell.normalize import cnpj_valido, normalizar_cnpj, normalizar_nome_empresa, so_digitos
+from crosssell.normalize import cnpj_valido, dominio_site, normalizar_cnpj, normalizar_nome_empresa, so_digitos
 from crosssell.resolver import resolver_empresa, resolver_pessoa
 
 BRASILAPI = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
@@ -64,6 +64,9 @@ def enriquecer_receita(db: Session, empresa: Empresa, http: httpx.Client | None 
     empresa.capital_social = d.get("capital_social") or empresa.capital_social
     if empresa.cidade_fonte != "manual" and d.get("municipio"):  # a cidade da matriz; a informada à mão vale mais
         empresa.cidade, empresa.uf, empresa.cidade_fonte = d["municipio"], d.get("uf") or empresa.uf, "receita"
+    email = (d.get("email") or "").strip().lower()
+    if "@" in email and dominio_combina(empresa, email.split("@", 1)[1]):  # muitas vezes é o e-mail do contador
+        adicionar_dominio(empresa, email.split("@", 1)[1])
     for socio in d.get("qsa") or []:
         if socio.get("nome_socio"):
             p = resolver_pessoa(db, nome=socio["nome_socio"].title(), empresa=empresa,
@@ -173,5 +176,71 @@ def cnpj_por_site(db: Session, empresa_ids: list[int], http: httpx.Client | None
                 enriquecer_receita(db, e, http)
                 cont["encontradas"] += 1
                 break
+        db.commit()
+    return cont
+
+
+# --- Domínios de e-mail da empresa --------------------------------------------
+
+_EMAIL_NO_TEXTO = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+_EXTENSOES_ARQUIVO = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".css", ".js")
+DOMINIOS_VALIDADE_DIAS = 180
+
+
+def adicionar_dominio(e: Empresa, dominio: str | None, internos: set[str] = frozenset()) -> bool:
+    """Guarda um domínio de e-mail a mais da empresa (o do site fica em Empresa.dominio)."""
+    from crosssell.normalize import DOMINIOS_PUBLICOS
+
+    dom = (dominio or "").lower().strip().removeprefix("www.")
+    if not dom or "." not in dom or dom == e.dominio or dom in DOMINIOS_PUBLICOS or dom in internos \
+            or dom in (e.dominios_extras or []) or dom.endswith(_EXTENSOES_ARQUIVO):
+        return False
+    e.dominios_extras = [*(e.dominios_extras or []), dom][:5]
+    return True
+
+
+def dominios_no_html(html: str) -> list[str]:
+    """Domínios dos e-mails que aparecem na página (contato@..., mailto:), sem repetir, na ordem."""
+    vistos: list[str] = []
+    for m in _EMAIL_NO_TEXTO.finditer(html or ""):
+        dom = m.group(1).lower().rstrip(".")
+        if dom not in vistos and not dom.endswith(_EXTENSOES_ARQUIVO):
+            vistos.append(dom)
+    return vistos
+
+
+def dominio_combina(e: Empresa, dominio: str) -> bool:
+    """O domínio lembra o nome da empresa? (para o e-mail da Receita, que muitas vezes é o do contador)"""
+    raiz = normalizar_nome_empresa(dominio.split(".")[0]).replace(" ", "")
+    nomes = [normalizar_nome_empresa(x or "") for x in (e.razao_social, e.nome_fantasia, e.razao_receita)]
+    termos = {t for n in nomes for t in n.split() if len(t) >= 4 and t not in _PALAVRAS_GENERICAS}
+    return len(raiz) >= 4 and (any(t in raiz for t in termos) or any(raiz in n.replace(" ", "") for n in nomes if n))
+
+
+def descobrir_dominios(db: Session, settings, empresa_ids: list[int], http: httpx.Client | None = None,
+                       limite: int = 50) -> dict:
+    """Outros domínios de e-mail de cada empresa, de graça e uma vez a cada 180 dias:
+    para onde o site redireciona e os e-mails que aparecem na página. (O site do LinkedIn e o e-mail da Receita
+    entram quando cada leitura acontece.) Com o domínio novo, a leitura de e-mails religa as mensagens já lidas."""
+    http = http or httpx.Client(timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    internos = settings.internal_domain_set
+    cont = {"verificadas": 0, "dominios_novos": 0}
+    corte = datetime.utcnow() - timedelta(days=DOMINIOS_VALIDADE_DIAS)
+    pendentes = db.scalars(select(Empresa).where(
+        Empresa.id.in_(empresa_ids), Empresa.dominio.is_not(None),
+        (Empresa.dominios_em.is_(None)) | (Empresa.dominios_em < corte)).limit(limite)).all()
+    for e in pendentes:
+        e.dominios_em = datetime.utcnow()
+        cont["verificadas"] += 1
+        for url in (f"https://{e.dominio}", f"https://www.{e.dominio}"):
+            try:
+                r = http.get(url)
+            except httpx.HTTPError:
+                continue
+            if r.status_code != 200:
+                continue
+            achados = [dominio_site(str(r.url))] + dominios_no_html(r.text)[:5]
+            cont["dominios_novos"] += sum(adicionar_dominio(e, d, internos) for d in achados)
+            break
         db.commit()
     return cont

@@ -1057,6 +1057,8 @@ async function telaRotina() {
      `Porte, CNAE, sócios e cidade sede pelo CNPJ: até ${r.receitaLote} empresas novas por rodada. A cidade informada à mão vale sobre a da Receita.`, U.receita],
     ["var(--lf)", "CNPJ no site", cad("uma vez por empresa"),
      "Para empresas sem CNPJ no Pipedrive, procura o CNPJ no rodapé do site e só aceita se o nome na Receita bater com o da empresa. Com o CNPJ vêm a cidade sede, o porte e o CNAE.", U.cnpjSites],
+    ["var(--lf)", "Domínios de e-mail", cad("1x a cada 180 dias por empresa"),
+     "Nas empresas com negócio aberto (LF, RE, Saúde e Pipo), descobre outros domínios de e-mail: para onde o site redireciona e os e-mails que aparecem nele (o site do LinkedIn e o e-mail da Receita também entram). Os e-mails já lidos desses domínios passam a contar para a empresa.", U.dominios],
     ["var(--canal)", "Site da empresa", cad("uma vez por empresa"),
      `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada, sem gastar consulta do LinkedIn.`, U.linkedinSites],
     ["var(--accent)", "LinkedIn", L.configurado ? cad(`toda hora · relê a cada ${L.validadeDias} dias`) : desligado("desligado"),
@@ -1364,6 +1366,7 @@ async function telaEmpresa(id) {
     <h1>${esc(e.nome)}</h1>
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
       <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button>${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
+    ${e.dominios && e.dominios.length ? `<div class="sub" title="E-mails desses domínios contam no relacionamento com a empresa">Domínios de e-mail: ${e.dominios.map(esc).join(", ")}</div>` : ""}
     <div class="sub">${e.cidade ? esc(`${e.cidade}${e.uf ? "/" + e.uf : ""}`) + (e.cidadeFonte === "manual" ? " (informada à mão)" : e.cidadeFonte ? ` (${e.cidadeFonte === "receita" ? "Receita" : e.cidadeFonte === "pipedrive" ? "Pipedrive" : "LinkedIn"})` : "") : "local não informado"}${e.praca ? ` · praça de Saúde: <b>${e.praca === "alvo" ? "alvo" : "fora"}</b>` : ""}
       <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.cidade ? "✎ cidade" : "+ cidade"}</button></div>
     <div>${vig.length ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'} <span class="sub">· relacionamento ${Math.round(e.score)} de 100</span></div>

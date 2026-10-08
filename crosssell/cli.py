@@ -171,6 +171,19 @@ def cnpj_sites(limite: int = SITES_LOTE):
     typer.echo(registrar(db, "cnpj-sites", enriquecimento.cnpj_por_site, db, list(empresas), limite=limite))
 
 
+@app.command("dominios")
+def dominios(limite: int = SITES_LOTE):
+    """Outros domínios de e-mail das empresas com negócio aberto (LF, RE, Saúde e Pipo): para onde o site
+    redireciona e os e-mails que aparecem nele. A leitura de e-mails religa as mensagens desses domínios."""
+    from crosssell import tabela
+    from crosssell.connectors import enriquecimento
+    from crosssell.pipeline import registrar
+
+    db, s = _db(), get_settings()
+    empresas = {n["empresa"]["id"] for n in tabela.negocios_abertos(db, s) if n["empresa"]}
+    typer.echo(registrar(db, "dominios", enriquecimento.descobrir_dominios, db, s, sorted(empresas), limite=limite))
+
+
 @app.command("pipedrive-excluidas")
 def pipedrive_excluidas():
     """Tira da plataforma as organizações excluídas (ou mescladas) direto no Pipedrive."""
@@ -221,11 +234,11 @@ def _rodar_rotina(dias: int) -> None:
     from crosssell.connectors import linkedin as lk
 
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("pipedrive-excluidas", pipedrive_excluidas),
-              ("cnpj-sites", cnpj_sites), ("emails", lambda: emails(dias=dias, temperatura=True)),
+              ("cnpj-sites", cnpj_sites), ("dominios", dominios), ("emails", lambda: emails(dias=dias, temperatura=True)),
               ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
               ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
     if lk.configurado(get_settings()):
-        passos.insert(7, ("linkedin", linkedin))
+        passos.insert(len(passos) - 1, ("linkedin", linkedin))  # antes de recalcular
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal
         passos.append(("qualidade", qualidade))
     for nome, fn in passos:

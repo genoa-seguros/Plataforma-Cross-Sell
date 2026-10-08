@@ -482,8 +482,11 @@ def _aplicar_empresa(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     if func and not manual_em_vigor(e, quando):
         e.funcionarios, e.funcionarios_fonte, e.funcionarios_em = func, "linkedin", None
     if _txt(r, "site"):
+        from crosssell.connectors.enriquecimento import adicionar_dominio
+
         e.website = e.website or _txt(r, "site")
         e.dominio = e.dominio or dominio_site(_txt(r, "site"))
+        adicionar_dominio(e, dominio_site(_txt(r, "site")))  # site do LinkedIn diferente do Pipedrive
     if _txt(r, "sede") and not e.cidade:
         e.cidade, e.cidade_fonte = _txt(r, "sede"), "linkedin"
     if _txt(r, "descricao"):

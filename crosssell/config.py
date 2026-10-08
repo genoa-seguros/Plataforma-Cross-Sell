@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # Consultas por dia de cada vertical (paga a vertical de maior Score da empresa; a sobra de uma passa às
     # outras). Em Saúde, linkedin_cota_saude_pessoas vai para a lista de quem decide e o resto para a empresa.
     linkedin_cota_saude: int = 30
-    linkedin_cota_saude_pessoas: int = 12
+    linkedin_cota_saude_pessoas: int = 20
     linkedin_cota_lf: int = 10
     linkedin_cota_re: int = 10
     # Sales Navigator na conta do LinkedIn: onde estão os funcionários (praça) e a lista de quem decide por cargo.

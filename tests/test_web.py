@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from crosssell import auth, temperatura
 from crosssell.connectors import pipedrive
-from crosssell.models import Empresa, Negocio, Pessoa, SyncLog, Usuario
+from crosssell.models import Empresa, Interacao, Negocio, Pessoa, SyncLog, Usuario
 from crosssell.web import app as webapp
 from tests.fakes import FakePipedrive
 from tests.test_fluxo import carregar
@@ -32,6 +32,17 @@ def cenario(engine, db, settings, monkeypatch):
     webapp.QUALIDADE.limpar()
     yield TestClient(webapp.app), fake
     webapp.app.dependency_overrides.clear()
+
+
+def mapear_rh(db, e, i=0):
+    """Quem decide (RH) e ponte por e-mail: ela escreveu para a equipe e recebeu resposta."""
+    rh = Pessoa(nome=f"Rita RH {i}", nome_normalizado=f"rita rh {i}", empresa=e, cargo="Gerente de RH",
+                email=f"rita{i}@lead{i}.com.br")
+    db.add(rh)
+    db.flush()
+    for d in ("recebido", "enviado"):
+        db.add(Interacao(message_id=f"m{i}{d}", data=datetime.utcnow(), usuario_email="victor.boldrini@innoaseguros.com.br",
+                         email_externo=rh.email, direcao=d, pessoa_id=rh.id, empresa_id=e.id))
 
 
 def entrar(c, email, senha):
@@ -153,10 +164,14 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
     def lead(i, analisado=True):  # lead negociando LF: oportunidade de Saúde (e de RE, que fica fora da tela)
         e = Empresa(razao_social=f"Lead {i} SA", nome_normalizado=f"lead {i}")
-        if analisado:  # cidade alvo, funcionários e setor conhecidos: analisada em Saúde
+        if analisado:  # praça alvo, funcionários e setor do LinkedIn, RH mapeado e ponte por e-mail: analisada
             e.cidade, e.uf, e.funcionarios, e.setor = "São Paulo", "SP", 120, "Software"
+            e.funcionarios_fonte = e.setor_fonte = "linkedin"
         db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo=f"8{i}",
                                pipeline_id=1, status="aberto", titulo="D&O")])
+        if analisado:
+            db.flush()
+            mapear_rh(db, e, i)
     for i in range(25):
         lead(i)
     lead(90, analisado=False)  # sem cidade nem funcionários: fica na fila de análise
@@ -169,7 +184,9 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25
     assert {o["vertical"] for o in c.get("/api/oportunidades?q=LEAD 7 ").json()["itens"]} == {"saude"}
     assert c.get("/api/oportunidades?tipo=cliente").json()["itens"] == []
-    assert c.get("/api/oportunidades?rel=-").json()["total"] == 25 and r["relacoes"] == []
+    # Toda oportunidade tem ponte por e-mail: ninguém aparece "sem relação com a equipe"
+    assert c.get("/api/oportunidades?rel=-").json()["total"] == 0
+    assert r["relacoes"] == ["victor.boldrini@innoaseguros.com.br"]
     lead3 = db.scalar(select(Empresa).where(Empresa.razao_social == "Lead 3 SA"))
     assert {o["vertical"] for o in c.get(f"/api/oportunidades?empresa={lead3.id}").json()["itens"]} == \
         {"saude", "ramos_elementares"}  # a ficha mostra todas
@@ -490,14 +507,15 @@ def test_negocios_em_aberto(cenario, db):
 def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     c, _ = cenario
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
-    e = Empresa(razao_social="Lead Novo SA", nome_normalizado="lead novo", setor="Software")  # negociando LF
+    e = Empresa(razao_social="Lead Novo SA", nome_normalizado="lead novo", setor="Fintech", setor_fonte="linkedin")
     db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo="991",
                            pipeline_id=1, status="aberto", titulo="D&O")])
     db.commit()
     itens = c.get("/api/negocios").json()["itens"]
     n = next(x for x in itens if x["empresa"] and x["empresa"]["id"] == e.id)
     eid = n["empresa"]["id"]
-    assert n["faltaParaOportunidade"] == ["cidade", "funcionários"] and not n["temOportunidade"]
+    assert n["faltaParaOportunidade"] == ["cidade", "funcionários", "quem decide", "ponte por e-mail"]
+    assert not n["temOportunidade"]
     assert {"funcionarios", "cidade", "uf", "cidadeFonte"} <= set(n["empresa"])
     # Preencher cidade e funcionários na própria aba leva a empresa para mais perto de Oportunidades
     hdr = {"X-Cross-Sell": "1"}
@@ -505,7 +523,14 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     assert c.post(f"/api/empresas/{eid}/funcionarios", json={"funcionarios": 120}, headers=hdr).status_code == 200
     depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
     assert depois["empresa"]["funcionarios"] == 120 and depois["empresa"]["cidadeFonte"] == "manual"
+    # Os dados à mão encurtam a busca, mas sem quem decide e ponte por e-mail ainda não vira oportunidade
+    assert depois["faltaParaOportunidade"] == ["quem decide", "ponte por e-mail"] and not depois["temOportunidade"]
+    mapear_rh(db, e, 7)
+    db.commit()
+    c.post(f"/api/empresas/{eid}/setor", json={"setor": "Fintech de pagamentos"}, headers=hdr)  # limpa a lista guardada
+    depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
     assert depois["temOportunidade"] and depois["faltaParaOportunidade"] == []  # agora está em Oportunidades
+    assert depois["empresa"]["setor"] == "Fintech de pagamentos"
 
 
 def test_contato_do_pipedrive_aparece_e_cargo_a_mao(cenario, db):
@@ -527,3 +552,21 @@ def test_contato_do_pipedrive_aparece_e_cargo_a_mao(cenario, db):
     op = next(o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"] if o["vertical"] == "saude")
     assert [p["nome"] for p in op["quemDecide"]["pessoas"]] == ["Natalie Barboza"]  # agora é de RH: quem decide
     assert op["quemDecide"]["daArea"]
+
+
+def test_fora_da_praca_nao_entra_em_oportunidades_nem_na_fila(cenario, db):
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = Empresa(razao_social="Interior SA", nome_normalizado="interior", cidade="Campinas", uf="SP", cidade_fonte="manual",
+                funcionarios=500, funcionarios_fonte="linkedin", setor="Software", setor_fonte="linkedin")
+    db.add_all([e, Negocio(empresa=e, vertical="linhas_financeiras", fonte="pipedrive", id_externo="995",
+                           pipeline_id=1, status="aberto", titulo="D&O")])
+    db.flush()
+    mapear_rh(db, e, 5)  # mesmo com quem decide e ponte: cidade à mão fora das cidades alvo decide
+    db.commit()
+    r = c.get("/api/oportunidades").json()
+    assert not any(o["empresa"]["id"] == e.id for o in r["itens"]) and r["fila"] == {"saude": 0}
+    ficha = next(o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"] if o["vertical"] == "saude")
+    assert ficha["faltando"] == ["fora da praça"] and ficha["praca"] == "fora"
+    n = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == e.id)
+    assert n["faltaParaOportunidade"] == ["fora da praça"]

@@ -197,12 +197,9 @@ def sincronizar(db: Session, settings: Settings, client: PipedriveClient | None 
             pipedrive_org_id=org["id"],
             website=org.get("website"),
             linkedin_url=org.get("linkedin"),
-            setor=org.get("industry"),
-            funcionarios=org.get("employee_count"),
+            # Setor e funcionários do Pipedrive não entram: valem só os do LinkedIn (mais fiéis) ou os informados à mão
             **dict(zip(("cidade", "uf"), local_da_organizacao(org))),
         )
-        if emp is not None and emp.funcionarios and not emp.funcionarios_fonte:
-            emp.funcionarios_fonte = "pipedrive"
         if emp is not None and emp.cidade and not emp.cidade_fonte and local_da_organizacao(org)[0] == emp.cidade:
             emp.cidade_fonte = "pipedrive"
         contagem["organizacoes"] += 1

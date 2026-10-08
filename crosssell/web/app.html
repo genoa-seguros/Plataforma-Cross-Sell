@@ -157,6 +157,8 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .lk-4{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 .rot-linha{list-style:none;margin:0;padding:0;display:grid;gap:8px;border-left:2px solid var(--line);margin-left:8px}.rot-linha li{display:grid;grid-template-columns:110px 1fr;gap:12px;padding-left:14px;position:relative;font-size:13px}.rot-linha li::before{content:"";position:absolute;left:-6px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--accent)}@media (max-width:600px){.rot-linha li{grid-template-columns:1fr}}
 .rot-glossario{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px}.rot-glossario div{background:var(--soft);border-radius:8px;padding:10px 12px}.rot-glossario dt{font-weight:700}.rot-glossario dd{margin:2px 0 0;font-size:13px}
+.rot-vert{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;border-left:6px solid var(--c, var(--accent));padding:6px 12px;background:var(--surface);border-radius:8px}.rot-vert h2{font:800 20px/1.2 var(--f-display);margin:0}.rot-vert span{color:var(--mute);font-size:13px}.rot-vert.c-saude{--c:var(--saude)}.rot-vert.c-linhas_financeiras{--c:var(--lf)}.rot-vert.c-ramos_elementares{--c:var(--re)}
+.rot-secao{display:grid;gap:12px;margin-top:8px}.rot-crit{list-style:none;margin:0;padding:0;display:grid;gap:10px}
 .rot-fontes td{vertical-align:top;font-size:13px}.rot-fontes td:first-child{white-space:nowrap}
 .lk-cotas{display:grid;gap:6px;margin-top:4px}.lk-cotas table{border-collapse:collapse;width:fit-content!important;min-width:0!important}.lk-cotas td{padding:3px 12px 3px 0;border:0}
 .lk-ritmo,.lk-exemplo{display:grid;gap:6px;align-content:start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
@@ -312,7 +314,7 @@ function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
   if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
   const visiveis = tudo.filter(o => verticais.includes(o.vertical)), todas = visiveis.filter(o => o.analisada);
-  const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada).map(o => o.empresa.id)).size]));
+  const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.includes("fora da praça")).map(o => o.empresa.id)).size]));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel");
   const ls = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
@@ -422,6 +424,11 @@ const previa = {
       (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.funcionarios = b.funcionarios);
       return {funcionarios: b.funcionarios, funcionariosFonte: b.funcionarios ? "manual" : null};
     }
+    if ((m = path.match(/^\/api\/empresas\/(\d+)\/setor$/))) {
+      if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {setor: b.setor, setorFonte: b.setor ? "manual" : null});
+      (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.setor = b.setor);
+      return {setor: b.setor, setorFonte: b.setor ? "manual" : null};
+    }
     if ((m = path.match(/^\/api\/pessoas\/(\d+)\/cargo$/))) {
       const muda = x => { if (x && x.id == m[1]) x.cargo = b.cargo; };
       (D.oportunidades || []).forEach(o => { const d = o.quemDecide || {}; [...(d.pessoas || []), d.ponte, d.contato, ...(o.contatos || [])].forEach(muda); });
@@ -493,6 +500,7 @@ function celulaTemp(p) {
   if (!p.temperatura) return `<span class="sub">sem e-mails do contato</span>`;
   return `<span class="chip t-${p.temperatura}" title="${esc(p.temperaturaMotivo)}">${TEMP[p.temperatura]}</span>${p.temperaturaMotivo ? `<div class="sub" style="margin-top:4px;max-width:200px">${esc(p.temperaturaMotivo)}</div>` : ""}`;
 }
+const btnSetor = (id, setor, nome, curto) => `<button type="button" class="lapis" data-setor="${id}" data-setor-atual="${esc(setor || "")}" data-setor-nome="${esc(nome)}" title="Informar o setor">${setor ? (curto ? "✎" : "✎ setor") : "+ setor"}</button>`;
 const btnCargo = x => `<button type="button" class="lapis" data-cargo="${x.id}" data-cargo-atual="${esc(x.cargo || "")}" data-cargo-nome="${esc(x.nome)}" title="Informar o cargo">${x.cargo ? "✎" : "+ cargo"}</button>`;
 const contatoHTML = c => c ? `<div class="ponte"><span class="mute">Contato no Pipedrive:</span> ${esc(c.nome)}${inLink(c.linkedin)}
   <div class="sub">${c.cargo ? esc(c.cargo) : "cargo não informado"} ${btnCargo(c)}${c.negocio ? ` · no negócio ${esc(c.negocio)}` : ""}${c.relacao >= 20 ? "" : " · sem e-mails com a equipe"}</div></div>` : "";
@@ -566,6 +574,29 @@ function modalAtividade(ctx) {
 }
 
 /* ---------- Oportunidades ---------- */
+/* Setor informado à mão: vale sobre o do LinkedIn. Quanto mais específico, melhor ("fintech", não "tecnologia"). */
+function editarSetor(id, atual, nome) {
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-setor" aria-labelledby="t-setor">
+    <h2 id="t-setor">Setor</h2><div class="sub">${esc(nome)}</div>
+    <label>Setor<input id="setor-v" value="${esc(atual)}" maxlength="120" placeholder="ex.: Fintech de pagamentos"></label>
+    <p class="nota">Quanto mais específico, melhor: "fintech" diz mais que "tecnologia". Vale sobre o setor do LinkedIn. Deixe em branco para voltar ao LinkedIn.</p>
+    <p class="erro" id="setor-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="setor-cancelar">Cancelar</button><button class="btn">Salvar</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("setor-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("setor-v").focus();
+  document.getElementById("f-setor").onsubmit = async e => {
+    e.preventDefault();
+    const v = document.getElementById("setor-v").value.trim();
+    try {
+      await api.post(`/api/empresas/${id}/setor`, {setor: v || null});
+      fechar(); aviso(v ? "Setor salvo" : "Setor voltou ao LinkedIn");
+      OPS_RESP = null; render();
+    } catch (err) { const el = document.getElementById("setor-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
 /* Cargo informado à mão: vale sobre o do LinkedIn e também é gravado na pessoa no Pipedrive. */
 function editarCargo(id, atual, nome) {
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-cargo" aria-labelledby="t-cargo">
@@ -647,7 +678,8 @@ function opHTML(o) {
         <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
     <td class="negociando"><div class="chips">${o.negociando.map(v => `<span title="${esc(v.produto)}${v.etapa ? " · " + esc(v.etapa) : ""}">${vchip(v.vertical, v.produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
     <td>${vchip(o.vertical, o.verticalNome)}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
-      ${o.analisada === false ? `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>` : ""}</td>
+      ${o.analisada === false ? (o.faltando.includes("fora da praça") ? '<div class="sub" style="margin-top:4px">fora da praça: não entra em Oportunidades</div>'
+        : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
     <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
     <td>${celulaVigentes(o)}</td>
     <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
@@ -732,7 +764,7 @@ function desenharOportunidades() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas (em Saúde: praça, funcionários e setor conhecidos); as outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Linhas Financeiras e RE entram quando o fluxo delas estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão), quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Linhas Financeiras e RE entram quando o fluxo delas estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -1055,40 +1087,48 @@ async function telaRotina() {
   const desligado = txt => `<span class="chip" style="--c:var(--mute)">${txt}</span>`;
   const cad = txt => `<span class="chip" style="--c:var(--accent)">${txt}</span>`;
   const ultimo = (...us) => us.filter(Boolean).sort((a, b) => (b.erro ? 1 : 0) - (a.erro ? 1 : 0) || b.em.localeCompare(a.em))[0];
-  // Na ordem em que a rodada roda (crosssell rotina): [cor, título, frequência, o que faz, para quê serve, última execução, fase]
+  const cota = (v, g) => (L.cotas || []).find(c => c.vertical === v && c.grupo === g) || {cota: 0, usadas24h: 0};
+  const sn = L.salesNavigator;
+  // Passos comuns a todas as verticais, na ordem em que a rodada roda: [cor, título, frequência, o que faz, para quê, última, fase]
   const passos = [
     ["var(--brand)", "Pipedrive", cad("toda hora"),
      `Traz organizações, pessoas e negócios alterados nos últimos ${r.dias} dias e o status das atividades, e tira daqui as organizações excluídas ou mescladas direto no Pipedrive.`,
-     "Saber quem tem card aberto, quem já é cliente (seguro vigente) e quem são os contatos. É a fonte principal.", ultimo(U.pipedrive, U.excluidas), "Coleta"],
-    ["var(--lf)", "CNPJ no site", cad("uma vez por empresa"),
-     "Para empresas sem CNPJ no Pipedrive, procura o CNPJ no rodapé do site e só aceita se o nome na Receita bater com o da empresa.",
-     "Com o CNPJ vêm a cidade sede, o porte e o CNAE (setor), que ajudam a analisar a empresa.", U.cnpjSites, "Coleta"],
+     "Saber quem tem card aberto, quem já é cliente (seguro vigente) e quem são os contatos. Setor e funcionários do Pipedrive não são usados.", ultimo(U.pipedrive, U.excluidas), "Coleta"],
+    ["var(--lf)", "Receita Federal (CNPJ)", cad("uma vez por empresa"),
+     `Pega o CNPJ do Pipedrive ou, se não houver, procura no rodapé do site (aceita só se o nome bater). Com ele, consulta a Receita: até ${r.receitaLote} empresas por rodada.`,
+     "Cidade sede (decide a praça sem gastar consulta do LinkedIn), natureza jurídica (MEI fica fora de Linhas Financeiras), capital social, sócios e a razão social usada na tela Qualidade.", ultimo(U.receita, U.cnpjSites), "Coleta"],
     ["var(--lf)", "Domínios de e-mail", cad("1x a cada 180 dias por empresa"),
-     "Nas empresas com negócio aberto (LF, RE, Saúde e Pipo), descobre outros domínios de e-mail: para onde o site redireciona e os e-mails que aparecem nele. O site do LinkedIn e o e-mail da Receita (quando lembra o nome da empresa) também entram.",
+     "Nas empresas com negócio aberto (LF, RE, Saúde e Pipo), descobre outros domínios de e-mail: para onde o site redireciona, os e-mails que aparecem nele, o site do LinkedIn e o e-mail da Receita (quando lembra o nome da empresa).",
      "Ligar à empresa os e-mails de quem usa outro domínio (ex.: Pro-Eficiência, site intergado.com.br e e-mails @pontaagro.com).", U.dominios, "Coleta"],
     ["var(--saude)", "E-mails", E.configurado ? cad("toda hora") : desligado("desligado"),
-     `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}) e liga cada e-mail à empresa e ao contato.`,
-     "Saber quem da equipe fala com quem (a ponte), medir o relacionamento e a temperatura (abertura) de cada contato.", U.email, "Coleta"],
+     `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}). Caixa recém-ligada: lê os últimos 12 meses uma vez; depois, só o que chegou.`,
+     "Achar a ponte (quem da empresa troca e-mails com a equipe), medir o relacionamento e a temperatura de cada contato.", U.email, "Coleta"],
     ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),
      "Busca no Google Notícias as manchetes que citam as empresas da tabela.",
-     "Achar motivos para puxar conversa e sinais de momento (aquisições e investimentos pesam em Linhas Financeiras).", U.noticias, "Coleta"],
-    ["var(--lf)", "Receita Federal", cad("uma vez por empresa"),
-     `Consulta o CNPJ de até ${r.receitaLote} empresas novas por rodada: porte, CNAE, sócios, cidade sede e e-mail.`,
-     "Dados oficiais da empresa. A cidade informada à mão vale sobre a da Receita.", U.receita, "Coleta"],
+     "Motivos para puxar conversa e sinais de momento. Os portais de negócios (Neofeed, Brazil Journal, Valor, Exame) entram com o fluxo de Linhas Financeiras.", U.noticias, "Coleta"],
     ["var(--canal)", "LinkedIn no site", cad("uma vez por empresa"),
      `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada.`,
      "Achar a página certa da empresa sem gastar consulta do LinkedIn.", U.linkedinSites, "Coleta"],
     ["var(--accent)", "LinkedIn", L.configurado ? cad(`toda hora · relê a cada ${L.validadeDias} dias`) : desligado("desligado"),
-     `Até ${L.lote} consultas por rodada e ${L.limiteDia} a cada 24 h, divididas por vertical (detalhes no painel do LinkedIn, abaixo).`,
-     "Funcionários, setor, sede, praça de Saúde e quem decide em cada empresa.", U.linkedin, "Coleta"],
+     `Até ${L.lote} consultas por rodada e ${L.limiteDia} a cada 24 h, divididas por vertical. O que cada vertical consulta está na seção dela, abaixo.`,
+     "Funcionários e setor (as únicas fontes que valem, além do informado à mão), praça e quem decide.", U.linkedin, "Coleta"],
     ["var(--good)", "Scores", cad("toda hora"),
-     "Recalcula o relacionamento por e-mail, o Potencial de cada oportunidade e a fila de análise.",
+     "Recalcula o relacionamento por e-mail, o Score de cada oportunidade e a fila de análise.",
      "A tela Oportunidades já abre com os dados novos e na ordem certa.", null, "Cálculo"],
     ["var(--warn)", "Qualidade do cadastro", cad(`1x a cada ${r.qualidadeDias} dias`),
      "Procura organizações duplicadas, cadastros suspeitos e razão social incompleta.",
      "Manter o Pipedrive limpo. Nada muda lá sem a aprovação do master ou head, na tela Qualidade.", U.qualidade, "Revisão"],
   ];
-  const nomesV = (r.verticaisOportunidades || []).map(v => V[v] || v).join(", ");
+  const fases = {Coleta: "Coleta: busca os dados nas fontes", "Cálculo": "Cálculo: transforma os dados em Score e fila", "Revisão": "Revisão: limpeza do cadastro (semanal)"};
+  const passosHTML = passos.map(([c, t, chip, txt, praQue, u, fase], i) => `${i === 0 || passos[i - 1][6] !== fase ? `<li class="rot-fase">${fases[fase]}</li>` : ""}<li class="rot-passo" style="--c:${c}">
+    <span class="rot-num">${i < passos.length - 1 ? i + 1 : "+"}</span>
+    <div class="rot-card"><h3>${t} ${chip}</h3><p>${txt}</p><p class="rot-praque"><b>Para quê:</b> ${praQue}</p>${u === null ? '<span class="rot-st ok"><i></i>roda junto com a rodada</span>' : rotStatus(u)}</div></li>`).join("");
+  // Critérios do Score de uma vertical (pesos de config/criterios.yaml)
+  const criteriosHTML = v => PESOS[v] ? `<ul class="rot-crit">${Object.entries(PESOS[v]).sort((a, b) => b[1] - a[1]).map(([k, p]) => `<li>
+      <div class="crit-linha"><b>${esc(NOME_CRIT[k] || k)}</b><span class="num">${p}</span></div>
+      <div class="crit-barra c-${v}"><i style="width:${p}%"></i></div><span class="sub">${esc((EXPLICA_CRIT[v] || {})[k] || "")}</span></li>`).join("")}</ul>` : "";
+  const lista = itens => `<ol class="lk-passos lk-4">${itens.map(([t, txt], i) => `<li><span class="lk-n">${i + 1}</span><div><b>${t}</b><span>${txt}</span></div></li>`).join("")}</ol>`;
+  const cabVertical = (v, sub) => `<div class="rot-vert c-${v}"><h2>${esc(V[v] || v)}</h2><span>${sub}</span></div>`;
   const pct = Math.min(100, Math.round(100 * L.ultimas24h / Math.max(1, L.limiteDia)));
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:16px">
@@ -1096,56 +1136,35 @@ async function telaRotina() {
     <div class="rot-hero">
       <div class="rot-relogio" aria-hidden="true"><b>${r.minutos}</b><span>minutos</span></div>
       <div><h2>A cada ${r.minutos === 60 ? "hora" : `${r.minutos} minutos`}, a plataforma se atualiza sozinha</h2>
-        <p>Os passos abaixo rodam em sequência, sempre na mesma ordem. Se um falhar, os outros seguem, e a próxima rodada tenta de novo. Só uma rodada roda por vez.${r.interna ? "" : " (Neste ambiente a rodada é disparada por um agendador externo.)"}</p></div>
+        <p>Os passos rodam em sequência, sempre na mesma ordem. Se um falhar, os outros seguem, e a próxima rodada tenta de novo. Só uma rodada roda por vez.${r.interna ? "" : " (Neste ambiente a rodada é disparada por um agendador externo.)"}</p></div>
     </div>
     <div class="rot-resumo" aria-label="Resumo">
-      <div><span class="rot-etapa">1</span><b>Junta os dados</b><span>Pipedrive, e-mails da equipe, Receita, sites, notícias e LinkedIn, sempre que possível de graça e sem trabalho manual.</span></div>
+      <div><span class="rot-etapa">1</span><b>Junta os dados</b><span>Pipedrive, e-mails da equipe, Receita, sites, notícias e LinkedIn, de graça sempre que possível.</span></div>
       <span class="seta" aria-hidden="true">→</span>
-      <div><span class="rot-etapa">2</span><b>Analisa cada empresa</b><span>Confere se a empresa tem o que precisa para a oportunidade (em Saúde: praça, funcionários e setor) e calcula o Score.</span></div>
+      <div><span class="rot-etapa">2</span><b>Analisa cada empresa</b><span>Confere, vertical por vertical, se a empresa tem tudo o que precisa: dados da empresa, quem decide e uma ponte por e-mail.</span></div>
       <span class="seta" aria-hidden="true">→</span>
-      <div><span class="rot-etapa">3</span><b>Mostra a oportunidade</b><span>Só o que foi analisado entra em Oportunidades, do maior Score para o menor, com quem decide e quem da equipe faz a ponte.</span></div>
+      <div><span class="rot-etapa">3</span><b>Mostra a oportunidade</b><span>Só o que está completo entra em Oportunidades, do maior Score para o menor. Ninguém precisa buscar nada na mão.</span></div>
     </div>
     <nav class="rot-indice" aria-label="Nesta página">Nesta página:
-      <a href="javascript:void 0" data-rolar="rot-passos">Os passos de cada hora</a> · <a href="javascript:void 0" data-rolar="rot-analise">Do cadastro à Oportunidade</a> · <a href="javascript:void 0" data-rolar="rot-exemplo">Exemplo completo</a> ·
-      <a href="javascript:void 0" data-rolar="rot-fontes">De onde vem cada dado</a> · <a href="javascript:void 0" data-rolar="rot-email">E-mail</a> · <a href="javascript:void 0" data-rolar="rot-lk">LinkedIn</a> · <a href="javascript:void 0" data-rolar="rot-glossario">Palavras da plataforma</a></nav>
-    <h2 class="rot-titulo" id="rot-passos">Os passos de cada hora</h2>
-    <ol class="rot-passos">
-      ${passos.map(([c, t, chip, txt, praQue, u, fase], i) => `${i === 0 || passos[i - 1][6] !== fase ? `<li class="rot-fase">${{Coleta: "Coleta: busca os dados nas fontes", "Cálculo": "Cálculo: transforma os dados em Score e fila", "Revisão": "Revisão: limpeza do cadastro (semanal)"}[fase]}</li>` : ""}<li class="rot-passo" style="--c:${c}">
-        <span class="rot-num">${i < passos.length - 1 ? i + 1 : "+"}</span>
-        <div class="rot-card"><h3>${t} ${chip}</h3><p>${txt}</p><p class="rot-praque"><b>Para quê:</b> ${praQue}</p>${u === null ? '<span class="rot-st ok"><i></i>roda junto com a rodada</span>' : rotStatus(u)}</div></li>`).join("")}
-    </ol>
-    <div class="rot-painel" id="rot-analise">
-      <h2>Do cadastro à Oportunidade</h2>
-      <p style="margin:0">Uma empresa com card aberto no Pipedrive só aparece em <b>Oportunidades</b> depois de <b>analisada</b>. Até lá ela fica na <b>fila de análise</b>, que anda de hora em hora pela ordem do Score (o contador "X analisadas · Y na fila" fica no alto da tela). Hoje vale para <b>${esc(nomesV || "Saúde")}</b>; Linhas Financeiras e RE entram quando o fluxo de cada uma estiver pronto.</p>
-      <ol class="lk-passos">
-        <li><span class="lk-n">1</span><div><b>Praça</b><span>A cidade decide se Saúde faz sentido: as ${r.cidadesAlvo} cidades alvo são capitais e regiões metropolitanas com boa rede hospitalar e sem Unimed local dominante. Cidade informada à mão decide sozinha. Fora da lista, vale onde estão os funcionários: com pelo menos <b>${Math.round(100 * L.fatiaMinima)}%</b> em cidades alvo a empresa está na praça; senão fica <i>fora da praça</i> (continua em Oportunidades, com Score baixo e a etiqueta).</span></div></li>
-        <li><span class="lk-n">2</span><div><b>Funcionários</b><span>Do LinkedIn (o número mais exato), do Pipedrive ou informado à mão.</span></div></li>
-        <li><span class="lk-n">3</span><div><b>Setor</b><span>Do LinkedIn ou do CNAE da Receita.</span></div></li>
-        <li><span class="lk-n">4</span><div><b>Quem decide</b><span>Não é obrigatório: a empresa aparece com "ainda não sabemos" e o contato que temos no Pipedrive, e é completada depois.</span></div></li>
-      </ol>
-      <p class="nota" style="margin:0"><b>Para adiantar:</b> informe cidade, funcionários e cargo à mão (✎) em Oportunidades, em Negócios em aberto (que mostra o que falta) ou na ficha da empresa. O que é informado à mão vale sobre as outras fontes e a empresa entra em Oportunidades na hora, sem gastar consulta.</p>
-    </div>
-    <div class="rot-painel" id="rot-exemplo">
-      <h2>Exemplo completo: do card no Pipedrive à oportunidade de Saúde</h2>
-      <ol class="rot-linha">
-        <li><b>Segunda, 9h</b><span>O Victor abre um card de D&O para a "Agro Exemplo" no Pipedrive. Na rodada das 10h, a plataforma traz o card e vê que a empresa ainda não tem nem negocia Saúde: vira uma oportunidade de Saúde <i>na fila de análise</i>.</span></li>
-        <li><b>10h</b><span>Sem CNPJ no Pipedrive, a plataforma acha o CNPJ no rodapé do site, confere o nome na Receita e traz a cidade (Betim/MG, cidade alvo), o porte e o CNAE (setor).</span></li>
-        <li><b>10h</b><span>O site redireciona para outro domínio, que vira domínio da empresa. Os e-mails que a Pamela trocou com esse domínio passam a contar: ela vira a <i>ponte</i>.</span></li>
-        <li><b>11h</b><span>O LinkedIn traz 350 funcionários. Com praça, funcionários e setor, a empresa está <b>analisada</b> e entra em Oportunidades, na posição do seu Score.</span></li>
-        <li><b>Dias depois</b><span>A lista de quem decide traz a gerente de RH, que aparece em <i>Quem decide</i>. A equipe cria a atividade pela própria tela.</span></li>
-        <li><b>Atalho</b><span>Se alguém tivesse informado cidade e funcionários à mão (✎) em Negócios em aberto, a empresa entraria em Oportunidades na rodada seguinte, sem esperar o LinkedIn.</span></li>
-      </ol>
-    </div>
-    <div class="rot-painel" id="rot-fontes">
+      <a href="javascript:void 0" data-rolar="rot-comum">Comum a todas as verticais</a> ·
+      <a href="javascript:void 0" data-rolar="rot-saude">Saúde</a> ·
+      <a href="javascript:void 0" data-rolar="rot-lf">Linhas Financeiras</a> ·
+      <a href="javascript:void 0" data-rolar="rot-re">RE</a> ·
+      <a href="javascript:void 0" data-rolar="rot-glossario">Palavras da plataforma</a></nav>
+
+    <h2 class="rot-titulo" id="rot-comum">Comum a todas as verticais</h2>
+    <p class="nota" style="margin:0">Os passos de cada hora, na ordem em que rodam. Eles juntam os dados que todas as verticais usam.</p>
+    <ol class="rot-passos">${passosHTML}</ol>
+    <div class="rot-painel">
       <h2>De onde vem cada dado</h2>
       <div class="tabela" style="border:0"><table class="rot-fontes"><thead><tr><th>Dado</th><th>Fontes, da que vale mais para a que vale menos</th></tr></thead><tbody>
-        <tr><td><b>Cidade e UF</b></td><td>Informada à mão → Receita (pelo CNPJ) → endereço no Pipedrive → sede no LinkedIn</td></tr>
+        <tr><td><b>Cidade e UF</b></td><td>Informada à mão → Receita (pelo CNPJ) → endereço no Pipedrive → sede no LinkedIn. À mão só encurta a busca: se a cidade não for alvo, a empresa fica fora da praça.</td></tr>
         <tr><td><b>CNPJ</b></td><td>Pipedrive → rodapé do site (só se o nome na Receita bater)</td></tr>
-        <tr><td><b>Funcionários</b></td><td>Informado à mão (vale ${r.funcionariosManualDias} dias) → LinkedIn → Pipedrive</td></tr>
-        <tr><td><b>Setor</b></td><td>LinkedIn → CNAE da Receita</td></tr>
-        <tr><td><b>Cargo da pessoa</b></td><td>Informado à mão (também grava no Pipedrive) → Pipedrive → LinkedIn (lista de quem decide ou perfil do contato do negócio)</td></tr>
+        <tr><td><b>Funcionários</b></td><td>Informado à mão (vale ${r.funcionariosManualDias} dias) → LinkedIn. <b>O número do Pipedrive não é usado.</b></td></tr>
+        <tr><td><b>Setor</b></td><td>Informado à mão → LinkedIn (o mais específico: "fintech", não "tecnologia"). <b>O setor do Pipedrive e o CNAE não contam como setor</b>; o CNAE fica só para as regras de Linhas Financeiras.</td></tr>
+        <tr><td><b>Cargo da pessoa</b></td><td>Informado à mão (também grava no Pipedrive) → Pipedrive → LinkedIn</td></tr>
+        <tr><td><b>Ponte</b></td><td>Só e-mail: alguém da empresa que escreveu para a equipe e recebeu resposta nos últimos 12 meses. O contato no Pipedrive não conta (pode estar desatualizado).</td></tr>
         <tr><td><b>Domínios de e-mail</b></td><td>Site da empresa → e-mails dos contatos → para onde o site redireciona → e-mails no site → site no LinkedIn → e-mail da Receita</td></tr>
-        <tr><td><b>Relacionamento</b></td><td>E-mails das caixas com a leitura ligada</td></tr>
       </tbody></table></div>
     </div>
     <div class="rot-paineis">
@@ -1154,7 +1173,7 @@ async function telaRotina() {
         <div class="rot-fluxo">
           <div><b>Caixa no Microsoft 365</b>só de quem tem a leitura ligada na tela Equipe</div><span class="seta" aria-hidden="true">→</span>
           <div><b>Quem, para quem, quando</b>só os dados do envelope</div><span class="seta" aria-hidden="true">→</span>
-          <div><b>Relacionamento</b>frequência, recência, reciprocidade e amplitude</div>
+          <div><b>Ponte e relacionamento</b>quem fala com quem, frequência e recência</div>
         </div>
         <div class="rot-fluxo">
           <div><b>Resposta de um contato</b>só o trecho novo, sem o histórico</div><span class="seta" aria-hidden="true">→</span>
@@ -1162,58 +1181,124 @@ async function telaRotina() {
           <div><b>Temperatura</b><span><span class="chip t-pouca">pouca</span> <span class="chip t-media">média</span> <span class="chip t-muita">muita</span></span></div>
         </div>
         <ul class="rot-fatos">
-          <li><b>${r.dias}<small>dias</small></b><span>A cada hora, relê os últimos ${r.dias} dias de cada caixa. O que já foi lido não conta duas vezes, e uma hora que falhar é coberta pela seguinte.</span></li>
+          <li><b>12<small>meses</small></b><span>Ao ligar uma caixa, a plataforma lê uma vez os últimos 12 meses. Depois, de hora em hora, relê os últimos ${r.dias} dias. Uma relação de anos não precisa esperar um e-mail novo.</span></li>
+          <li><b>${E.caixas}<small>caixas</small></b><span><b>Ligue a leitura de todo o time comercial</b> na tela Equipe: a ponte só existe se a caixa de quem fala com a empresa for lida. A caixa também precisa estar no grupo <code>crosssell-equipe</code> do Microsoft 365.</span></li>
+          <li><b>@<small>domínio</small></b><span>Cada e-mail é ligado à empresa pelo endereço do contato ou pelo domínio (o do site, o dos contatos e os descobertos na rotina). Gmail, Hotmail e afins não contam.</span></li>
           <li><b>0<small>textos</small></b><span>O texto dos e-mails <b>nunca é guardado</b>. Ficam só os dados do envelope, o rótulo da temperatura e uma justificativa curta.</span></li>
-          <li><b>@<small>domínio</small></b><span>Cada e-mail é ligado à empresa pelo endereço do contato ou pelo domínio: o do site, o dos contatos da empresa (ex.: Pro-Eficiência, site intergado.com.br e e-mails @pontaagro.com) e os descobertos na rotina. Quem escreve de um domínio conhecido vira contato da empresa; Gmail, Hotmail e afins não contam.</span></li>
-          <li><b>${E.caixas}<small>caixas</small></b><span>Leitura opcional por pessoa, ligada pelo master. A caixa também precisa estar no grupo <code>crosssell-equipe</code> do Microsoft 365; fora dele, a leitura aparece como recusada.</span></li>
         </ul>
       </div>
-
-    </div>
-    <div class="rot-painel rot-lk" id="rot-lk">
-      <h2>LinkedIn, passo a passo</h2>
-      <p style="margin:0">A plataforma usa o LinkedIn para saber <b>o tamanho da empresa</b>, <b>quem trabalha lá</b> e <b>o cargo de cada pessoa</b>. Cada consulta tem custo e o LinkedIn bloqueia contas que consultam demais, então ela vai <b>aos poucos, de hora em hora</b>, começando pelo que mais importa.${L.configurado ? "" : " <b>Hoje está desligado</b>: faltam as chaves da Linked API no servidor."}</p>
-      <ol class="lk-passos lk-4">
-        <li><span class="lk-n">1</span><div><b>Escolhe quem consultar</b><span>Pela ordem do Score: primeiro as empresas das Oportunidades, depois as dos negócios abertos. Quem paga a consulta é a vertical da oportunidade de maior Score da empresa; o que for lido serve a todas.</span></div></li>
-        <li><span class="lk-n">2</span><div><b>Saúde: a empresa</b><span>Acha a página (link no site, sem custo, ou busca pelo nome conferindo se é a mesma empresa) e lê funcionários, setor e sede. Se os funcionários foram informados à mão e o setor já é conhecido, não gasta consulta.</span></div></li>
-        <li><span class="lk-n">3</span><div><b>Saúde: a praça</b><span>Cidade informada à mão ou cidade alvo decide sozinha. Fora disso, ${L.salesNavigator ? "o Sales Navigator mostra onde estão os funcionários" : "<b>quando o Sales Navigator for ligado</b>, ele mostra onde estão os funcionários"}: com pelo menos <b>${Math.round(100 * L.fatiaMinima)}%</b> em cidades alvo, a empresa vale; senão fica <i>fora da praça</i> (continua em Oportunidades, com Score baixo).</span></div></li>
-        <li><span class="lk-n">4</span><div><b>Saúde: quem decide</b><span>Só na praça. ${L.salesNavigator ? "Lista do Sales Navigator filtrada por cargo" : "Lista de funcionários da empresa"} (diretor de RH, CHRO, Head de People, Founder, CFO): atualiza o cargo de quem já conhecemos pelos e-mails e cadastra quem falta.</span></div></li>
-        <li><span class="lk-n">5</span><div><b>Contato do negócio</b><span>O perfil de quem está no card aberto é lido para trazer o cargo atual (vale para todas as verticais).</span></div></li>
-        <li><span class="lk-n">6</span><div><b>Linhas Financeiras e RE</b><span>Por enquanto, a leitura geral: página da empresa, perfil dos contatos e funcionários da área que decide. O fluxo próprio de cada uma vem a seguir.</span></div></li>
-        <li><span class="lk-n">7</span><div><b>Volta depois</b><span>Relê empresas, praça e pessoas a cada <b>${L.validadeDias} dias</b>. Quem não foi encontrado é procurado de novo em <b>${L.buscaDias} dias</b>. Consulta sem resposta espera <b>${L.prazoHoras} horas</b> antes de ser pedida de novo.</span></div></li>
-      </ol>
-      <p class="nota" style="margin:0"><b>Sales Navigator: ${L.salesNavigator ? "ligado" : "desligado"}.</b> ${L.salesNavigator ? "A praça e a lista de quem decide usam o Sales Navigator." : "Sem ele, empresas fora das cidades alvo esperam a cidade informada à mão para decidir a praça. Para ligar: teste no servidor com <code>crosssell linkedin-teste</code> e ponha <code>LINKEDIN_SALES_NAVIGATOR=true</code> no deploy/.env."}</p>
-      <div class="lk-cotas">
-        <b>Consultas por dia, por vertical</b>
-        <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)}${c.vertical === "saude" ? ` <span class="sub">${c.grupo === "pessoas" ? "quem decide" : "empresa e praça"}</span>` : ""}</td>
-          <td class="num">${c.usadas24h} de ${c.cota}</td></tr>`).join("")}</tbody></table>
-        <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras.</span>
-      </div>
-      <div class="lk-rodape">
+      <div class="rot-painel" id="rot-lk">
+        <h2>LinkedIn: ritmo e cotas</h2>
+        <p style="margin:0">Cada consulta tem custo e o LinkedIn bloqueia contas que consultam demais, então a plataforma vai <b>aos poucos, de hora em hora</b>, pela ordem do Score.${L.configurado ? "" : " <b>Hoje está desligado</b>: faltam as chaves da Linked API no servidor."} Quem paga a consulta é a vertical de maior Score da empresa; o que for lido serve a todas.</p>
         <div class="lk-ritmo">
           <b>Ritmo</b>
           <span>Até <b>${L.lote}</b> consultas por hora e <b>${L.limiteDia}</b> por dia.</span>
           <div class="rot-medidor" role="img" aria-label="${L.ultimas24h} de ${L.limiteDia} consultas nas últimas 24 horas"><i style="width:${pct}%"></i></div>
           <span class="sub">Nas últimas 24 h: ${L.ultimas24h} de ${L.limiteDia}</span>
         </div>
-        <div class="lk-exemplo"><b>Exemplo</b><span>A Voke entra na fila de Saúde. Na hora seguinte, a plataforma acha o LinkedIn dela pelo site e lê a página: 320 funcionários, matriz em Joinville. Joinville não é cidade alvo, então consulta onde estão os funcionários: 45% em São Paulo. Está na praça e passa a aparecer em Oportunidades. Depois, a lista por cargo traz a gerente de Pessoas, que entra em <i>Quem decide</i>. Daqui a ${L.validadeDias} dias, tudo é relido.</span></div>
+        <div class="lk-cotas">
+          <b>Consultas por dia, por vertical</b>
+          <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)}${c.vertical === "saude" ? ` <span class="sub">${c.grupo === "pessoas" ? "quem decide" : "empresa e praça"}</span>` : ""}</td>
+            <td class="num">${c.usadas24h} de ${c.cota}</td></tr>`).join("")}</tbody></table>
+          <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras. Relê tudo a cada ${L.validadeDias} dias; quem não foi encontrado é procurado de novo em ${L.buscaDias} dias.</span>
+        </div>
+        <p class="nota" style="margin:0"><b>Sales Navigator: ${sn ? "ligado" : "desligado"}.</b> ${sn ? "A praça e a lista de quem decide usam o Sales Navigator." : "Sem ele, quem decide vem da lista comum de funcionários e a praça de empresas fora das cidades alvo espera a cidade informada à mão. Para ligar: teste no servidor com <code>crosssell linkedin-teste</code> e ponha <code>LINKEDIN_SALES_NAVIGATOR=true</code> no deploy/.env."}</p>
       </div>
     </div>
+
+    <div class="rot-secao" id="rot-saude">
+      ${cabVertical("saude", "fluxo ativo · aparece em Oportunidades")}
+      <div class="rot-painel">
+        <h2>Condições para virar oportunidade</h2>
+        <p style="margin:0">Uma empresa com card aberto que ainda não tem nem negocia Saúde entra na <b>fila de análise</b>. Ela só aparece em Oportunidades quando <b>todas</b> as condições abaixo estão cumpridas, para que a equipe não precise buscar nada na mão. A fila anda de hora em hora pela ordem do Score.</p>
+        ${lista([
+          ["Na praça", `A cidade está entre as ${r.cidadesAlvo} cidades alvo (capitais e regiões metropolitanas com boa rede hospitalar e sem Unimed local dominante) ou pelo menos <b>${Math.round(100 * L.fatiaMinima)}%</b> dos funcionários estão nelas. <b>Fora da praça não entra em Oportunidades</b>, mesmo com a cidade informada à mão.`],
+          ["Funcionários", "Do LinkedIn ou informado à mão."],
+          ["Setor", "Do LinkedIn ou informado à mão."],
+          ["Quem decide", "Alguém de RH/Pessoas mapeado (diretor ou gerente de RH, CHRO, Head de People) ou, se a empresa não tem RH, um executivo (Founder, CEO, CFO)."],
+          ["Ponte por e-mail", "Alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses."],
+        ])}
+        <p class="nota" style="margin:0"><b>Atalho:</b> cidade, funcionários, setor e cargo podem ser informados à mão (✎) em Negócios em aberto, que mostra o que falta para cada empresa, ou na ficha. Isso só encurta a busca: as condições continuam valendo.</p>
+      </div>
+      <div class="rot-paineis">
+        <div class="rot-painel">
+          <h2>Fluxo de pesquisa no LinkedIn</h2>
+          <p class="sub" style="margin:0">Cota: ${cota("saude", "caracteristicas").cota} consultas por dia para a empresa e a praça, ${cota("saude", "pessoas").cota} para quem decide.</p>
+          ${lista([
+            ["A empresa", "Acha a página (link no site, sem custo, ou busca pelo nome) e lê funcionários, setor e sede. Se funcionários e setor foram informados à mão, não gasta consulta."],
+            ["A praça", `Cidade à mão ou cidade alvo decide sozinha. Fora disso, ${sn ? "o Sales Navigator mostra" : "<b>quando o Sales Navigator for ligado</b>, ele mostra"} onde estão os funcionários.`],
+            ["Quem decide", `Só na praça: ${sn ? "lista do Sales Navigator filtrada por cargo" : "lista de funcionários da empresa"} (RH, CHRO, Head de People, Founder, CFO). Atualiza o cargo de quem já conhecemos pelos e-mails e cadastra quem falta.`],
+            ["Contato do negócio", "O perfil de quem está no card aberto é lido para trazer o cargo atual."],
+          ])}
+        </div>
+        <div class="rot-painel">
+          <h2>Critérios do Score</h2>
+          <p class="sub" style="margin:0">Ordenam as oportunidades. Os pesos somam 100.</p>
+          ${criteriosHTML("saude")}
+        </div>
+      </div>
+      <div class="rot-painel">
+        <h2>Exemplo completo</h2>
+        <ol class="rot-linha">
+          <li><b>Segunda, 9h</b><span>O Victor abre um card de D&O para a "Agro Exemplo". Na rodada das 10h, a empresa vira uma oportunidade de Saúde <i>na fila de análise</i>.</span></li>
+          <li><b>10h</b><span>A Receita (pelo CNPJ achado no site) traz a cidade: Betim/MG, cidade alvo. A empresa está na praça.</span></li>
+          <li><b>10h</b><span>O site redireciona para outro domínio, que vira domínio da empresa. Os e-mails que a Pamela trocou com a gerente financeira nos últimos 12 meses passam a contar: ela é a <i>ponte</i>.</span></li>
+          <li><b>11h</b><span>O LinkedIn traz 350 funcionários e o setor "Agtech". Falta só quem decide.</span></li>
+          <li><b>12h</b><span>A lista por cargo traz a gerente de RH. Com tudo cumprido, a empresa entra em <b>Oportunidades</b>, com quem decide e a ponte prontos para a abordagem.</span></li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="rot-secao" id="rot-lf">
+      ${cabVertical("linhas_financeiras", "fluxo definido · em construção · ainda não aparece em Oportunidades")}
+      <div class="rot-paineis">
+        <div class="rot-painel">
+          <h2>Fluxo de pesquisa (definido)</h2>
+          <p class="sub" style="margin:0">Cota: ${cota("linhas_financeiras", "geral").cota} consultas por dia (metade para empresas do funil Pipo Saúde, metade para os outros funis). Hoje roda a leitura geral do LinkedIn.</p>
+          ${lista([
+            ["Receita", "Só MEI fica de fora. Capital social alto soma pontos; baixo não tira."],
+            ["Notícias", "Neofeed, Brazil Journal, Valor e Exame com mais peso que o Google Notícias. Notícia de M&A antecipa a releitura das pessoas."],
+            ["Site lido pela IA", "Fundos e investidores, grandes clientes, serviço intelectual e site profissional. Será testado com 10 a 20 empresas conhecidas antes de ligar."],
+            ["LinkedIn", "Setor (o mais específico) e lista de cargos-chave: CFO, diretor financeiro, CEO, founder, conselho, jurídico, riscos, compliance, CTO, CISO, DPO."],
+          ])}
+        </div>
+        <div class="rot-painel">
+          <h2>Critérios do Score</h2>
+          <p class="sub" style="margin:0"><b>Planejado:</b> Profissionalização 40 · Momento 15 · Encaixe do produto 20 · Influência 25. Produtos: E&O, D&O, Cyber e IMI (Garantia e Fiança fora), uma linha por empresa com os produtos sugeridos.</p>
+          <p class="sub" style="margin:0"><b>Hoje:</b></p>
+          ${criteriosHTML("linhas_financeiras")}
+        </div>
+      </div>
+    </div>
+
+    <div class="rot-secao" id="rot-re">
+      ${cabVertical("ramos_elementares", "fluxo a definir · ainda não aparece em Oportunidades")}
+      <div class="rot-paineis">
+        <div class="rot-painel">
+          <h2>Fluxo de pesquisa</h2>
+          <p style="margin:0">Ainda a definir com a equipe. Hoje roda a leitura geral do LinkedIn (página da empresa, perfil dos contatos e funcionários de Operações, Riscos e Financeiro), com cota de ${cota("ramos_elementares", "geral").cota} consultas por dia.</p>
+        </div>
+        <div class="rot-painel">
+          <h2>Critérios do Score (hoje)</h2>
+          ${criteriosHTML("ramos_elementares")}
+        </div>
+      </div>
+    </div>
+
     <div class="rot-painel" id="rot-glossario">
       <h2>Palavras da plataforma</h2>
       <dl class="rot-glossario">
-        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa que tem algum card aberto no Pipedrive.</dd></div>
-        <div><dt>Analisada</dt><dd>Empresa com os dados mínimos para a oportunidade (em Saúde: praça, funcionários e setor). Só as analisadas aparecem em Oportunidades.</dd></div>
-        <div><dt>Fila de análise</dt><dd>Empresas esperando esses dados. Anda pela ordem do Score; informar à mão adianta.</dd></div>
-        <div><dt>Score (Potencial)</dt><dd>De 0 a 100, o quanto a oportunidade vale a pena, pelos critérios de cada vertical (os pesos ficam em <i>Critérios do Score</i>, na tela Oportunidades).</dd></div>
-        <div><dt>Score de Influência</dt><dd>De 0 a 100, o peso da pessoa: metade pelo relacionamento por e-mail, metade pelo cargo.</dd></div>
-        <div><dt>Praça</dt><dd>Em Saúde, se a empresa está onde há boa rede hospitalar sem Unimed local dominante (as ${r.cidadesAlvo} cidades alvo).</dd></div>
+        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa com algum card aberto no Pipedrive.</dd></div>
+        <div><dt>Analisada</dt><dd>Empresa que cumpre todas as condições da vertical (em Saúde: praça, funcionários, setor, quem decide e ponte). Só as analisadas aparecem em Oportunidades.</dd></div>
+        <div><dt>Fila de análise</dt><dd>Empresas esperando essas condições. Anda pela ordem do Score.</dd></div>
+        <div><dt>Fora da praça</dt><dd>Em Saúde, empresa onde não somos competitivos (cidade fora das cidades alvo e menos de ${Math.round(100 * L.fatiaMinima)}% dos funcionários nelas). Não entra em Oportunidades.</dd></div>
+        <div><dt>Score (Potencial)</dt><dd>De 0 a 100, o quanto a oportunidade vale a pena, pelos critérios de cada vertical.</dd></div>
+        <div><dt>Score de Influência</dt><dd>De 0 a 100, o peso da pessoa: metade pelo relacionamento por e-mail (valoriza o recente), metade pelo cargo.</dd></div>
         <div><dt>Quem decide</dt><dd>Pessoa da área que costuma decidir a vertical (RH em Saúde; Financeiro, Jurídico e Riscos em LF; Operações, Riscos e Financeiro em RE).</dd></div>
-        <div><dt>Ponte</dt><dd>Contato da empresa que já troca e-mails com alguém da equipe e pode apresentar quem decide.</dd></div>
-        <div><dt>Contato no Pipedrive</dt><dd>Quando não há ponte por e-mail: a pessoa do card aberto ou da organização.</dd></div>
+        <div><dt>Ponte</dt><dd>Alguém da empresa que escreveu para a equipe e recebeu resposta nos últimos 12 meses. Pode apresentar quem decide.</dd></div>
         <div><dt>Temperatura</dt><dd>Abertura do contato, lida pela Claude nas respostas de e-mail: pouca, média ou muita.</dd></div>
         <div><dt>Cota do LinkedIn</dt><dd>Consultas por dia de cada vertical. Paga a vertical de maior Score da empresa; a sobra passa às outras.</dd></div>
-        <div><dt>✎ (informado à mão)</dt><dd>Cidade, funcionários e cargo informados pela equipe valem sobre as fontes automáticas.</dd></div>
+        <div><dt>✎ (informado à mão)</dt><dd>Cidade, funcionários, setor e cargo informados pela equipe valem sobre as fontes automáticas, mas só encurtam a busca: as condições continuam valendo.</dd></div>
       </dl>
     </div>
   </section>`;
@@ -1249,15 +1334,17 @@ async function telaNegocios() {
   document.getElementById("neg-dono").innerHTML = `<option value="">Responsável: todos</option>${r.donos.map(d => `<option value="${esc(d)}" ${d === filtroNeg.dono ? "selected" : ""}>${esc(nomeDe(d))}</option>`).join("")}`;
   document.getElementById("neg-contagem").textContent = `${r.total} de ${r.totalGeral} negócios`;
   document.getElementById("neg-lista").innerHTML = `<div class="tabela"><table>
-    <thead><tr><th>Empresa</th><th>Funcionários · cidade</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
+    <thead><tr><th>Empresa</th><th>Funcionários · cidade · setor</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
     <tbody>${r.itens.map(n => `<tr>
       <td>${n.empresa ? `<a href="#empresa-${n.empresa.id}"><b>${esc(n.empresa.nome)}</b></a>${n.empresa.cliente ? ' <span class="chip" style="--c:var(--good)">cliente</span>' : ""}
         <div class="sub">${n.temOportunidade ? '<span style="color:var(--good)">também em Oportunidades</span>'
-          : n.faltaParaOportunidade.length ? `<span style="color:var(--warn)" title="Cross sell de Saúde esperando a análise. Preencher à mão leva a empresa para Oportunidades na hora.">falta para Oportunidades: ${esc(n.faltaParaOportunidade.join(", "))}</span>` : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
+          : n.faltaParaOportunidade.includes("fora da praça") ? '<span class="mute" title="Cidade fora das cidades alvo de Saúde (ou menos de 30% dos funcionários nelas)">fora da praça: não entra em Oportunidades</span>'
+          : n.faltaParaOportunidade.length ? `<span style="color:var(--warn)" title="Cross sell de Saúde esperando a análise. Cidade, funcionários e setor podem ser informados à mão; quem decide e a ponte por e-mail vêm do LinkedIn e das caixas de e-mail.">falta para Oportunidades: ${esc(n.faltaParaOportunidade.join(", "))}</span>` : ""}</div>` : '<span class="mute">sem empresa</span>'}</td>
       <td class="small" style="white-space:nowrap">${n.empresa ? `<div>${n.empresa.funcionarios ? `${n.empresa.funcionarios.toLocaleString("pt-BR")} func.` : '<span class="mute">—</span>'}
           <button type="button" class="lapis" data-func="${n.empresa.id}" data-func-atual="${n.empresa.funcionarios || ""}" data-func-nome="${esc(n.empresa.nome)}" title="Informar o número de funcionários">${n.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
         <div>${n.empresa.local ? esc(n.empresa.local) : '<span class="mute">—</span>'}
-          <button type="button" class="lapis" data-local="${n.empresa.id}" data-local-cidade="${esc(n.empresa.cidadeFonte === "manual" ? n.empresa.cidade || "" : "")}" data-local-uf="${esc(n.empresa.uf || "")}" data-local-nome="${esc(n.empresa.nome)}" title="Informar cidade e UF">${n.empresa.local ? "✎" : "+ cidade"}</button></div>` : ""}</td>
+          <button type="button" class="lapis" data-local="${n.empresa.id}" data-local-cidade="${esc(n.empresa.cidadeFonte === "manual" ? n.empresa.cidade || "" : "")}" data-local-uf="${esc(n.empresa.uf || "")}" data-local-nome="${esc(n.empresa.nome)}" title="Informar cidade e UF">${n.empresa.local ? "✎" : "+ cidade"}</button></div>
+        <div style="white-space:normal;max-width:220px">${n.empresa.setor ? esc(n.empresa.setor) : '<span class="mute">—</span>'} ${btnSetor(n.empresa.id, n.empresa.setor, n.empresa.nome, true)}</div>` : ""}</td>
       <td>${esc(n.produto)}${n.pessoa ? `<div class="sub">${esc(n.pessoa)}</div>` : ""}</td>
       <td>${vchip(n.vertical, V[n.vertical] || n.vertical)}<div class="sub">${esc(n.funil)}${n.etapa ? " · " + esc(n.etapa) : ""}</div></td>
       <td class="num">${brl(n.valor)}</td>
@@ -1451,7 +1538,7 @@ async function telaEmpresa(id) {
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
-      <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button>${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
+      <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button> ${btnSetor(e.id, e.setor, e.nome)}${e.setorFonte === "manual" ? ' <span class="sub">(setor informado à mão)</span>' : ""}${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
     ${e.dominios && e.dominios.length ? `<div class="sub" title="E-mails desses domínios contam no relacionamento com a empresa">Domínios de e-mail: ${e.dominios.map(esc).join(", ")}</div>` : ""}
     <div class="sub">${e.cidade ? esc(`${e.cidade}${e.uf ? "/" + e.uf : ""}`) + (e.cidadeFonte === "manual" ? " (informada à mão)" : e.cidadeFonte ? ` (${e.cidadeFonte === "receita" ? "Receita" : e.cidadeFonte === "pipedrive" ? "Pipedrive" : "LinkedIn"})` : "") : "local não informado"}${e.praca ? ` · praça de Saúde: <b>${e.praca === "alvo" ? "alvo" : "fora"}</b>` : ""}
       <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.cidade ? "✎ cidade" : "+ cidade"}</button></div>
@@ -1481,6 +1568,7 @@ document.addEventListener("click", ev => {
   const f = ev.target.closest("[data-func]"); if (f) editarFuncionarios(f.dataset.func, f.dataset.funcAtual, f.dataset.funcNome);
   const rl = ev.target.closest("[data-rolar]"); if (rl) { ev.preventDefault(); document.getElementById(rl.dataset.rolar)?.scrollIntoView({behavior: "smooth", block: "start"}); }
   const l = ev.target.closest("[data-local]"); if (l) editarLocal(l.dataset.local, l.dataset.localCidade, l.dataset.localUf, l.dataset.localNome);
+  const st = ev.target.closest("[data-setor]"); if (st) editarSetor(st.dataset.setor, st.dataset.setorAtual, st.dataset.setorNome);
   const cg = ev.target.closest("[data-cargo]"); if (cg) editarCargo(cg.dataset.cargo, cg.dataset.cargoAtual, cg.dataset.cargoNome);
 });
 document.addEventListener("change", async ev => {

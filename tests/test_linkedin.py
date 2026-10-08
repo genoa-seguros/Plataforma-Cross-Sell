@@ -182,10 +182,19 @@ def test_funcionarios_do_linkedin_entram_no_porte(db, settings):
     db.commit()
     saude = lambda: next(x for x in tabela.montar(db, settings) if x["pipedriveId"] == "5")  # noqa: E731
     antes = saude()
+    assert antes["empresa"]["funcionarios"] is None  # o número do Pipedrive não conta
+    beta.funcionarios_fonte, beta.funcionarios_em = "manual", datetime(2026, 9, 1)
+    db.commit()
+    antes = saude()
     assert any(m["texto"] == "só 8 funcionários" and m["sinal"] == "-" for m in antes["motivos"])
     lk.receber(db, [{"id_alvo": f"E{beta.id}", "tipo": "empresa", "funcionarios": "1.240",
                      "capturado_em": "2026-09-30T10:00:00"}])
-    assert beta.funcionarios == 1240 and beta.funcionarios_fonte == "linkedin"  # LinkedIn prevalece
+    assert beta.funcionarios == 8  # informado à mão vale 180 dias sobre o LinkedIn
+    beta.funcionarios_em = datetime(2025, 1, 1)  # passou da validade: o LinkedIn atualiza
+    db.commit()
+    lk.receber(db, [{"id_alvo": f"E{beta.id}", "tipo": "empresa", "funcionarios": "1.240",
+                     "capturado_em": "2026-10-01T10:00:00"}])
+    assert beta.funcionarios == 1240 and beta.funcionarios_fonte == "linkedin"
     depois = saude()
     assert depois["empresa"]["funcionarios"] == 1240
     assert any(m["texto"] == "1.240 funcionários: empresa grande" for m in depois["motivos"])

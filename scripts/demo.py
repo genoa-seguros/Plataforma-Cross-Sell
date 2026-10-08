@@ -162,6 +162,9 @@ def main():
             continue  # parte das empresas ainda não foi lida
         e.linkedin_url = f"https://www.linkedin.com/company/exemplo-{i}"
         e.linkedin_em = AGORA
+        # Setor do LinkedIn (o único que vale, além do informado à mão)
+        e.setor = e.setor or (e.cnae.split(" - ", 1)[-1] if e.cnae else None)
+        e.setor_fonte = "linkedin" if e.setor else None
         for p in e.pessoas:
             p.linkedin_url = f"https://www.linkedin.com/in/exemplo-{p.id}"
             p.linkedin_headline = f"{p.cargo} na {e.razao_social.replace(' (exemplo)', '')}"

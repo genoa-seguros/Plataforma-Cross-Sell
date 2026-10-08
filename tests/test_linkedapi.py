@@ -312,7 +312,8 @@ def test_fora_da_praca_nao_gasta_consulta_com_pessoas(db, settings):
     assert alfa.praca == "fora" and alfa.praca_fatia == 0.111
     assert not any(p["def"]["then"][0].get("filter") for p in api.pedidos.values()
                    if p["def"]["actionType"] == "nv.openCompanyPage")
-    assert potencial.praca(alfa) == "fora" and potencial.faltando_saude(alfa) == []  # analisada, fora da praça
+    # fora da praça é definitivo: não vai para Oportunidades
+    assert potencial.praca(alfa) == "fora" and potencial.faltando_saude(alfa) == ["fora da praça"]
 
 
 def test_cidade_alvo_dispensa_a_consulta_da_praca(db, settings):
@@ -321,7 +322,7 @@ def test_cidade_alvo_dispensa_a_consulta_da_praca(db, settings):
     alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
     alfa.cidade, alfa.uf, alfa.cidade_fonte = "Campinas", "SP", "manual"  # fora da lista, mas à mão: decide
     alfa.funcionarios, alfa.funcionarios_fonte, alfa.funcionarios_em = 300, "manual", datetime.utcnow()
-    alfa.setor = "Metalurgia"
+    alfa.setor, alfa.setor_fonte = "Metalurgia", "manual"
     db.commit()
     assert [a for a in lk.alvos(db, s) if a["id_alvo"] == f"E{alfa.id}"] == []  # nem página, nem praça
     alfa.linkedin_url = "https://www.linkedin.com/company/metalurgica-alfa"

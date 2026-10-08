@@ -101,9 +101,12 @@ def registrar_pessoas(db: Session, linhas: list[dict]) -> dict:
         if empresa is None:
             cont["sem_empresa"] += 1
             continue
-        if r.get("funcionarios") and not empresa.funcionarios:
+        if r.get("setor") and empresa.setor_fonte != "manual":  # planilha exportada do LinkedIn
+            empresa.setor, empresa.setor_fonte = r["setor"], "linkedin"
+        if r.get("funcionarios") and empresa.funcionarios_fonte != "manual":
             digitos = "".join(c for c in str(r["funcionarios"]).split("-")[-1] if c.isdigit())
-            empresa.funcionarios = int(digitos) if digitos else None
+            if digitos:
+                empresa.funcionarios, empresa.funcionarios_fonte = int(digitos), "linkedin"
         nome = " ".join(x for x in (r.get("nome"), r.get("sobrenome")) if x)
         if nome:
             resolver_pessoa(db, nome=nome, email=r.get("email"), empresa=empresa, cargo=r.get("cargo"),

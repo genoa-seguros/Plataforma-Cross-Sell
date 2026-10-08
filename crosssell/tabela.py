@@ -10,7 +10,7 @@ reconquista e contato que mudou de empresa.
 """
 
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -19,18 +19,49 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import mudou_de_empresa
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.normalize import AREA_LABEL, classificar_area
-from crosssell.potencial import (faltando_saude, influencia, melhor_contato, motivos as motivos_potencial,
-                                 potencial, praca)
+from crosssell.potencial import (faltando_saude, funcionarios_validos, influencia, melhor_contato,
+                                 motivos as motivos_potencial, potencial, praca, setor_valido)
 
 # Verticais que já têm fluxo de análise definido e aparecem em Oportunidades (RE entra quando o dela for definido)
 VERTICAIS_OPORTUNIDADES = ("saude",)
 
 
-def faltando(vertical: str, e: Empresa | None) -> list[str]:
-    """O que falta para a empresa estar analisada na vertical (vazio = analisada, entra em Oportunidades)."""
-    if vertical == "saude":
-        return faltando_saude(e)
-    return ["fluxo da vertical"]
+def faltando(vertical: str, e: Empresa | None, decide: dict | None = None, tem_ponte: bool = False) -> list[str]:
+    """O que falta para a empresa entrar em Oportunidades na vertical (vazio = analisada).
+    Saúde: praça alvo, funcionários e setor (LinkedIn ou à mão), quem decide mapeado (RH ou executivo) e ponte
+    por e-mail (alguém da empresa que troca e-mails com a equipe). Sem isso a equipe teria de buscar na mão."""
+    if vertical != "saude":
+        return ["fluxo da vertical"]
+    falta = faltando_saude(e)
+    if falta == ["fora da praça"]:
+        return falta
+    # Alguém da área (RH) ou, sem RH, um executivo (founder, CEO, CFO). Sócio que só veio da Receita não conta:
+    # numa empresa maior, o sócio-administrador registrado raramente é quem decide o plano
+    mapeados = [p for p in (decide or {}).get("pessoas", []) if (decide or {}).get("daArea") or p.get("fonte") != "receita"]
+    if not mapeados:
+        falta.append("quem decide")
+    if not tem_ponte:
+        falta.append("ponte por e-mail")
+    return falta
+
+
+PONTE_DIAS = 365  # a ponte lembra de 12 meses de e-mails (o Score de Influência continua valorizando o recente)
+
+
+def com_relacao(db: Session, empresas) -> set[int]:
+    """Pessoas dessas empresas que trocaram e-mails de verdade com a equipe nos últimos 12 meses: escreveram para
+    alguém da equipe e receberam e-mail da equipe."""
+    desde = datetime.utcnow() - timedelta(days=PONTE_DIAS)
+    lados: dict[int, set[str]] = defaultdict(set)
+    q = (select(Interacao.pessoa_id, Interacao.direcao).join(Pessoa, Pessoa.id == Interacao.pessoa_id)
+         .where(Pessoa.empresa_id.in_(empresas), Interacao.data >= desde).distinct())
+    for pessoa_id, direcao in db.execute(q):
+        lados[pessoa_id].add(direcao)
+    return {pid for pid, d in lados.items() if {"enviado", "recebido"} <= d}
+
+
+def tem_relacao(p: Pessoa, relacao: set[int] | None) -> bool:
+    return (p.score_relacionamento or 0) >= 20 or (relacao is not None and p.id in relacao)
 
 
 FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha", "manual": "informado à mão"}
@@ -53,7 +84,7 @@ def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str], pontes: dict[int
 
 
 def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str],
-                pontes: dict[int, str] | None = None) -> dict | None:
+                pontes: dict[int, str] | None = None, relacao: set[int] | None = None) -> dict | None:
     """Pessoas da área que costuma decidir a vertical e, se ninguém dela tem relação, a ponte:
     o contato da empresa com relação mais forte com alguém da equipe."""
     if e is None or vertical not in AREAS_VERTICAL:
@@ -61,11 +92,12 @@ def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dic
     areas = AREAS_VERTICAL[vertical]
     chave = lambda p: (-(p.score_relacionamento or 0), NIVEL.get(p.senioridade or "", 3), p.nome)  # noqa: E731
     da_area = sorted((p for p in e.pessoas if area_pessoa(p) in areas), key=chave)
-    executivos = sorted((p for p in e.pessoas if area_pessoa(p) == "executivo"), key=chave)
+    # Executivo do LinkedIn ou dos e-mails antes do sócio que só veio da Receita
+    executivos = sorted((p for p in e.pessoas if area_pessoa(p) == "executivo"), key=lambda p: (p.fonte == "receita", *chave(p)))
     pessoas = da_area[:3] or executivos[:1]
     ponte = None
-    if not any((p.score_relacionamento or 0) >= 20 for p in pessoas):
-        rel = sorted((p for p in e.pessoas if (p.score_relacionamento or 0) >= 20 and p not in pessoas), key=chave)
+    if not any(tem_relacao(p, relacao) for p in pessoas):
+        rel = sorted((p for p in e.pessoas if tem_relacao(p, relacao) and p not in pessoas), key=chave)
         ponte = _pessoa_json(db, rel[0], nomes, pontes) if rel else None
     # Sem ponte por e-mail: mostra quem temos lá dentro pelo Pipedrive (o contato do negócio aberto mais recente,
     # senão o contato da organização), para a equipe saber com quem falar
@@ -152,7 +184,7 @@ def local(e: Empresa | None) -> str | None:
 def _funcionarios(n: Negocio | None, e: Empresa | None) -> tuple[int | None, str]:
     if n is not None and n.vertical == "saude" and n.vidas:
         return n.vidas, "vidas no negócio"
-    if e is not None and e.funcionarios:
+    if funcionarios_validos(e):
         return e.funcionarios, f"funcionários {FONTE_FUNC.get(e.funcionarios_fonte or '', '')}".strip()
     return None, ""
 
@@ -260,7 +292,8 @@ def negocios_abertos(db: Session, settings: Settings) -> list[dict]:
             "funil": funis[n.pipeline_id]["nome"], "etapa": n.etapa, "vertical": n.vertical, "valor": n.valor,
             "dono": n.responsavel_email, "donoNome": nomes.get(n.responsavel_email or "", n.responsavel_email),
             "empresa": {"id": e.id, "nome": e.razao_social, "cliente": bool(seguros_vigentes(e)), "local": local(e),
-                        "funcionarios": e.funcionarios, "cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte}
+                        "funcionarios": funcionarios_validos(e), "setor": setor_valido(e), "cidade": e.cidade,
+                        "uf": e.uf, "cidadeFonte": e.cidade_fonte}
             if e else None,
             "pessoa": n.pessoa.nome if n.pessoa else None,
             "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat()} if prox else None,
@@ -289,6 +322,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                                         .where(Interacao.empresa_id.in_(ids))):
         relacoes_de[empresa_id].add(email)
     pontes = _pontes(db, ids)
+    relacao = com_relacao(db, ids)
     proxima_de: dict[int, Atividade] = {}
     for a in db.scalars(select(Atividade).where(Atividade.empresa_id.in_(ids), Atividade.negocio_id.is_(None),
                                                 Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
@@ -308,7 +342,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         for v in VERTICAIS:
             if v in tem or v in negociando:
                 continue
-            decide = quem_decide(db, e, v, nomes, pontes)
+            decide = quem_decide(db, e, v, nomes, pontes, relacao)
             alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
             contato = alvo or melhor_contato(e)
             pot = potencial(v, e, contato)
@@ -332,7 +366,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,
-                "faltando": (falta := faltando(v, e)), "analisada": not falta,
+                "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas))),
+                "analisada": not falta,
                 "praca": praca(e) if v == "saude" else None,
             })
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)

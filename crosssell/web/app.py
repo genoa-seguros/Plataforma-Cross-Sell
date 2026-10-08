@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from crosssell import auth, qualidade, tabela, temperatura
 from crosssell.normalize import AREA_LABEL, classificar_senioridade
-from crosssell.potencial import criterios, influencia, praca, fatia_minima
+from crosssell.potencial import criterios, fatia_minima, funcionarios_validos, influencia, praca, setor_valido
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
@@ -304,6 +304,26 @@ def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depen
     return {"funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte}
 
 
+class SetorIn(BaseModel):
+    setor: str | None = None
+
+
+@app.post("/api/empresas/{empresa_id}/setor")
+def api_setor(empresa_id: int, dados: SetorIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Setor informado à mão (quanto mais específico, melhor: "fintech" em vez de "tecnologia"). Vale sobre o do
+    LinkedIn. Vazio volta ao automático: a próxima leitura do LinkedIn preenche."""
+    e = db.get(Empresa, empresa_id)
+    if e is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    setor = (dados.setor or "").strip()[:120] or None
+    if setor:
+        e.setor, e.setor_fonte = setor, "manual"
+    elif e.setor_fonte == "manual":
+        e.setor, e.setor_fonte, e.linkedin_em = None, None, None  # relê a página na próxima rodada
+    db.commit()
+    return {"setor": setor_valido(e), "setorFonte": e.setor_fonte}
+
+
 class CargoIn(BaseModel):
     cargo: str | None = None
 
@@ -361,11 +381,11 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
     return {
         "id": e.id, "nome": e.razao_social, "cnpj": e.cnpj, "porte": e.porte, "cnae": e.cnae,
         "cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte, "praca": praca(e),
-        "funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte,
+        "funcionarios": funcionarios_validos(e), "funcionariosFonte": e.funcionarios_fonte if funcionarios_validos(e) else None,
         "funcionariosEm": e.funcionarios_em.isoformat(timespec="minutes") if e.funcionarios_em else None,
         "score": e.score_relacionamento,
         "comp": e.score_componentes,
-        "linkedin": e.linkedin_url, "setor": e.setor,
+        "linkedin": e.linkedin_url, "setor": setor_valido(e), "setorFonte": e.setor_fonte if setor_valido(e) else None,
         "dominios": [d for d in [e.dominio, *(e.dominios_extras or [])] if d],
         "pessoas": [{"id": p.id, "nome": p.nome, "cargo": p.cargo, "email": p.email, "score": p.score_relacionamento,
                      "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""),
@@ -577,7 +597,9 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
     # Na tela, só as verticais com fluxo definido e as empresas já analisadas; o resto está na fila de análise
     visiveis = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
     itens = [o for o in visiveis if o["analisada"]]
-    fila = {v: len({o["empresa"]["id"] for o in visiveis if o["vertical"] == v and not o["analisada"]})
+    # Fora da praça não está na fila: é definitivo e não vai para Oportunidades
+    fila = {v: len({o["empresa"]["id"] for o in visiveis if o["vertical"] == v and not o["analisada"]
+                    and "fora da praça" not in o["faltando"]})
             for v in tabela.VERTICAIS_OPORTUNIDADES}
     busca = q.strip().lower()
     filtradas = [o for o in itens
@@ -596,7 +618,8 @@ def api_negocios(pagina: int = 1, funil: str = "", dono: str = "", q: str = "", 
     todos = tabela.negocios_abertos(db, get_settings())
     visiveis = [o for o in OPORTUNIDADES.obter(db)[0] if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
     com_op = {o["empresa"]["id"] for o in visiveis if o["analisada"]}
-    # O que falta para a empresa entrar em Oportunidades (cidade, funcionários, setor): preencher à mão adianta
+    # O que falta para a empresa entrar em Oportunidades (cidade, funcionários, setor, quem decide, ponte por e-mail);
+    # "fora da praça" avisa que ela não entra
     falta: dict[int, list] = {}
     for o in visiveis:
         if not o["analisada"] and o["empresa"]["id"] not in com_op:

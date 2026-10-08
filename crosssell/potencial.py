@@ -55,14 +55,30 @@ def _acha(texto: str, palavras: list[str]) -> str | None:
     return None
 
 
-def texto_empresa(e: Empresa | None) -> str:
+def funcionarios_validos(e: Empresa | None) -> int | None:
+    """Número de funcionários que vale: só o do LinkedIn (o mais fiel) ou o informado à mão. O do Pipedrive não conta."""
+    if e is None or not e.funcionarios or e.funcionarios_fonte not in ("linkedin", "manual"):
+        return None
+    return e.funcionarios
+
+
+def setor_valido(e: Empresa | None) -> str | None:
+    """Setor que vale: só o do LinkedIn (mais específico: "fintech" em vez de "tecnologia") ou o informado à mão."""
+    if e is None or not e.setor or e.setor_fonte not in ("linkedin", "manual"):
+        return None
+    return e.setor
+
+
+def texto_empresa(e: Empresa | None, cnae: bool = True) -> str:
+    """Texto da empresa para os critérios. O CNAE só entra quando pedido (regras de Linhas Financeiras)."""
     if e is None:
         return ""
-    return _norm(" ".join(x for x in (e.setor, e.cnae, e.descricao, e.razao_social, e.nome_fantasia) if x))
+    partes = (setor_valido(e), e.cnae if cnae else None, e.descricao, e.razao_social, e.nome_fantasia)
+    return _norm(" ".join(x for x in partes if x))
 
 
 def _setor_rotulo(e: Empresa) -> str:
-    return e.setor or (e.cnae.split(" - ", 1)[-1] if e.cnae else "") or "setor"
+    return setor_valido(e) or (e.cnae.split(" - ", 1)[-1] if e.cnae else "") or "setor"
 
 
 # --- Influência --------------------------------------------------------------
@@ -102,8 +118,8 @@ def _crit(nome: str, valor: float, texto: str | None, sinal: str) -> dict:
 def _tamanho(n: Negocio | None, e: Empresa | None, saude: bool) -> tuple[int | None, str]:
     if saude and n is not None and n.vidas:
         return n.vidas, "vidas"
-    if e is not None and e.funcionarios:
-        return e.funcionarios, "funcionários"
+    if funcionarios_validos(e):
+        return funcionarios_validos(e), "funcionários"
     return None, ""
 
 
@@ -124,7 +140,7 @@ def c_funcionarios(n, e, saude=True, nome="funcionarios") -> dict:
 
 
 def c_qualificacao(e: Empresa | None) -> dict:
-    c, t = criterios()["saude"], texto_empresa(e)
+    c, t = criterios()["saude"], texto_empresa(e, cnae=False)
     if e is not None and e.investida:
         return _crit("qualificacao", 1.0, "empresa investida (venture capital): time qualificado", "+")
     if _acha(t, c.get("qualificacao_baixa_sempre", [])):
@@ -192,18 +208,20 @@ def praca(e: Empresa | None) -> str | None:
 
 
 def faltando_saude(e: Empresa | None) -> list[str]:
-    """O que falta para a empresa estar analisada em Saúde (vazio = analisada). Pessoas não entram:
-    a empresa aparece com "quem decide: em busca" e é completada depois."""
+    """O que falta nos dados da empresa para Saúde (vazio = dados completos). "fora da praça" é definitivo:
+    a empresa não vai para Oportunidades. Quem decide e a ponte são conferidos em tabela.faltando."""
     if e is None:
         return ["empresa"]
+    p = praca(e)
+    if p == "fora":
+        return ["fora da praça"]
     falta = []
-    if praca(e) is None:
+    if p is None:
         falta.append("praça" if _cidade(e)[0] else "cidade")
-    if praca(e) != "fora":  # fora da praça já está decidida: não precisa do resto
-        if not e.funcionarios:
-            falta.append("funcionários")
-        if not (e.setor or e.cnae or e.descricao):
-            falta.append("setor")
+    if not funcionarios_validos(e):
+        falta.append("funcionários")
+    if not setor_valido(e):
+        falta.append("setor")
     return falta
 
 
@@ -291,7 +309,7 @@ def fit_do(e: Empresa | None) -> tuple[float, str | None, str]:
     executivos = re.search(r"\b(cfo|coo|cto|chief|diretor financeiro|diretora financeira|conselh)", _cargos(e))
     if executivos:
         sinais.append("diretoria executiva"); valor += 0.2
-    if e is not None and (e.funcionarios or 0) >= 200:
+    if (funcionarios_validos(e) or 0) >= 200:
         sinais.append("porte"); valor += 0.1
     if sinais:
         return min(1.0, valor), "D&O: gestão profissional (" + ", ".join(sinais) + ")", "+"
@@ -323,11 +341,11 @@ def c_produto_lf(e: Empresa | None, produto: str | None) -> dict:
 
 
 def c_perfil_re(e: Empresa | None) -> dict:
-    t = texto_empresa(e)
+    t = texto_empresa(e, cnae=False)
     achou = _acha(t, criterios()["ramos_elementares"]["perfil_forte"])
     if achou:
         return _crit("perfil", 1.0, f"{_setor_rotulo(e)}: galpão/indústria/frota move o ponteiro", "+")
-    if e is not None and (e.funcionarios or 0) >= 200:
+    if (funcionarios_validos(e) or 0) >= 200:
         return _crit("perfil", 0.6, "empresa grande em escritório: empresarial e seguro fiança", "+")
     if not t:
         return _crit("perfil", SEM_DADO, "setor desconhecido", "?")

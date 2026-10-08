@@ -5,6 +5,11 @@ from crosssell.potencial import influencia, potencial, produto_lf
 
 
 def empresa(**kw) -> Empresa:
+    # Setor e funcionários de teste vêm do LinkedIn (só esses valem; os do Pipedrive não contam)
+    if kw.get("setor"):
+        kw.setdefault("setor_fonte", "linkedin")
+    if kw.get("funcionarios"):
+        kw.setdefault("funcionarios_fonte", "linkedin")
     e = Empresa(razao_social=kw.pop("nome", "Empresa"), nome_normalizado="empresa", **kw)
     e.pessoas, e.noticias, e.negocios = [], [], []
     return e
@@ -72,7 +77,8 @@ def test_linhas_financeiras_por_produto():
 
 
 def test_re_galpao_e_industria_movem_o_ponteiro():
-    transp = empresa(nome="Rota Sul", cnae="4930202 - Transporte rodoviário de carga", funcionarios=300)
+    # Em RE o perfil vem do setor do LinkedIn (o CNAE só vale para as regras de Linhas Financeiras)
+    transp = empresa(nome="Rota Sul", setor="Transporte rodoviário de carga", funcionarios=300)
     escritorio = empresa(nome="Consultoria X", setor="Consultoria", funcionarios=30)
     a, b = potencial("ramos_elementares", transp, None), potencial("ramos_elementares", escritorio, None)
     assert a["score"] > b["score"]

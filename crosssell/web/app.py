@@ -820,7 +820,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
     """Como a rotina funciona (frequências e limites em vigor) e a última execução de cada passo, para a aba Rotina."""
     s = get_settings()
     direto = lk.direto(s)
-    fontes = {"pipedrive": "pipedrive", "email": "email", "noticias": "noticias", "receita": "receita",
+    fontes = {"pipedrive": "pipedrive", "excluidas": "pipedrive-excluidas", "email": "email", "noticias": "noticias", "receita": "receita",
               "linkedinSites": "linkedin-sites", "cnpjSites": "cnpj-sites", "dominios": "dominios", "linkedin": "linkedin" if direto else "linkedin-disparo",
               "qualidade": "qualidade"}
     caixas = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
@@ -829,6 +829,8 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
         "minutos": s.rotina_minutos, "interna": s.rotina_interna, "dias": ROTINA_DIAS,
         "noticiasHoras": NOTICIAS_HORAS, "receitaLote": RECEITA_LOTE, "sitesLote": SITES_LOTE,
         "qualidadeDias": QUALIDADE_DIAS,
+        "cidadesAlvo": len(criterios()["saude"]["metropoles"]), "verticaisOportunidades": list(tabela.VERTICAIS_OPORTUNIDADES),
+        "funcionariosManualDias": lk.FUNCIONARIOS_MANUAL_DIAS,
         "email": {"configurado": bool(s.ms_tenant_id and s.ms_client_id), "temperatura": bool(s.anthropic_api_key),
                   "maxEmails": s.temperatura_max_emails, "caixas": len(caixas),
                   "recusadas": sum(u.leitura_erro == "recusada" for u in caixas)},

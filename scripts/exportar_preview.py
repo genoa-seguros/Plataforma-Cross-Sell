@@ -30,7 +30,7 @@ def _rotina_exemplo(r: dict, hoje: date) -> dict:
     """Aba Rotina na prévia: últimas execuções fictícias de uma rodada das 9h."""
     dia = hoje.isoformat()
     ok = lambda minuto, n: {"em": f"{dia}T09:{minuto:02d}", "registros": n, "erro": None}  # noqa: E731
-    r["ultimos"] = {"pipedrive": ok(0, 128), "email": ok(2, 46), "noticias": ok(4, 12), "receita": ok(6, 9),
+    r["ultimos"] = {"pipedrive": ok(0, 128), "excluidas": ok(0, 0), "email": ok(2, 46), "noticias": ok(4, 12), "receita": ok(6, 9),
                     "linkedinSites": ok(7, 3), "cnpjSites": ok(1, 4), "dominios": ok(1, 6), "linkedin": ok(8, 10), "qualidade": ok(10, 57)}
     r["interna"] = True
     r["email"].update(configurado=True, temperatura=True, caixas=4)

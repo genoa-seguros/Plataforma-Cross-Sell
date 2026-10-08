@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from crosssell import auth, temperatura
 from crosssell.connectors import pipedrive
-from crosssell.models import Empresa, Negocio, SyncLog, Usuario
+from crosssell.models import Empresa, Negocio, Pessoa, SyncLog, Usuario
 from crosssell.web import app as webapp
 from tests.fakes import FakePipedrive
 from tests.test_fluxo import carregar
@@ -506,3 +506,24 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
     assert depois["empresa"]["funcionarios"] == 120 and depois["empresa"]["cidadeFonte"] == "manual"
     assert depois["temOportunidade"] and depois["faltaParaOportunidade"] == []  # agora está em Oportunidades
+
+
+def test_contato_do_pipedrive_aparece_e_cargo_a_mao(cenario, db):
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = Empresa(razao_social="Pro Eficiencia SA", nome_normalizado="pro eficiencia", pipedrive_org_id=333,
+                cidade="Betim", uf="MG", funcionarios=200, setor="Agronegócio")
+    natalie = Pessoa(nome="Natalie Barboza", nome_normalizado="natalie barboza", empresa=e, pipedrive_person_id="22312")
+    db.add_all([e, natalie, Negocio(empresa=e, pessoa=natalie, vertical="linhas_financeiras", fonte="pipedrive",
+                                    id_externo="17004", pipeline_id=1, status="aberto", titulo="D&O 2026", produto="D&O")])
+    db.commit()
+    op = next(o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"] if o["vertical"] == "saude")
+    # Ninguém de RH e sem e-mails com a equipe: mostra quem temos lá dentro pelo Pipedrive
+    contato = op["quemDecide"]["contato"]
+    assert contato["nome"] == "Natalie Barboza" and contato["negocio"] == "D&O" and contato["cargo"] is None
+    r = c.post(f"/api/pessoas/{natalie.id}/cargo", json={"cargo": "Gerente de RH"}, headers={"X-Cross-Sell": "1"})
+    assert r.json() == {"cargo": "Gerente de RH", "noPipedrive": True}
+    assert fake.pessoas_atualizadas == [(22312, {"job_title": "Gerente de RH"})]
+    op = next(o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"] if o["vertical"] == "saude")
+    assert [p["nome"] for p in op["quemDecide"]["pessoas"]] == ["Natalie Barboza"]  # agora é de RH: quem decide
+    assert op["quemDecide"]["daArea"]

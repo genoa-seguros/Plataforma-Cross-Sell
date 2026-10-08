@@ -67,8 +67,19 @@ def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dic
     if not any((p.score_relacionamento or 0) >= 20 for p in pessoas):
         rel = sorted((p for p in e.pessoas if (p.score_relacionamento or 0) >= 20 and p not in pessoas), key=chave)
         ponte = _pessoa_json(db, rel[0], nomes, pontes) if rel else None
+    # Sem ponte por e-mail: mostra quem temos lá dentro pelo Pipedrive (o contato do negócio aberto mais recente,
+    # senão o contato da organização), para a equipe saber com quem falar
+    contato = None
+    if ponte is None:
+        negocios = sorted((n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive" and n.pessoa),
+                          key=lambda n: n.id, reverse=True)
+        candidatos = [(n.pessoa, n.produto or n.titulo) for n in negocios]
+        candidatos += [(p, None) for p in sorted(e.pessoas, key=chave) if p.pipedrive_person_id]
+        escolhido = next(((p, prod) for p, prod in candidatos if p not in pessoas), None)
+        if escolhido:
+            contato = {**_pessoa_json(db, escolhido[0], nomes, pontes), "negocio": escolhido[1]}
     return {"areas": [AREA_LABEL[a] for a in areas], "pessoas": [_pessoa_json(db, p, nomes, pontes) for p in pessoas],
-            "daArea": bool(da_area), "ponte": ponte}
+            "daArea": bool(da_area), "ponte": ponte, "contato": contato}
 
 
 def seguros_vigentes(e: Empresa | None) -> list[Negocio]:

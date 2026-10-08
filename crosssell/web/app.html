@@ -414,6 +414,12 @@ const previa = {
       (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.funcionarios = b.funcionarios);
       return {funcionarios: b.funcionarios, funcionariosFonte: b.funcionarios ? "manual" : null};
     }
+    if ((m = path.match(/^\/api\/pessoas\/(\d+)\/cargo$/))) {
+      const muda = x => { if (x && x.id == m[1]) x.cargo = b.cargo; };
+      (D.oportunidades || []).forEach(o => { const d = o.quemDecide || {}; [...(d.pessoas || []), d.ponte, d.contato, ...(o.contatos || [])].forEach(muda); });
+      Object.values(D.empresas).forEach(e => (e.pessoas || []).forEach(muda));
+      return {cargo: b.cargo, noPipedrive: false};
+    }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/local$/))) {
       const local = b.cidade ? `${b.cidade}/${b.uf}` : null;
       (D.oportunidades || []).filter(o => o.empresa.id == m[1]).forEach(o => Object.assign(o.empresa, {cidade: b.cidade, uf: b.uf, cidadeFonte: b.cidade ? "manual" : null, local}));
@@ -479,16 +485,19 @@ function celulaTemp(p) {
   if (!p.temperatura) return `<span class="sub">sem e-mails do contato</span>`;
   return `<span class="chip t-${p.temperatura}" title="${esc(p.temperaturaMotivo)}">${TEMP[p.temperatura]}</span>${p.temperaturaMotivo ? `<div class="sub" style="margin-top:4px;max-width:200px">${esc(p.temperaturaMotivo)}</div>` : ""}`;
 }
+const btnCargo = x => `<button type="button" class="lapis" data-cargo="${x.id}" data-cargo-atual="${esc(x.cargo || "")}" data-cargo-nome="${esc(x.nome)}" title="Informar o cargo">${x.cargo ? "✎" : "+ cargo"}</button>`;
+const contatoHTML = c => c ? `<div class="ponte"><span class="mute">Contato no Pipedrive:</span> ${esc(c.nome)}${inLink(c.linkedin)}
+  <div class="sub">${c.cargo ? esc(c.cargo) : "cargo não informado"} ${btnCargo(c)}${c.negocio ? ` · no negócio ${esc(c.negocio)}` : ""}${c.relacao >= 20 ? "" : " · sem e-mails com a equipe"}</div></div>` : "";
 function celulaDecide(d, vertical, solo = false) {
   if (!d) return "";
   const cls = solo ? "decide solo" : "decide";
   const nomeV = V[vertical] || "";
   const rot = solo ? "" : `<span class="mute">Quem decide ${esc(nomeV)}:</span> `;
-  if (!d.daArea && !d.pessoas.length) return `<div class="${cls}">${rot}<span class="sub">ainda não sabemos (${esc(d.areas.join(" / "))})</span></div>`;
-  const pessoa = x => `<div>${esc(x.nome)}${inLink(x.linkedin)} <span class="sub" title="Score de Influência">· infl. ${Math.round(x.influencia ?? 0)}</span><div class="sub">${esc(x.cargo || "")}${x.relacao >= 20 ? ` · fala com ${esc(x.quemFala || "a equipe")}` : " · sem relação"}</div></div>`;
+  if (!d.daArea && !d.pessoas.length) return `<div class="${cls}">${rot}<span class="sub">ainda não sabemos (${esc(d.areas.join(" / "))})</span>${d.ponte ? `<div class="ponte"><span class="mute">Ponte:</span> ${esc(d.ponte.nome)}<div class="sub">${esc(d.ponte.cargo || "cargo não informado")} ${btnCargo(d.ponte)}${d.ponte.quemFala ? " · fala com " + esc(d.ponte.quemFala) : ""}</div></div>` : ""}${contatoHTML(d.contato)}</div>`;
+  const pessoa = x => `<div>${esc(x.nome)}${inLink(x.linkedin)} <span class="sub" title="Score de Influência">· infl. ${Math.round(x.influencia ?? 0)}</span><div class="sub">${esc(x.cargo || "")} ${btnCargo(x)}${x.relacao >= 20 ? ` · fala com ${esc(x.quemFala || "a equipe")}` : " · sem relação"}</div></div>`;
   return `<div class="${cls}">${solo ? (d.daArea ? "" : '<span class="mute">Executivo (área ainda não mapeada):</span>') : `<span class="mute">Quem decide ${esc(nomeV)}${d.daArea ? "" : " (executivo; área não mapeada)"}:</span>`}
     ${d.pessoas.slice(0, 2).map(pessoa).join("")}
-    ${d.ponte ? `<div class="ponte"><span class="mute">Ponte:</span> ${esc(d.ponte.nome)}<div class="sub">${esc(d.ponte.cargo || "")}${d.ponte.quemFala ? " · fala com " + esc(d.ponte.quemFala) : ""}</div></div>` : ""}</div>`;
+    ${d.ponte ? `<div class="ponte"><span class="mute">Ponte:</span> ${esc(d.ponte.nome)}<div class="sub">${esc(d.ponte.cargo || "cargo não informado")} ${btnCargo(d.ponte)}${d.ponte.quemFala ? " · fala com " + esc(d.ponte.quemFala) : ""}</div></div>` : ""}${contatoHTML(d.contato)}</div>`;
 }
 const NOME_CRIT = {influencia:"Influência", funcionarios:"Funcionários", qualificacao:"Qualificação do time", localizacao:"Localização", rh:"RH estruturado", produto:"Encaixe do produto", perfil:"Perfil (galpão/indústria)", porte:"Porte"};
 function celulaScore(x) {
@@ -549,6 +558,29 @@ function modalAtividade(ctx) {
 }
 
 /* ---------- Oportunidades ---------- */
+/* Cargo informado à mão: vale sobre o do LinkedIn e também é gravado na pessoa no Pipedrive. */
+function editarCargo(id, atual, nome) {
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-cargo" aria-labelledby="t-cargo">
+    <h2 id="t-cargo">Cargo</h2><div class="sub">${esc(nome)}</div>
+    <label>Cargo<input id="cargo-v" value="${esc(atual)}" maxlength="120" placeholder="ex.: Gerente de RH"></label>
+    <p class="nota">O cargo decide a área da pessoa (RH, Financeiro…) e a influência dela. Também é gravado na pessoa no Pipedrive.</p>
+    <p class="erro" id="cargo-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="cargo-cancelar">Cancelar</button><button class="btn">Salvar</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("cargo-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("cargo-v").focus();
+  document.getElementById("f-cargo").onsubmit = async e => {
+    e.preventDefault();
+    const v = document.getElementById("cargo-v").value.trim();
+    try {
+      const r = await api.post(`/api/pessoas/${id}/cargo`, {cargo: v || null});
+      fechar(); aviso(v ? (r.noPipedrive ? "Cargo salvo, também no Pipedrive" : "Cargo salvo") : "Cargo apagado");
+      OPS_RESP = null; render();
+    } catch (err) { const el = document.getElementById("cargo-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 /* Cidade e UF informadas à mão: valem sobre Receita, Pipedrive e LinkedIn e decidem a praça de Saúde sem consulta. */
 function editarLocal(id, cidade, uf, nome) {
@@ -1344,7 +1376,7 @@ async function telaEmpresa(id) {
   <section><h2>Em negociação no Pipedrive</h2><div class="grupo" style="padding:12px 14px">${abertos.length ? `<div class="chips">${abertos.map(n => vchip(n.vertical, `${n.produto}${n.etapa ? " · " + n.etapa : ""}`)).join("")}</div>` : '<span class="sub">Nenhum negócio aberto.</span>'}</div></section>
   <section><h2>Pessoas</h2><div class="tabela"><table>
     <thead><tr><th>Nome</th><th>Cargo</th><th>Área</th><th>E-mail</th><th>Influência</th><th>Relação</th><th>Temperatura</th><th>Fala com</th></tr></thead>
-    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.area || "")}</td><td class="small">${esc(p.email || "")}</td>
+    <tbody>${e.pessoas.map(p => `<tr><td>${p.focal ? '<span title="Ponto focal" style="color:var(--warn)">★</span> ' : ""}${esc(p.nome)}${inLink(p.linkedin)}${p.fonte === "linkedin" ? '<div class="sub">mapeado no LinkedIn</div>' : ""}${p.empresaAtual ? `<div class="sub" style="color:var(--warn)">LinkedIn: hoje em ${esc(p.empresaAtual)}</div>` : ""}</td><td>${esc(p.cargo || "")} ${btnCargo(p)}${p.headline && p.headline !== p.cargo ? `<div class="sub" style="max-width:260px">${esc(p.headline)}</div>` : ""}</td><td class="small">${esc(p.area || "")}</td><td class="small">${esc(p.email || "")}</td>
       <td><b class="num">${Math.round(p.influencia ?? 0)}</b></td><td><span class="num">${Math.round(p.score)}</span>${p.i90 ? `<div class="sub">${p.i90} e-mails em 90 dias</div>` : ""}</td><td>${celulaTemp(p)}</td>
       <td class="small">${esc((p.usuarios || []).map(nomeDe).join(", "))}</td></tr>`).join("") || '<tr><td colspan="8" class="vazio">Nenhuma pessoa cadastrada.</td></tr>'}</tbody></table></div></section>
   <section><h2>Histórico de produtos</h2><div class="tabela"><table>
@@ -1359,6 +1391,7 @@ document.addEventListener("click", ev => {
   const o = ev.target.closest("[data-ativ-op]"); if (o && !o.disabled) abrirAtividadeOp(o.dataset.ativOp);
   const f = ev.target.closest("[data-func]"); if (f) editarFuncionarios(f.dataset.func, f.dataset.funcAtual, f.dataset.funcNome);
   const l = ev.target.closest("[data-local]"); if (l) editarLocal(l.dataset.local, l.dataset.localCidade, l.dataset.localUf, l.dataset.localNome);
+  const cg = ev.target.closest("[data-cargo]"); if (cg) editarCargo(cg.dataset.cargo, cg.dataset.cargoAtual, cg.dataset.cargoNome);
 });
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;

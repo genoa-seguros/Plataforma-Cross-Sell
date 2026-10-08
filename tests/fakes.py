@@ -62,6 +62,7 @@ class FakePipedrive:
     def __init__(self):
         self.criadas: list[dict] = []
         self.atualizadas: list[tuple[int, dict]] = []
+        self.pessoas_atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
         self.falhar_usuarios = False  # /v1/users fora do ar
         self.requisicoes: list[httpx.Request] = []
@@ -83,6 +84,11 @@ class FakePipedrive:
             self.atualizadas.append((aid, corpo))
             (self.feitas.add if corpo.get("done") else self.feitas.discard)(aid)
             return httpx.Response(200, json={"data": {"id": aid, **corpo}})
+        if req.method == "PATCH" and "/v2/persons/" in caminho:
+            pid = int(caminho.rsplit("/", 1)[1])
+            corpo = json.loads(req.content)
+            self.pessoas_atualizadas.append((pid, corpo))
+            return httpx.Response(200, json={"data": {"id": pid, **corpo}})
         if req.method == "GET" and "/v2/activities/" in caminho:
             aid = int(caminho.rsplit("/", 1)[1])
             return httpx.Response(200, json={"data": {"id": aid, "done": aid in self.feitas}})

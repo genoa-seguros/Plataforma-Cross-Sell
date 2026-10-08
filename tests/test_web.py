@@ -462,6 +462,12 @@ def test_cidade_informada_a_mao_decide_a_praca_e_vale_sobre_a_receita(cenario, d
     e = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 20))
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
     assert c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "Ribeirão Preto", "uf": "XX"}).status_code == 400
+    # Nome ou sigla de estado no campo cidade não vale (caso Borborema: "Bahia" a deixava fora da praça);
+    # São Paulo e Rio de Janeiro também são cidades
+    for estado in ("Bahia", "bahia ", "Espírito Santo", "BA"):
+        r = c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": estado, "uf": "BA"})
+        assert r.status_code == 400 and "deixe a cidade em branco" in r.json()["detail"]
+    assert c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "Rio de Janeiro", "uf": "RJ"}).status_code == 200
     r = c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "Ribeirão Preto", "uf": "sp"}).json()
     assert r["local"] == "Ribeirão Preto/SP" and r["cidadeFonte"] == "manual"
     db.expire_all()

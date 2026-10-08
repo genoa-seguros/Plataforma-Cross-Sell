@@ -626,6 +626,13 @@ function editarCargo(id, atual, nome) {
   };
 }
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
+// Nome de estado no campo cidade decidiria a praça errado ("Bahia" não é cidade alvo). São Paulo e Rio de Janeiro também são cidades.
+const ESTADOS = {acre:"AC", alagoas:"AL", amapa:"AP", amazonas:"AM", bahia:"BA", ceara:"CE", "distrito federal":"DF", "espirito santo":"ES",
+  goias:"GO", maranhao:"MA", "mato grosso":"MT", "mato grosso do sul":"MS", "minas gerais":"MG", para:"PA", paraiba:"PB", parana:"PR",
+  pernambuco:"PE", piaui:"PI", "rio grande do norte":"RN", "rio grande do sul":"RS", rondonia:"RO", roraima:"RR", "santa catarina":"SC",
+  sergipe:"SE", tocantins:"TO"};
+const ufDoEstado = c => { const t = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/^[\s.]+|[\s.]+$/g, "");
+  return ESTADOS[t] || (UFS.includes(t.toUpperCase()) ? t.toUpperCase() : null); };
 /* Cidade e UF informadas à mão: valem sobre Receita, Pipedrive e LinkedIn e decidem a praça de Saúde sem consulta. */
 function editarLocal(id, cidade, uf, nome) {
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-local" aria-labelledby="t-local">
@@ -643,6 +650,14 @@ function editarLocal(id, cidade, uf, nome) {
   document.getElementById("f-local").onsubmit = async e => {
     e.preventDefault();
     const c = document.getElementById("local-cidade").value.trim(), u = document.getElementById("local-uf").value;
+    const estado = c && ufDoEstado(c);
+    if (estado) {  // avisa e já deixa a UF escolhida; a cidade fica para quem souber
+      document.getElementById("local-uf").value = estado;
+      const el = document.getElementById("local-erro");
+      el.textContent = "Isso é um estado; deixe a cidade em branco e escolha só a UF."; el.hidden = false;
+      document.getElementById("local-cidade").select();
+      return;
+    }
     try {
       await api.post(`/api/empresas/${id}/local`, {cidade: c || null, uf: u || null});
       fechar(); aviso(c ? "Cidade salva" : "Cidade voltou ao automático");

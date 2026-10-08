@@ -111,6 +111,15 @@ def test_chave_de_leitura_de_emails_na_equipe(cenario, db):
     assert u["leEmails"] is True and u["pendente"] is False
     assert next(x for x in c.get("/api/equipe").json() if x["id"] == uid)["leEmails"] is True
 
+    # Reler 12 meses de todas as caixas (só o master): a próxima rodada volta a ler o histórico
+    db.get(Usuario, uid).historico_em = datetime.utcnow()
+    db.commit()
+    assert convidada.post("/api/equipe/reler-historico", headers=H).status_code == 403
+    assert c.post("/api/equipe/reler-historico", headers=H).json() == {"caixas": 1}
+    db.expire_all()
+    assert db.get(Usuario, uid).historico_em is None
+    assert next(x for x in c.get("/api/equipe").json() if x["id"] == uid)["historicoEm"] is None
+
     # Remover o acesso desliga a leitura; convidado de novo, o master liga outra vez
     c.post(f"/api/equipe/{uid}/desconvidar", headers=H)
     db.expire_all()

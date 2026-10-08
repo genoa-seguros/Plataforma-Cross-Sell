@@ -492,3 +492,37 @@ def test_noticia_de_m_e_a_conta_para_d_e_o():
     e.noticias = [Noticia(titulo="Gama Indústria adquire concorrente no Sul por R$ 200 milhões", url="http://x")]
     valor, texto, sinal = fit_do(e)
     assert valor > base and sinal == "+" and "M&A" in texto
+
+
+def test_dominio_dos_contatos_liga_emails_a_empresa(db, settings):
+    """Pro-Eficiência: site intergado.com.br, contatos com e-mail @pontaagro.com (nome comercial)."""
+    from crosssell.connectors.email_m365 import registrar_mensagens, religar_interacoes
+    from crosssell.models import Interacao, Pessoa
+
+    pro = Empresa(razao_social="Pro - Eficiencia Solucao para Agronegocios S.A.", nome_normalizado="pro eficiencia",
+                  dominio="intergado.com.br")
+    db.add_all([pro, Pessoa(nome="Natalie Barboza", nome_normalizado="natalie barboza", empresa=pro, fonte="pipedrive",
+                            email="natalie.barboza@pontaagro.com")])
+    db.commit()
+    u = "victor.boldrini@innoaseguros.com.br"
+    agora = datetime.utcnow().isoformat()
+    # E-mail lido antes de o domínio ser conhecido: fica sem empresa
+    db.add(Interacao(message_id="velho", data=datetime.utcnow(), usuario_email=u, email_externo="joao@pontaagro.com",
+                     direcao="recebido"))
+    db.commit()
+    registrar_mensagens(db, settings, u, [
+        {"message_id": "m1", "data": agora, "de": "fatima.freitas@pontaagro.com", "para": [u]},
+        {"message_id": "m2", "data": agora, "de": u, "para": ["alguem@gmail.com"]},  # domínio público: não liga
+    ])
+    fatima = db.scalar(select(Pessoa).where(Pessoa.email == "fatima.freitas@pontaagro.com"))
+    assert fatima and fatima.empresa_id == pro.id and fatima.fonte == "email"
+    assert religar_interacoes(db, settings) == 1
+    velho = db.scalar(select(Interacao).where(Interacao.message_id == "velho"))
+    assert velho.empresa_id == pro.id and db.get(Pessoa, velho.pessoa_id).email == "joao@pontaagro.com"
+    assert db.scalar(select(Interacao).where(Interacao.message_id == "m2")).empresa_id is None
+    # Domínio de contatos de duas empresas diferentes não decide nada
+    outra = Empresa(razao_social="Outra SA", nome_normalizado="outra")
+    db.add_all([outra, Pessoa(nome="Zé", nome_normalizado="ze", empresa=outra, fonte="pipedrive", email="ze@pontaagro.com")])
+    db.commit()
+    from crosssell.connectors.email_m365 import dominios_empresas
+    assert "pontaagro.com" not in dominios_empresas(db, settings.internal_domain_set)

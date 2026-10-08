@@ -109,6 +109,11 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 | Pipedrive | API v2 (sincronização incremental) | organizações, pessoas, negócios, etapas, usuários; escreve atividades |
 | Zeca | importação de CSV/XLSX | apólices de Saúde (ausência numa carga completa = cancelada/migrou) |
 | Microsoft 365 | Microsoft Graph (permissões de aplicativo `Mail.Read` e `Mail.Send`) | metadados dos e-mails dos usuários ativos + texto das respostas recebidas |
+
+Um e-mail é ligado à empresa pelo endereço da pessoa já cadastrada ou pelo domínio. Valem o domínio do site
+e o domínio corporativo dos contatos da empresa (ex.: Pro-Eficiência, site intergado.com.br e contatos
+@pontaagro.com); um domínio de contatos de empresas diferentes não decide nada. Quando um domínio passa a ser
+conhecido, os e-mails já lidos dele são religados à empresa.
 | Claude API | `claude-opus-5-5`, saída estruturada | temperatura de cada contato (o texto dos e-mails não é guardado) |
 | Google Notícias | RSS | manchetes recentes de cada empresa da tabela |
 | LinkedIn | Linked API, chamada direto (`api.linkedapi.io`) | perfis, cargos, decisores, funcionários da área que decide, posts, nº de funcionários; aviso de contato que mudou de empresa |

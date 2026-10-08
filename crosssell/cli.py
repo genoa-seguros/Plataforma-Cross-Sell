@@ -123,7 +123,9 @@ def linkedin():
 
 @app.command("linkedin-teste")
 def linkedin_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das empresas (ex.: 123 \"Salvy\")"),
-                   aplicar: bool = typer.Option(False, help="Gravar o resultado na empresa")):
+                   aplicar: bool = typer.Option(False, help="Gravar o resultado na empresa"),
+                   workflow: str = typer.Option("", help="Aproveitar uma consulta da página já feita (wf-...) na 1ª empresa"),
+                   minutos: int = typer.Option(60, help="Quanto esperar por cada consulta")):
     """Testa o Sales Navigator com empresas escolhidas: lê a página, mede onde estão os funcionários (praça
     de Saúde) e lista quem decide por cargo. Gasta até 3 consultas por empresa e espera cada resultado.
     Depois do teste, ligue LINKEDIN_SALES_NAVIGATOR=true no deploy/.env."""
@@ -143,8 +145,18 @@ def linkedin_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes 
         if e is None:
             typer.echo(f"\n{chave}: empresa não encontrada")
             continue
+        if workflow:  # consulta já paga (ex.: o comando desistiu de esperar antes desta versão)
+            from datetime import datetime
+
+            from crosssell.models import LinkedinPedido
+
+            if not db.scalar(select(LinkedinPedido.id).where(LinkedinPedido.workflow_id == workflow)):
+                db.add(LinkedinPedido(workflow_id=workflow, id_alvo=f"E{e.id}", acao="pagina", situacao="teste",
+                                      criado_em=datetime.utcnow()))
+                db.commit()
+            workflow = ""
         try:
-            typer.echo(lk.testar_sales_navigator(db, s, e, client, aplicar=aplicar, saida=typer.echo))
+            typer.echo(lk.testar_sales_navigator(db, s, e, client, aplicar=aplicar, saida=typer.echo, limite_s=minutos * 60))
         except Exception as exc:  # uma empresa com problema não impede as outras
             typer.echo(f"  ERRO: {exc}")
 

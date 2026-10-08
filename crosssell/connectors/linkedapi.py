@@ -76,6 +76,8 @@ def definicao(alvo: dict) -> dict:
         return {"actionType": "nv.openCompanyPage", "companyHashedUrl": alvo["sales_url"], "basicInfo": True,
                 "then": [{"actionType": "nv.retrieveCompanyEmployees", "limit": 25,
                           "filter": {"positions": alvo["cargos"]}}]}
+    if acao == "pagina":  # só a página básica da empresa (funcionários, setor, sede, urn), sem decisores e posts
+        return {"actionType": "st.openCompanyPage", "companyUrl": alvo["linkedin_url"], "basicInfo": True, "then": []}
     if acao == "ler" and tipo == "pessoa" and "/sales/" in alvo["linkedin_url"]:
         return {"actionType": "nv.openPersonPage", "personHashedUrl": alvo["linkedin_url"], "basicInfo": True, "then": []}
     if acao == "buscar" and tipo == "pessoa":

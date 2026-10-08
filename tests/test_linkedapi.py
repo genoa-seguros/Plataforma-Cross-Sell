@@ -376,3 +376,27 @@ def test_comando_de_teste_do_sales_navigator(db, settings):
     lk.testar_sales_navigator(db, s, alfa, client, aplicar=True, saida=linhas.append, espera=0)
     db.expire_all()
     assert alfa.praca == "alvo" and alfa.linkedin_areas["urn"] and "Carla Mendes" in {p.nome for p in alfa.pessoas}
+
+
+def test_teste_que_desiste_de_esperar_reaproveita_a_consulta(db, settings):
+    """Conta na fila (ou suspensa): o comando desiste, mas a consulta paga fica gravada e é reaproveitada."""
+    s = config(settings)
+    carregar(db, s)
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    alfa.linkedin_url = "https://www.linkedin.com/company/metalurgica-alfa"
+    db.commit()
+    api = LinkedApiFalsa(pendentes=2)
+    client = api.client()
+    linhas = []
+    try:
+        lk.testar_sales_navigator(db, s, alfa, client, saida=linhas.append, espera=0, limite_s=0)
+        raise AssertionError("devia desistir")
+    except TimeoutError as exc:
+        assert "rode o mesmo comando de novo" in str(exc)
+    assert api.chamadas["POST"] == 1
+    pagina = next(p["def"] for p in api.pedidos.values())
+    assert pagina["then"] == []  # no teste, só a página básica
+    r = lk.testar_sales_navigator(db, s, alfa, client, saida=linhas.append, espera=0)
+    assert any("reaproveitando a consulta wf-1" in x for x in linhas)
+    assert api.chamadas["POST"] == 3  # a página não foi paga de novo: só praça e pessoas
+    assert r["praca"] == "alvo"

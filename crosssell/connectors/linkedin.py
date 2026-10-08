@@ -809,23 +809,36 @@ def executar(db: Session, settings: Settings, client=None, agora: datetime | Non
 
 # --- Teste do Sales Navigator (crosssell linkedin-teste) ---------------------
 
-def _esperar(client, definicao: dict, espera: float, limite_s: int) -> dict:
-    """Inicia um workflow e espera o resultado (só para o teste manual; a rotina não espera)."""
+_ESTADOS = {"pending": "na fila", "running": "rodando"}
+_MOTIVOS = {"queued": "esperando outras consultas da mesma conta", "outsideWorkingHours": "fora do horário de trabalho da conta"}
+
+
+def _esperar(client, wid: str, espera: float, limite_s: int, saida=print) -> dict:
+    """Espera o resultado de um workflow (só para o teste manual; a rotina não espera) e mostra, a cada minuto,
+    por que ele ainda não terminou (na fila da conta, fora do horário de trabalho, rodando)."""
     import time
 
-    wid = client.iniciar(definicao)
-    fim = time.monotonic() + limite_s
+    inicio = time.monotonic()
+    proximo_aviso = 60
     while True:
         st = client.consultar(wid)
-        if st.get("workflowStatus") not in ("pending", "running"):
+        status = st.get("workflowStatus")
+        if status not in ("pending", "running"):
             return {"workflowId": wid, **st}
-        if time.monotonic() > fim:
-            raise TimeoutError(f"o workflow {wid} não terminou em {limite_s} s")
+        passou = time.monotonic() - inicio
+        if passou > limite_s:
+            raise TimeoutError(f"o workflow {wid} não terminou em {limite_s // 60} min ({_ESTADOS.get(status, status)});"
+                               " rode o mesmo comando de novo mais tarde para aproveitar o resultado sem pagar outra consulta")
+        if passou >= proximo_aviso:
+            motivo = _MOTIVOS.get(st.get("pendingReason") or "", st.get("pendingReason") or "")
+            extra = (f" ({motivo})" if motivo else "") + (f" · {st['message']}" if st.get("message") else "")
+            saida(f"    … {int(passou // 60)} min: {_ESTADOS.get(status, status)}{extra}")
+            proximo_aviso += 60
         time.sleep(espera)
 
 
 def testar_sales_navigator(db: Session, settings: Settings, e: Empresa, client, aplicar: bool = False,
-                           saida=print, espera: float = 5, limite_s: int = 900) -> dict:
+                           saida=print, espera: float = 5, limite_s: int = 3600) -> dict:
     """Roda para uma empresa as consultas do fluxo de Saúde (página, praça e quem decide), mostra o que voltou
     e o que a plataforma concluiria. Só grava na empresa com aplicar=True. Cada consulta conta no limite de 24 h."""
     from crosssell.connectors.linkedapi import LIMITE_FUNCIONARIOS, definicao, pagina_sales_navigator, resultado
@@ -836,9 +849,21 @@ def testar_sales_navigator(db: Session, settings: Settings, e: Empresa, client, 
     def consulta(acao: str, alvo: dict) -> dict:
         d = definicao(alvo)
         saida(f"\n> {d['actionType']} {json.dumps({k: v for k, v in d.items() if k != 'actionType'}, ensure_ascii=False)[:300]}")
-        st = _esperar(client, d, espera, limite_s)
-        db.add(LinkedinPedido(workflow_id=st["workflowId"], id_alvo=f"E{e.id}", acao=acao, criado_em=agora,
-                              concluido_em=datetime.utcnow(), situacao="aplicado" if aplicar else "teste"))
+        # Consulta de teste desta empresa já paga nas últimas 24 h (ex.: o comando desistiu de esperar): reaproveita
+        ped = db.scalar(select(LinkedinPedido).where(
+            LinkedinPedido.id_alvo == f"E{e.id}", LinkedinPedido.acao == acao, LinkedinPedido.situacao == "teste",
+            LinkedinPedido.concluido_em.is_(None), LinkedinPedido.criado_em > agora - timedelta(hours=24))
+            .order_by(LinkedinPedido.id.desc()).limit(1))
+        if ped:
+            saida(f"  reaproveitando a consulta {ped.workflow_id}, feita em {ped.criado_em:%d/%m %H:%M} UTC")
+        else:  # grava assim que a Linked API aceita: se o comando desistir de esperar, a próxima vez reaproveita
+            ped = LinkedinPedido(workflow_id=client.iniciar(d), id_alvo=f"E{e.id}", acao=acao, criado_em=agora,
+                                 situacao="teste")
+            db.add(ped)
+            db.commit()
+            saida(f"  consulta {ped.workflow_id} aceita pela Linked API; esperando o resultado…")
+        st = _esperar(client, ped.workflow_id, espera, limite_s, saida)
+        ped.concluido_em, ped.situacao = datetime.utcnow(), "aplicado" if aplicar else "testado"
         db.commit()
         if st.get("workflowStatus") != "completed":
             raise RuntimeError(f"{st.get('workflowStatus')}: {st.get('failure')}")
@@ -854,7 +879,7 @@ def testar_sales_navigator(db: Session, settings: Settings, e: Empresa, client, 
     sales = pagina_sales_navigator((e.linkedin_areas or {}).get(URN))
     total = e.funcionarios
     if not sales:
-        r = consulta("ler", _alvo_empresa(e, "ler", "teste"))
+        r = consulta("pagina", _alvo_empresa(e, "pagina", "teste"))  # só a página básica: mais rápido
         saida(f"  página: {r['nome']} · {r['funcionarios']} funcionários · setor {r['setor'] or '?'} · sede {r['sede'] or '?'}"
               f" · urn {r['urn'] or '(sem urn)'}")
         sales, total = pagina_sales_navigator(r["urn"]), r["funcionarios"] or total

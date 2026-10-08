@@ -167,6 +167,10 @@ docker compose exec web crosssell linkedin-teste 123 "Nome da Empresa"   # só m
 docker compose exec web crosssell linkedin-teste 123 --aplicar           # grava praça e pessoas
 ```
 
+Enquanto espera, o comando mostra a cada minuto se a consulta está na fila da conta ou rodando. Ele espera até
+60 minutos (`--minutos`); se desistir, a consulta já paga fica guardada e é reaproveitada ao rodar de novo
+(uma consulta de antes desta versão entra com `--workflow wf-...`).
+
 Se a praça e as pessoas fizerem sentido, ponha `LINKEDIN_SALES_NAVIGATOR=true` no `deploy/.env`.
 
 Tokens: `LINKED_API_TOKEN` e `LINKED_API_IDENTIFICATION_TOKEN` (painel da Linked API). O caminho

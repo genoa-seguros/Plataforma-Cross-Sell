@@ -114,6 +114,13 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
 .atrasada{color:var(--bad);font-weight:600}
 .semana{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fila{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 24px color-mix(in srgb,var(--ink) 18%,transparent);z-index:15;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
+.fila-topo{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:8px}.fila-topo h2{margin:0;font:800 18px/1.2 var(--f-display);display:flex;justify-content:space-between;align-items:center}
+.fila-lista{overflow:auto;padding:12px 16px;display:grid;gap:10px;align-content:start}
+.fila-item{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:6px;font-size:13px}
+.fila-item .cab{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.fila-item .cab a{font-weight:700}
+.fila-pessoas{display:grid;gap:3px;padding-left:8px;border-left:3px solid var(--line)}.fila-pessoas label{display:inline-flex;gap:4px;align-items:center}
+.nota-hist{display:grid;gap:6px;max-height:220px;overflow:auto}.nota-hist div{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}
 .modal-fundo{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 40%,transparent);display:grid;place-items:center;padding:16px;z-index:20}
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;width:100%;max-width:460px;display:grid;gap:12px;max-height:90vh;overflow:auto}
 .modal label{display:grid;gap:4px;font-size:13px;color:var(--mute)}
@@ -326,6 +333,15 @@ function opsPrevia(path) {
   const ls = filtradas.filter(o => (o.tipo || "cross") === oferta);
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas};
 }
+function filaPrevia(path) {
+  const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
+  const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada);
+  const final = o => o.faltando.some(f => FINAIS.includes(f)), finais = p.get("finais") === "true";
+  const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical");
+  const ls = fila.filter(o => final(o) === finais && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)))
+    .map(o => ({...o, pessoas: (D.empresas[o.empresa.id]?.pessoas || o.contatos || []).map(x => ({...x, ponteManual: !!x.ponteManual}))}));
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalFila: fila.filter(o => !final(o)).length, totalFinais: fila.filter(final).length};
+}
 function negociosPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), todos = D.negocios || [];
   const q = (p.get("q") || "").trim().toLowerCase(), f = p.get("funil"), d = p.get("dono");
@@ -369,6 +385,7 @@ const previa = {
     if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
+    if (path.startsWith("/api/fila")) return filaPrevia(path);
     if (path.startsWith("/api/negocios")) return negociosPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     if (path === "/api/rotina") return D.rotina;
@@ -434,6 +451,27 @@ const previa = {
       if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {setor: b.setor, setorFonte: b.setor ? "manual" : null});
       (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.setor = b.setor);
       return {setor: b.setor, setorFonte: b.setor ? "manual" : null};
+    }
+    if (path === "/api/oportunidades/manual") {
+      const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
+      if (o) { const incluir = b.incluir !== false; o.manual = incluir ? {por: D.eu.nome, em: new Date().toISOString().slice(0, 16)} : null;
+        o.analisada = incluir || !o.faltando.length; }
+      return {ok: true};
+    }
+    if ((m = path.match(/^\/api\/empresas\/(\d+)\/pessoas$/))) {
+      const nova = {id: ++previa.seq, nome: b.nome, cargo: b.cargo, area: null, ponteManual: false, relacao: 0};
+      if (D.empresas[m[1]]) (D.empresas[m[1]].pessoas = D.empresas[m[1]].pessoas || []).push(nova);
+      return nova;
+    }
+    if ((m = path.match(/^\/api\/pessoas\/(\d+)\/ponte$/))) {
+      Object.values(D.empresas).forEach(e => (e.pessoas || []).forEach(x => { if (x.id == m[1]) x.ponteManual = b.ponte; }));
+      return {ponteManual: b.ponte};
+    }
+    if ((m = path.match(/^\/api\/empresas\/(\d+)\/notas$/))) {
+      const nota = {id: ++previa.seq, texto: b.texto, autor: D.eu.nome, em: new Date().toISOString().slice(0, 16), ajuste: null,
+        motivo: "prévia: sem IA, o Score não muda"};
+      (D.oportunidades || []).filter(o => o.empresa.id == m[1] && o.vertical === b.vertical).forEach(o => (o.notas = o.notas || []).unshift(nota));
+      return nota;
     }
     if ((m = path.match(/^\/api\/pessoas\/(\d+)\/cargo$/))) {
       const muda = x => { if (x && x.id == m[1]) x.cargo = b.cargo; };
@@ -704,6 +742,10 @@ function opHTML(o) {
     <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais" ? ` <span class="sub" title="A empresa já tem ou negocia ${esc(o.verticalNome)}">mais produtos</span>` : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
       ${(o.produtos || []).length ? `<div class="chips" style="margin-top:4px" aria-label="Produtos sugeridos">${o.produtos.map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")} · encaixe ${Math.round(x.valor * 100)}">${esc(x.produto)}</span>`).join("")}</div>` : ""}
       ${(o.etiquetas || []).map(t => `<div><span class="chip" style="--c:var(--warn);margin-top:4px">${esc(t)}</span></div>`).join("")}
+      ${o.manual ? `<div class="sub" style="margin-top:4px" title="Levada à mão para Oportunidades, mesmo faltando algo">incluída à mão por ${esc(o.manual.por || "?")} em ${dia(o.manual.em)}
+        <button type="button" class="lapis" data-desfazer="${o.empresa.id}|${o.vertical}">desfazer</button>${o.faltando.length ? `<br>ainda falta: ${esc(o.faltando.join(", "))}` : ""}</div>` : ""}
+      <div style="margin-top:4px">${(o.notas || []).length ? `<span class="sub" title="${esc(o.notas[0].texto)}">nota: ${esc(o.notas[0].texto.length > 60 ? o.notas[0].texto.slice(0, 60) + "…" : o.notas[0].texto)}</span> ` : ""}
+        <button type="button" class="lapis" data-nota="${o.empresa.id}|${o.vertical}" title="O que aconteceu com a oportunidade (a IA ajusta o Score)">${(o.notas || []).length ? `notas (${o.notas.length})` : "+ nota"}</button></div>
       ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
         : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
     <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
@@ -737,6 +779,7 @@ function mostrarOps() {
   if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option>`;
   document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
+  const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila})`;
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
   ligarPaginacao("op", async n => { filtroOp.pagina = n;
     try { if (await buscarOps()) { mostrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); } }
@@ -791,6 +834,7 @@ function desenharOportunidades() {
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
       <span class="sub" id="contagem-op"></span>
+      <button type="button" class="btn sec" id="abrir-fila" title="Completar à mão o que falta e levar para Oportunidades">Fila de análise</button>
     </div>
     ${painelCriterios()}
     <div class="tabela"><table class="larga">
@@ -805,7 +849,110 @@ function desenharOportunidades() {
     clearTimeout(OPS_BUSCA); OPS_BUSCA = setTimeout(filtrarOps, 250); };  // espera parar de digitar
   document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
   document.getElementById("f-oferta-op").onchange = e => { filtroOp.oferta = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("abrir-fila").onclick = () => { FILA.pagina = 1; abrirFila(); };
+  if (FILA.aberta) abrirFila();
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+}
+
+/* ---------- Fila de análise (painel lateral): completar à mão e levar para Oportunidades ---------- */
+const FILA = {aberta: false, vertical: "", q: "", finais: false, pagina: 1};
+let FILA_BUSCA = 0;
+function fecharFila() { FILA.aberta = false; document.getElementById("fila")?.remove(); }
+function filaItemHTML(o) {
+  const e = o.empresa, final = o.faltando.some(f => FINAIS.includes(f)), decide = o.quemDecide || {};
+  return `<div class="fila-item">
+    <div class="cab"><a href="#empresa-${e.id}">${esc(e.nome)}</a>${vchip(o.vertical, o.verticalNome)}<span class="sub">Score ${Math.round(o.score)}</span></div>
+    <div style="color:var(--warn)">${final ? esc(FINAL_TXT[o.faltando[0]] || o.faltando[0]) : `falta: ${esc(o.faltando.join(", "))}`}</div>
+    ${(o.produtos || []).length ? `<div class="sub">Produtos: ${o.produtos.map(x => esc(x.produto)).join(", ")}</div>` : ""}
+    <div class="sub">${e.local ? esc(e.local) : "local não informado"} <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.local ? "✎" : "+ cidade"}</button>
+      · ${e.funcionarios ? `${e.funcionarios.toLocaleString("pt-BR")} func.` : "funcionários ?"} <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎" : "+ funcionários"}</button>
+      · ${btnSetor(e.id, e.setor, e.nome)}</div>
+    <div class="fila-pessoas"><span class="sub">Quem decide: ${esc((decide.areas || []).join(" / ") || "—")}. Marque quem é nossa ponte (troca e-mails, conhecido, WhatsApp).</span>
+      ${(o.pessoas || []).map(x => `<div>${esc(x.nome)} <span class="sub">${esc(x.cargo || "cargo não informado")}${x.area ? " · " + esc(x.area) : ""}</span> ${btnCargo(x)}
+        <label class="sub"><input type="checkbox" data-ponte="${x.id}" ${x.ponteManual ? "checked" : ""}> nossa ponte</label>${x.relacao >= 20 ? ' <span class="sub" style="color:var(--good)">· troca e-mails</span>' : ""}</div>`).join("") || '<span class="sub">Ninguém cadastrado.</span>'}
+      <div><button type="button" class="lapis" data-pessoa-nova="${e.id}" data-pessoa-empresa="${esc(e.nome)}">+ pessoa</button></div></div>
+    <div><button type="button" class="btn" data-mover="${e.id}|${o.vertical}" title="Entra em Oportunidades mesmo faltando algo, com o seu nome">Mover para Oportunidades</button></div>
+  </div>`;
+}
+async function abrirFila() {
+  FILA.aberta = true;
+  let painel = document.getElementById("fila");
+  if (!painel) {
+    document.body.insertAdjacentHTML("beforeend", '<aside class="fila" id="fila" aria-label="Fila de análise"><p class="vazio">Carregando…</p></aside>');
+    painel = document.getElementById("fila");
+  }
+  const p = new URLSearchParams({pagina: FILA.pagina});
+  if (FILA.vertical) p.set("vertical", FILA.vertical);
+  if (FILA.q) p.set("q", FILA.q);
+  if (FILA.finais) p.set("finais", "true");
+  let r;
+  try { r = await api.get("/api/fila?" + p); } catch (err) { aviso(err.message); return; }
+  if (!FILA.aberta) return;
+  const busca = document.activeElement?.id === "fila-q";
+  painel.innerHTML = `<div class="fila-topo">
+      <h2>Fila de análise <button type="button" class="btn sec" id="fila-fechar" aria-label="Fechar">Fechar</button></h2>
+      <p class="sub" style="margin:0">Complete o que falta (cidade, funcionários, setor, quem decide, ponte) ou leve a empresa para Oportunidades à mão, antes da reunião de sexta.</p>
+      <div class="filtros"><select id="fila-v" aria-label="Vertical"><option value="">Todas as verticais</option>${Object.entries(V).filter(([k]) => (OPS_RESP?.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<option value="${k}" ${FILA.vertical === k ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+        <input type="search" id="fila-q" placeholder="Buscar empresa" value="${esc(FILA.q)}">
+        <label class="sub"><input type="checkbox" id="fila-finais" ${FILA.finais ? "checked" : ""}> só as que não entram sozinhas (${r.totalFinais})</label></div>
+      <span class="sub">${r.total} ${FILA.finais ? "que não entram sozinhas" : "na fila"}</span></div>
+    <div class="fila-lista">${r.itens.map(filaItemHTML).join("") || '<p class="vazio">Nada na fila com esses filtros.</p>'}<div id="pag-fila">${paginacao(r, "fila")}</div></div>`;
+  document.getElementById("fila-fechar").onclick = fecharFila;
+  document.getElementById("fila-v").onchange = e => { FILA.vertical = e.target.value; FILA.pagina = 1; abrirFila(); };
+  document.getElementById("fila-finais").onchange = e => { FILA.finais = e.target.checked; FILA.pagina = 1; abrirFila(); };
+  const q = document.getElementById("fila-q");
+  q.oninput = e => { FILA.q = e.target.value; FILA.pagina = 1; clearTimeout(FILA_BUSCA); FILA_BUSCA = setTimeout(abrirFila, 300); };
+  if (busca) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  ligarPaginacao("fila", n => { FILA.pagina = n; abrirFila(); });
+}
+/* Pessoa cadastrada à mão (ex.: quem decide que a equipe já conhece) */
+function novaPessoa(empresaId, empresaNome) {
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-pessoa" aria-labelledby="t-pessoa">
+    <h2 id="t-pessoa">Nova pessoa</h2><div class="sub">${esc(empresaNome)}</div>
+    <label>Nome<input id="pessoa-nome" required maxlength="120"></label>
+    <label>Cargo<input id="pessoa-cargo" maxlength="120" placeholder="ex.: Gerente de RH, CFO, Gerente de Compras"></label>
+    <label class="check"><input type="checkbox" id="pessoa-ponte"> É nossa ponte (conhecido, troca mensagens com a equipe)</label>
+    <p class="erro" id="pessoa-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="pessoa-cancelar">Cancelar</button><button class="btn">Salvar</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("pessoa-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("pessoa-nome").focus();
+  document.getElementById("f-pessoa").onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const p = await api.post(`/api/empresas/${empresaId}/pessoas`, {nome: document.getElementById("pessoa-nome").value, cargo: document.getElementById("pessoa-cargo").value});
+      if (document.getElementById("pessoa-ponte").checked) await api.post(`/api/pessoas/${p.id}/ponte`, {ponte: true});
+      fechar(); aviso(`${p.nome} cadastrada${p.area ? " (" + p.area + ")" : ""}`); OPS_RESP = null; render();
+    } catch (err) { const el = document.getElementById("pessoa-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
+/* Notas da equipe: o que aconteceu com a oportunidade. A IA lê e ajusta o Score (de -50 a +20). */
+function editarNota(empresaId, vertical) {
+  const o = (OPS || []).find(x => x.empresa.id == empresaId && x.vertical === vertical) || {notas: [], empresa: {nome: ""}, verticalNome: V[vertical]};
+  const ajuste = n => n.ajuste === null || n.ajuste === undefined ? (n.motivo || "a IA ainda vai avaliar") : `${n.ajuste > 0 ? "+" : ""}${n.ajuste} no Score: ${n.motivo || ""}`;
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-nota" aria-labelledby="t-nota" style="max-width:560px">
+    <h2 id="t-nota">O que aconteceu</h2><div class="sub">${esc(o.empresa.nome)} · ${esc(o.verticalNome || V[vertical] || vertical)}</div>
+    ${(o.notas || []).length ? `<div class="nota-hist">${o.notas.map(n => `<div>${esc(n.texto)}<div class="sub">${esc(n.autor || "")} · ${dia(n.em)} · ${esc(ajuste(n))}</div></div>`).join("")}</div>` : ""}
+    <label>Nova nota<textarea id="nota-texto" rows="4" maxlength="2000" placeholder="ex.: tem um corretor da família, muito difícil entrar; renovou o plano em agosto; pediu cotação de Cyber"></textarea></label>
+    <p class="nota">Vale só para esta vertical. A IA lê as notas e ajusta o Score (de −50 a +20); o motivo aparece no "Por quê".</p>
+    <p class="erro" id="nota-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="nota-cancelar">Fechar</button><button class="btn" id="nota-salvar">Salvar nota</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("nota-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("nota-texto").focus();
+  document.getElementById("f-nota").onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById("nota-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
+    try {
+      const r = await api.post(`/api/empresas/${empresaId}/notas`, {vertical, texto: document.getElementById("nota-texto").value});
+      fechar(); aviso(r.ajuste === null || r.ajuste === undefined ? "Nota salva (a IA avalia na próxima rodada)" : `Nota salva: ${r.ajuste > 0 ? "+" : ""}${r.ajuste} no Score`);
+      OPS_RESP = null; render();
+    } catch (err) { b.disabled = false; b.textContent = "Salvar nota"; const el = document.getElementById("nota-erro"); el.textContent = err.message; el.hidden = false; }
+  };
 }
 
 /* ---------- Melhorias da plataforma ---------- */
@@ -1687,10 +1834,19 @@ document.addEventListener("click", ev => {
   const l = ev.target.closest("[data-local]"); if (l) editarLocal(l.dataset.local, l.dataset.localCidade, l.dataset.localUf, l.dataset.localNome);
   const st = ev.target.closest("[data-setor]"); if (st) editarSetor(st.dataset.setor, st.dataset.setorAtual, st.dataset.setorNome);
   const cg = ev.target.closest("[data-cargo]"); if (cg) editarCargo(cg.dataset.cargo, cg.dataset.cargoAtual, cg.dataset.cargoNome);
+  const pn = ev.target.closest("[data-pessoa-nova]"); if (pn) novaPessoa(pn.dataset.pessoaNova, pn.dataset.pessoaEmpresa);
+  const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
+  const mv = ev.target.closest("[data-mover], [data-desfazer]");
+  if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;
+    api.post("/api/oportunidades/manual", {empresa_id: +id, vertical: v, incluir})
+      .then(() => { aviso(incluir ? "Levada para Oportunidades, com o seu nome" : "Voltou para a fila de análise"); OPS_RESP = null; render(); })
+      .catch(err => aviso(err.message)); }
 });
 document.addEventListener("change", async ev => {
-  const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir;
+  const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir, pt = ev.target.dataset?.ponte;
   try {
+    if (pt) { await api.post(`/api/pessoas/${pt}/ponte`, {ponte: ev.target.checked}); aviso(ev.target.checked ? "Marcada como nossa ponte" : "Não é mais ponte");
+      OPS_RESP = null; render(); }
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       OPS_RESP = null; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
@@ -1702,6 +1858,7 @@ async function render() {
   const m = h.match(/^#empresa-(\d+)$/);
   VEZ++;
   abas(m ? "oportunidades" : h.slice(1));
+  if (h !== "#oportunidades") document.getElementById("fila")?.remove();  // o painel da fila é só da tela Oportunidades
   document.getElementById("app").innerHTML = '<p class="vazio">Carregando…</p>';  // a aba muda já no clique
   try {
     if (m) await telaEmpresa(m[1]);

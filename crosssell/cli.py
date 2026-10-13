@@ -239,6 +239,18 @@ def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das 
             typer.echo("  gravado na empresa")
 
 
+@app.command()
+def notas():
+    """Avalia pela IA as notas da equipe que ficaram sem avaliação (ex.: Claude API fora do ar na hora)."""
+    from crosssell import nota_ia
+    from crosssell.pipeline import registrar
+    from crosssell.temperatura import modelo_em_uso
+
+    db, s = _db(), get_settings()
+    leitor = nota_ia.LeitorNotas(s, modelo=modelo_em_uso(db, s)[0])
+    typer.echo(registrar(db, "notas", nota_ia.pendentes, db, leitor))
+
+
 @app.command("linkedin-sites")
 def linkedin_sites(limite: int = 50):
     """Procura o link do LinkedIn no site de cada empresa da tabela (sem usar a Linked API)."""
@@ -331,6 +343,8 @@ def _rodar_rotina(dias: int) -> None:
               ("cnpj-sites", cnpj_sites), ("dominios", dominios), ("emails", lambda: emails(dias=dias, temperatura=True)),
               ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
               ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
+    if get_settings().anthropic_api_key:
+        passos.insert(passos.index(("recalcular", recalcular)), ("notas", notas))
     if get_settings().site_ia_ativo:
         passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", sites_ia))
     if lk.configurado(get_settings()):

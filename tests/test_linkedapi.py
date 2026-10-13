@@ -405,3 +405,19 @@ def test_teste_que_desiste_de_esperar_reaproveita_a_consulta(db, settings):
     assert any("reaproveitando a consulta wf-1" in x for x in linhas)
     assert api.chamadas["POST"] == 3  # a página não foi paga de novo: só praça e pessoas
     assert r["praca"] == "alvo"
+
+
+def test_lista_do_sales_navigator_so_guarda_quem_decide(db):
+    """O filtro de cargo do Sales Navigator é aproximado (sempre 25 pessoas): ficam só a área da vertical e
+    executivos (lista real da Cilia, Saúde)."""
+    cilia = Empresa(razao_social="Cilia Tecnologia SA", nome_normalizado="cilia")
+    db.add(cilia)
+    db.commit()
+    lista = [("Daniel Barbosa", "Founder and CEO"), ("Felipe Affonso", "Board Member"), ("Thomas Khalil", "Chief Financial Officer"),
+             ("Catarine Sales", "Head de Gente e Gestão"), ("Guilherme Mello", "Desenvolvedor Java"),
+             ("Thiago Fagundes", "Cientista de dados"), ("Brayan Dauria", "Product Owner"), ("Noah Stern", "Investor")]
+    lk.receber(db, [{"id_alvo": f"E{cilia.id}", "tipo": "empresa", "acao": "pessoas",
+                     "funcionarios_area": [{"nome": n, "headline": h} for n, h in lista], "capturado_em": "2026-10-13T10:00:00"}])
+    assert sorted(p.nome for p in cilia.pessoas) == ["Catarine Sales", "Daniel Barbosa", "Felipe Affonso", "Thomas Khalil"]
+    assert lk.pessoa_relevante("Gerente de Controladoria e Finanças", "linhas_financeiras")
+    assert not lk.pessoa_relevante("Gerente de Controladoria e Finanças", None)  # em Saúde decide o RH (ou executivo)

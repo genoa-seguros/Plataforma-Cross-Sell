@@ -769,16 +769,33 @@ def aplicar_praca(e: Empresa, r: dict, quando: datetime) -> None:
     e.praca_em = quando
 
 
+# Áreas que decidem cada lista do Sales Navigator (pela área do pedido; sem área, a de Saúde)
+AREAS_LISTA = {None: AREAS_VERTICAL["saude"], "linhas_financeiras": AREAS_VERTICAL["linhas_financeiras"],
+               "ramos_elementares": AREAS_VERTICAL["ramos_elementares"]}
+_CONSELHO = re.compile(r"\b(conselh\w*|board)\b", re.I)
+
+
+def pessoa_relevante(cargo: str, area_lista: str | None) -> bool:
+    """O filtro de cargo do Sales Navigator é aproximado: a lista vem sempre com 25 pessoas, as mais parecidas
+    primeiro (desenvolvedores, analistas, vendedores...). Só vale quem é da área que decide a vertical ou executivo
+    (CEO, CFO, diretor, conselho)."""
+    area = classificar_area(cargo)
+    return (area in AREAS_LISTA.get(area_lista, AREAS_LISTA[None]) or area == "executivo"
+            or classificar_senioridade(cargo) in ("socio", "c_level", "diretor") or bool(_CONSELHO.search(cargo)))
+
+
 def _aplicar_pessoas(db: Session, e: Empresa, r: dict, quando: datetime) -> int:
     """Lista de quem decide (Sales Navigator, filtrada por cargo): atualiza o cargo de quem já conhecemos
-    (contatos dos e-mails e do Pipedrive) e cria os que faltam. O cargo do Sales Navigator é o atual.
-    A lista de Saúde (RH) e a de Linhas Financeiras (cargos-chave) têm datas próprias."""
+    (contatos dos e-mails e do Pipedrive) e cria os que faltam, só os relevantes (pessoa_relevante). O cargo do
+    Sales Navigator é o atual. A lista de Saúde (RH), a de LF (cargos-chave) e a de RE têm datas próprias."""
     novos = 0
     for f in _lista(r.get("funcionarios_area"))[:25]:
         nome, cargo = f.get("nome"), (f.get("headline") or "").strip()
         if not nome or not cargo:
             continue
         ja = next((p for p in e.pessoas if mesmo_nome(p.nome or "", nome)), None)
+        if ja is None and not pessoa_relevante(cargo, r.get("area")):
+            continue
         url = f.get("linkedin_url") or None
         p = ja or resolver_pessoa(db, nome=nome, empresa=e, cargo=cargo, linkedin_url=url, fonte="linkedin")
         p.linkedin_url = p.linkedin_url or url
@@ -1040,8 +1057,9 @@ def testar_sales_navigator(db: Session, settings: Settings, e: Empresa, client, 
 
     r2 = consulta("pessoas", {**_alvo_empresa(e, "pessoas", "teste"), "sales_url": sales, "cargos": cargos_saude()})
     saida(f"  quem decide ({len(r2['funcionarios_area'])}):")
-    for f in r2["funcionarios_area"]:
-        saida(f"    {f['nome']} · {f['headline']} · {f['local']}")
+    for f in r2["funcionarios_area"]:  # ✓ entra como contato; os outros ficam de fora (filtro aproximado)
+        marca = "✓" if pessoa_relevante(f["headline"] or "", None) else "·"
+        saida(f"    {marca} {f['nome']} · {f['headline']} · {f['local']}")
     if aplicar:
         _aplicar_pessoas(db, e, r2, datetime.utcnow())
         db.commit()

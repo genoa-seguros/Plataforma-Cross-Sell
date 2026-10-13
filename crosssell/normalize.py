@@ -117,7 +117,7 @@ def dominio_site(url: str | None) -> str | None:
 
 
 _CARGO_REGRAS = [
-    ("socio", r"\b(socio|socia|fundador|founder|owner|proprietari|administrador)"),
+    ("socio", r"\b(socio|socia|fundador|founder|(?<!product )owner|proprietari|administrador)"),
     ("c_level", r"\b(ceo|cfo|cto|coo|cio|chro|cmo)\b|\b(presidente|chief|diretor geral|diretor presidente)"),
     ("diretor", r"\b(diretor|diretora|director|vice[- ]presidente)|\b(vp|head)\b"),
     ("gerente", r"\b(gerente|manager|coordenador|coordenadora|superintendente)"),
@@ -148,7 +148,7 @@ _AREA_REGRAS = [
     ("logistica", r"\b(logistic\w*|logistics|supply chain|supply|armazem|armazenagem|distribuicao|expedicao|frota|fleet)\b"),
     ("operacoes", r"\b(coo|chief operating|operac\w*|operations|industrial|planta|producao)\b"),
     ("ti", r"\b(cto|cio|ciso|ti|it|tecnologia|technology|sistemas)\b"),
-    ("executivo", r"\b(ceo|chief executive|managing director|presidente|president|fundador|founder|cofundador|co-founder|socio|socia|owner|"
+    ("executivo", r"\b(ceo|chief executive|managing director|presidente|president|fundador|founder|cofundador|co-founder|socio|socia|(?<!product )owner|"
                   r"diretor geral|country manager|general manager)\b"),
 ]
 AREA_LABEL = {"rh": "RH / Pessoas", "financeiro": "Financeiro", "juridico": "Jurídico", "riscos": "Riscos",

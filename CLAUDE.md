@@ -74,7 +74,7 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   cookies. Non-GET API calls must send the `X-Cross-Sell: 1` header (CSRF guard in `usuario_atual`), and
   master-only routes use `somente_master`; Qualidade routes use `acesso_qualidade` (master or `papel="head"`).
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
-- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`: `saude` and `linhas_financeiras`;
+- **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`: `saude`, `linhas_financeiras` and `ramos_elementares`;
   `tabela.faltando()` says what is missing. Saúde: praça/cidade, funcionários, setor. LF (`faltando_lf`): Receita,
   notícias, site (IA), cargos-chave. RE (`faltando_re`): setor, funcionários. All: quem decide, ponte por e-mail.
   `tabela.FINAIS` ("fora da praça", "MEI", "sem produto de RE") never enter, not even the queue). LF and RE are per

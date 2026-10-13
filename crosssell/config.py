@@ -15,8 +15,8 @@ AREAS_VERTICAL = {
     "saude": ("rh",),
     "linhas_financeiras": ("financeiro", "juridico", "riscos"),
     # RE por produto (config/criterios.yaml, ramos_elementares.areas): Fiança → Financeiro e Jurídico;
-    # Patrimonial e Transportes → Compras, Facilities, Logística e Operações. Esta é a lista sem produto conhecido.
-    "ramos_elementares": ("compras", "facilities", "logistica", "operacoes", "financeiro", "juridico"),
+    # Patrimonial e Transportes → Compras, Facilities, Logística, Operações e Riscos. Esta é a lista sem produto conhecido.
+    "ramos_elementares": ("compras", "facilities", "logistica", "operacoes", "riscos", "financeiro", "juridico"),
 }
 
 

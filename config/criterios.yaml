@@ -105,10 +105,11 @@ ramos_elementares:
   # Quem decide cada produto (áreas do cargo)
   areas:
     fianca: [financeiro, juridico]
-    patrimonial: [compras, facilities, logistica, operacoes]
-    transportes: [compras, facilities, logistica, operacoes]
+    patrimonial: [compras, facilities, logistica, operacoes, riscos]
+    transportes: [compras, facilities, logistica, operacoes, riscos]
   # Cargos procurados na lista do Sales Navigator, por grupo da cota
   linkedin_cargos_fianca: [cfo, diretor financeiro, diretora financeira, gerente financeiro, gerente financeira,
     controller, head de financas, juridico, legal, general counsel, gerente juridico, gerente juridica]
   linkedin_cargos_patrimonial: [compras, procurement, suprimentos, facilities, logistica, supply chain, operacoes,
-    coo, diretor de operacoes, diretora de operacoes, gerente de operacoes, gerente industrial, diretor industrial]
+    coo, diretor de operacoes, diretora de operacoes, gerente de operacoes, gerente industrial, diretor industrial,
+    riscos, gerente de riscos, seguros, gerente de seguros, risk manager]

@@ -130,4 +130,4 @@ def test_re_por_produto_fianca_patrimonial_e_transportes():
                textos(potencial("ramos_elementares", consultoria, None)))
     # Quem decide cada produto
     assert areas_re(["fianca"]) == ["financeiro", "juridico"]
-    assert areas_re(["patrimonial", "transportes"]) == ["compras", "facilities", "logistica", "operacoes"]
+    assert areas_re(["patrimonial", "transportes"]) == ["compras", "facilities", "logistica", "operacoes", "riscos"]

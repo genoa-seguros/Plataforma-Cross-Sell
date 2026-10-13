@@ -277,7 +277,7 @@ def _passos_re(e: Empresa, settings: Settings, validade: int, agora: datetime) -
     1. setor e funcionários: a página da empresa só é lida se faltar algo (ou o urn do Sales Navigator);
     2. com o setor fazendo sentido (algum produto com encaixe), quem decide: se alguém da área do produto já é
        conhecido (a ponte, por exemplo), basta; senão, a lista do Sales Navigator pelos cargos do produto
-       (Fiança: financeiro e jurídico; Patrimonial e Transportes: compras, facilities, logística, operações)."""
+       (Fiança: financeiro e jurídico; Patrimonial e Transportes: compras, facilities, logística, operações, riscos)."""
     from crosssell.connectors.linkedapi import pagina_sales_navigator
     from crosssell.potencial import areas_re, cargos_re, funcionarios_validos, grupo_re
 

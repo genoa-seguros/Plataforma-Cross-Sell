@@ -32,7 +32,7 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   por produto: **Fiança/capitalização** (empresa de escritório a partir de 50 funcionários,
   `ramos_elementares.fianca_funcionarios_minimo`; quem decide: Financeiro e Jurídico), **Patrimonial/Roubo**
   (grandes ativos: usinas, indústrias, fábricas, galpões com estoque) e **Transportes** (cargas, frota); nos dois
-  últimos quem decide é Compras, Facilities, Logística ou Operações. Analisada com **setor** e **funcionários** do
+  últimos quem decide é Compras, Facilities, Logística, Operações ou Riscos (ex.: gerente de riscos e seguros). Analisada com **setor** e **funcionários** do
   LinkedIn (ou à mão), quem decide do produto (se a ponte já é dessa área, ela mesma) e ponte por e-mail. Setor e
   porte sem nenhum produto (ex.: escritório pequeno) não entram, nem na fila. O filtro *Mais produtos na mesma
   vertical* vale para LF e RE.

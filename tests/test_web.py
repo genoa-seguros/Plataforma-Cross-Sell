@@ -160,15 +160,16 @@ def test_oportunidades_e_atividade_na_organizacao(cenario, db):
     lf = next(o for o in ops if o["vertical"] == "linhas_financeiras")
     # Negocia LF (Garantia): "mais produtos em LF", com a etiqueta do D&O ofertado e perdido. Sem dados ainda,
     # nenhum produto passa do encaixe mínimo: sugere o melhor (Cyber)
-    assert lf["tipo"] == "mais_lf" and lf["etiquetas"] == ["D&O ofertado em 03/2025, perdido"]
+    assert lf["tipo"] == "mais" and lf["etiquetas"] == ["D&O ofertado em 03/2025, perdido"]
     assert [x["produto"] for x in lf["produtos"]] == ["Cyber"]
     assert lf["faltando"][:3] == ["Receita", "notícias", "cargos-chave"]
     alfa_id = db.scalar(select(Empresa.id).where(Empresa.pipedrive_org_id == 10))
     alfa_lf = next(o for o in c.get(f"/api/oportunidades?empresa={alfa_id}").json()["itens"]
                    if o["vertical"] == "linhas_financeiras")
-    assert alfa_lf["tipo"] == "mais_lf" and "D&O" not in [x["produto"] for x in alfa_lf["produtos"]]  # já tem D&O
+    assert alfa_lf["tipo"] == "mais" and "D&O" not in [x["produto"] for x in alfa_lf["produtos"]]  # já tem D&O
     beta = next(o for o in ops if o["vertical"] == "ramos_elementares")
-    assert beta["quemDecide"]["areas"] == ["Operações", "Riscos", "Financeiro"]
+    # RE por produto: sem setor, a Fiança (Financeiro e Jurídico) é o melhor encaixe por enquanto
+    assert beta["quemDecide"]["areas"] == ["Financeiro", "Jurídico"]
     victor = next(u for u in c.get("/api/tabela").json()["usuarios"] if u["email"].startswith("victor"))
     r = c.post("/api/atividades", headers=H, json={"empresa_id": beta["empresa"]["id"], "assunto": "Abrir conversa de RE",
                                                     "tipo": "task", "vencimento": "2030-01-04", "responsavel_id": victor["id"]})
@@ -199,9 +200,10 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     r = c.get("/api/oportunidades").json()
     assert (len(r["itens"]), r["total"], r["totalGeral"], r["pagina"], r["paginas"]) == (20, 25, 25, 1, 2)
     # Os leads negociam D&O: em LF são "mais produtos", ainda em análise (falta Receita, notícias, cargos-chave),
-    # como a Alfa e a Beta do Pipedrive falso
-    assert r["verticais"] == ["saude", "linhas_financeiras"] and r["fila"] == {"saude": 1, "linhas_financeiras": 28}
-    assert r["ofertas"] == {"cross": 25, "mais_lf": 0}
+    # como a Alfa e a Beta do Pipedrive falso; em RE falta o setor (e os funcionários do lead 90)
+    assert r["verticais"] == ["saude", "linhas_financeiras", "ramos_elementares"]
+    assert r["fila"] == {"saude": 1, "linhas_financeiras": 28, "ramos_elementares": 28}
+    assert r["ofertas"] == {"cross": 25, "mais": 0}
     assert len(c.get("/api/oportunidades?pagina=2").json()["itens"]) == 5
     assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 2
     assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25
@@ -545,7 +547,7 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     eid = n["empresa"]["id"]
     saude = lambda n: next(f["faltando"] for f in n["faltaParaOportunidade"] if f["vertical"] == "saude")  # noqa: E731
     assert saude(n) == ["cidade", "funcionários", "quem decide", "ponte por e-mail"]
-    assert [f["nome"] for f in n["faltaParaOportunidade"]] == ["Saúde", "Linhas Financeiras"]
+    assert [f["nome"] for f in n["faltaParaOportunidade"]] == ["Saúde", "Linhas Financeiras", "Ramos Elementares"]
     assert not n["temOportunidade"]
     assert {"funcionarios", "cidade", "uf", "cidadeFonte"} <= set(n["empresa"])
     # Preencher cidade e funcionários na própria aba leva a empresa para mais perto de Oportunidades
@@ -561,7 +563,8 @@ def test_negocios_em_aberto_mostram_o_que_falta_para_oportunidades(cenario, db):
     c.post(f"/api/empresas/{eid}/setor", json={"setor": "Fintech de pagamentos"}, headers=hdr)  # limpa a lista guardada
     depois = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == eid)
     assert depois["temOportunidade"]  # agora está em Oportunidades de Saúde
-    assert [f["vertical"] for f in depois["faltaParaOportunidade"]] == ["linhas_financeiras"]  # LF ainda em análise
+    # LF e RE ainda em análise (RE: a fintech pede Fiança, e falta quem decide no Financeiro ou Jurídico)
+    assert {f["vertical"] for f in depois["faltaParaOportunidade"]} == {"linhas_financeiras", "ramos_elementares"}
     assert depois["empresa"]["setor"] == "Fintech de pagamentos"
 
 

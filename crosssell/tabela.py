@@ -21,13 +21,14 @@ from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
 from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
 from crosssell.normalize import AREA_LABEL, classificar_area
-from crosssell.potencial import (FITS, faltando_saude, funcionarios_validos, influencia, mei, melhor_contato,
-                                 motivos as motivos_potencial, potencial, praca, produto_lf, produtos_lf, setor_valido)
+from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei,
+                                 melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
+                                 produtos_lf, produtos_re, setor_valido)
 
-# Verticais que já têm fluxo de análise definido e aparecem em Oportunidades (RE entra quando o dela for definido)
-VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras")
+# Verticais que já têm fluxo de análise definido e aparecem em Oportunidades
+VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras", "ramos_elementares")
 # Nunca entram em Oportunidades, nem na fila de análise
-FINAIS = ("fora da praça", "MEI")
+FINAIS = ("fora da praça", "MEI", "sem produto de RE")
 
 
 def faltando_lf(e: Empresa | None) -> list[str]:
@@ -52,15 +53,33 @@ def faltando_lf(e: Empresa | None) -> list[str]:
     return falta
 
 
-def faltando(vertical: str, e: Empresa | None, decide: dict | None = None, tem_ponte: bool = False) -> list[str]:
+def faltando_re(e: Empresa | None) -> list[str]:
+    """RE: setor e funcionários (LinkedIn ou à mão): dizem quais produtos fazem sentido (Fiança: escritório com
+    50+ funcionários; Patrimonial: grandes ativos; Transportes: cargas e frota)."""
+    falta = []
+    if not setor_valido(e):
+        falta.append("setor")
+    if not funcionarios_validos(e):
+        falta.append("funcionários")
+    return falta
+
+
+def faltando(vertical: str, e: Empresa | None, decide: dict | None = None, tem_ponte: bool = False,
+             sem_produto: bool = False) -> list[str]:
     """O que falta para a empresa entrar em Oportunidades na vertical (vazio = analisada).
     Saúde: praça alvo, funcionários e setor (LinkedIn ou à mão). LF: Receita, notícias, site e cargos-chave.
-    Nas duas: quem decide mapeado (a área da vertical ou um executivo) e ponte por e-mail (alguém da empresa que
+    RE: setor e funcionários. Em todas: quem decide mapeado (a área da vertical ou do produto, ou um executivo) e
+    ponte por e-mail (alguém da empresa que
     troca e-mails com a equipe). Sem isso a equipe teria de buscar na mão."""
     if vertical == "saude":
         falta = faltando_saude(e)
     elif vertical == "linhas_financeiras":
         falta = faltando_lf(e)
+    elif vertical == "ramos_elementares":
+        falta = faltando_re(e)
+        # Setor e funcionários conhecidos e nenhum produto faz sentido (ex.: escritório pequeno): RE não entra
+        if not falta and sem_produto:
+            return ["sem produto de RE"]
     else:
         return ["fluxo da vertical"]
     if any(f in FINAIS for f in falta):
@@ -115,12 +134,13 @@ def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str], pontes: dict[int
 
 
 def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str],
-                pontes: dict[int, str] | None = None, relacao: set[int] | None = None) -> dict | None:
+                pontes: dict[int, str] | None = None, relacao: set[int] | None = None,
+                areas: tuple[str, ...] | None = None) -> dict | None:
     """Pessoas da área que costuma decidir a vertical e, se ninguém dela tem relação, a ponte:
     o contato da empresa com relação mais forte com alguém da equipe."""
     if e is None or vertical not in AREAS_VERTICAL:
         return None
-    areas = AREAS_VERTICAL[vertical]
+    areas = areas or AREAS_VERTICAL[vertical]
     chave = lambda p: (-(p.score_relacionamento or 0), NIVEL.get(p.senioridade or "", 3), p.nome)  # noqa: E731
     da_area = sorted((p for p in e.pessoas if area_pessoa(p) in areas), key=chave)
     # Executivo do LinkedIn ou dos e-mails antes do sócio que só veio da Receita
@@ -332,29 +352,38 @@ def negocios_abertos(db: Session, settings: Settings) -> list[dict]:
     return sorted(saida, key=lambda x: ((x["empresa"] or {}).get("nome") or "").lower())
 
 
-def produtos_da_empresa(e: Empresa, vigentes: list[Negocio]) -> dict:
-    """Linhas Financeiras por produto (E&O, D&O, Cyber, IMI): sugere os que a empresa não tem nem negocia, com
-    as etiquetas do que está em negociação e do que já foi ofertado e perdido. Garantia e Fiança não entram."""
-    lf = [n for n in e.negocios if n.vertical == "linhas_financeiras"]
-    chave = lambda n: produto_lf(n.produto or n.titulo)  # noqa: E731
-    tem = {chave(n) for n in vigentes if n.vertical == "linhas_financeiras"} - {None}
-    abertos = [n for n in lf if n.status == "aberto"]
+# Verticais que contam por produto: como achar o produto de um negócio, o encaixe de cada produto e o nome
+POR_PRODUTO = {"linhas_financeiras": (produto_lf, produtos_lf, FITS),
+               "ramos_elementares": (produto_re, produtos_re, FITS_RE)}
+
+
+def produtos_da_empresa(e: Empresa, vigentes: list[Negocio], vertical: str = "linhas_financeiras") -> dict:
+    """LF (E&O, D&O, Cyber, IMI; Garantia fora) e RE (Fiança, Patrimonial/Roubo, Transportes) por produto: sugere
+    os que a empresa não tem nem negocia, com as etiquetas do que está em negociação e do que já foi ofertado e
+    perdido. tipo "cross": a empresa ainda não tem nem negocia a vertical; "mais": mais produtos para quem já tem."""
+    identificar, encaixes, nomes = POR_PRODUTO[vertical]
+    da_vertical = [n for n in e.negocios if n.vertical == vertical]
+    chave = lambda n: identificar(n.produto or n.titulo)  # noqa: E731
+    tem = {chave(n) for n in vigentes if n.vertical == vertical} - {None}
+    abertos = [n for n in da_vertical if n.status == "aberto"]
     negociando = {chave(n) for n in abertos} - {None}
     perdidos: dict[str, Negocio] = {}
-    for n in lf:
+    for n in da_vertical:
         k = chave(n)
         if n.status == "perdido" and k and k not in tem | negociando:
             if k not in perdidos or (n.perdido_em or date.min) > (perdidos[k].perdido_em or date.min):
                 perdidos[k] = n
     excluir = tem | negociando
-    todos = produtos_lf(e, excluir)
+    todos = encaixes(e, excluir)
     sugeridos = [x for x in todos if x["sugerido"]] or todos[:1]
-    etiquetas = [f"negociando {FITS[k][0]} agora" for k in sorted(negociando)]
-    etiquetas += [f"{FITS[k][0]} ofertado em {n.perdido_em:%m/%Y}, perdido" if n.perdido_em
-                  else f"{FITS[k][0]} já ofertado, perdido" for k, n in sorted(perdidos.items())]
-    ja_lf = any(n.vertical == "linhas_financeiras" for n in vigentes) or bool(abertos)
-    return {"tipo": "mais_lf" if ja_lf else "cross", "excluir": excluir, "etiquetas": etiquetas,
-            "produtos": [{"produto": x["produto"], "valor": x["valor"], "texto": x["texto"]} for x in sugeridos]}
+    etiquetas = [f"negociando {nomes[k][0]} agora" for k in sorted(negociando)]
+    etiquetas += [f"{nomes[k][0]} ofertado em {n.perdido_em:%m/%Y}, perdido" if n.perdido_em
+                  else f"{nomes[k][0]} já ofertado, perdido" for k, n in sorted(perdidos.items())]
+    ja_tem = any(n.vertical == vertical for n in vigentes) or bool(abertos)
+    return {"tipo": "mais" if ja_tem else "cross", "excluir": excluir, "etiquetas": etiquetas,
+            "produtos": [{"chave": x["chave"], "produto": x["produto"], "valor": x["valor"], "texto": x["texto"]}
+                         for x in sugeridos],
+            "algumSugerido": any(x["sugerido"] for x in todos)}
 
 
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
@@ -396,13 +425,16 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
         relacoes = sorted(relacoes_de[e.id])
         for v in VERTICAIS:
-            lf = produtos_da_empresa(e, vigentes) if v == "linhas_financeiras" else None
+            lf = produtos_da_empresa(e, vigentes, v) if v in POR_PRODUTO else None
             if lf is not None:
                 if not lf["produtos"]:
-                    continue  # já tem ou negocia todos os produtos de LF
+                    continue  # já tem ou negocia todos os produtos da vertical
             elif v in tem or v in negociando:
                 continue
-            decide = quem_decide(db, e, v, nomes, pontes, relacao)
+            # RE: quem decide depende do produto (Fiança: Financeiro e Jurídico; Patrimonial e Transportes: Compras,
+            # Facilities, Logística, Operações). Se a ponte já é dessa área, ela mesma é quem decide
+            areas = (tuple(areas_re(x["chave"] for x in lf["produtos"])) or None) if v == "ramos_elementares" else None
+            decide = quem_decide(db, e, v, nomes, pontes, relacao, areas=areas)
             alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
             contato = alvo or melhor_contato(e)
             pot = potencial(v, e, contato, excluir=lf["excluir"] if lf else frozenset())
@@ -426,11 +458,12 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,
-                "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas))),
+                "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas),
+                                               sem_produto=bool(lf) and not lf["algumSugerido"])),
                 "analisada": not falta,
                 "praca": praca(e) if v == "saude" else None,
-                # LF: "cross" (a empresa ainda não tem nem negocia LF) ou "mais_lf" (mais produtos para quem já tem);
-                # produtos sugeridos e etiquetas ("negociando D&O agora", "Cyber ofertado em 03/2026, perdido")
+                # LF e RE: "cross" (a empresa ainda não tem nem negocia a vertical) ou "mais" (mais produtos para quem
+                # já tem); produtos sugeridos e etiquetas ("negociando D&O agora", "Cyber ofertado em 03/2026, perdido")
                 "tipo": lf["tipo"] if lf else "cross",
                 "produtos": lf["produtos"] if lf else [],
                 "etiquetas": lf["etiquetas"] if lf else [],

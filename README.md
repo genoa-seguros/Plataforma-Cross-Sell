@@ -28,8 +28,14 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   conta **por produto** (E&O, D&O, Cyber, IMI; Garantia e Fiança ficam de fora): uma linha por empresa
   com os produtos sugeridos, os que ela ainda não tem nem negocia. O padrão da tela é o *cross sell*
   (empresas sem LF); o filtro *Mais produtos em LF* mostra quem já tem ou negocia LF, com as etiquetas
-  *negociando X agora* e *X ofertado em mm/aaaa, perdido* (data de perda do Pipedrive). RE entra quando
-  o fluxo dela estiver pronto.
+  *negociando X agora* e *X ofertado em mm/aaaa, perdido* (data de perda do Pipedrive). Em **RE**, também
+  por produto: **Fiança/capitalização** (empresa de escritório a partir de 50 funcionários,
+  `ramos_elementares.fianca_funcionarios_minimo`; quem decide: Financeiro e Jurídico), **Patrimonial/Roubo**
+  (grandes ativos: usinas, indústrias, fábricas, galpões com estoque) e **Transportes** (cargas, frota); nos dois
+  últimos quem decide é Compras, Facilities, Logística ou Operações. Analisada com **setor** e **funcionários** do
+  LinkedIn (ou à mão), quem decide do produto (se a ponte já é dessa área, ela mesma) e ponte por e-mail. Setor e
+  porte sem nenhum produto (ex.: escritório pequeno) não entram, nem na fila. O filtro *Mais produtos na mesma
+  vertical* vale para LF e RE.
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
   (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,
@@ -118,8 +124,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
     (advocacia, contabilidade, tecnologia, saúde, consultoria, ou o site lido pela IA). D&O: gestão
     profissional. Cyber: CTO ou DPO na empresa, setor com muitos dados. IMI: fundos e gestoras (no
     lugar de D&O e E&O). Produto com encaixe a partir de 0,5 é sugerido.
-  - *RE*: influência 30, perfil 45 (galpões, indústrias, transportadoras; empresa grande em
-    escritório: empresarial e fiança) e porte 25.
+  - *RE*: encaixe do produto 35 (Fiança: escritório com 50+ funcionários, lista `escritorio`; Patrimonial/Roubo:
+    `grandes_ativos`; Transportes: `transportes`), porte 25, influência 25 e momento 15 (nova sede, mudança de
+    escritório, expansão, nova fábrica ou galpão, lista `momento`).
   - Dados usados: setor e descrição do LinkedIn, CNAE e natureza jurídica da Receita, cidade/UF,
     funcionários, cargos das pessoas e notícias.
 
@@ -157,7 +164,8 @@ conhecido, os e-mails já lidos dele são religados à empresa.
 quem decide, `LINKEDIN_COTA_SAUDE_PESSOAS`), Linhas Financeiras 10 (`LINKEDIN_COTA_LF`, das quais 5 para
 empresas com card no funil Pipo Saúde, `LINKEDIN_COTA_LF_PIPO`, e o resto para os outros funis) e RE 10
 (`LINKEDIN_COTA_RE`). Cada passo do fluxo de Saúde ou de LF paga a cota da sua vertical; na leitura
-geral paga a vertical da oportunidade de maior Score, e o que for lido serve a todas. A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por
+geral paga a vertical da oportunidade de maior Score, e o que for lido serve a todas. RE divide a cota entre
+Fiança (`LINKEDIN_COTA_RE_FIANCA`, 5) e Patrimonial e Transportes (o resto). A cada rodada as cotas com saldo se alternam; a vaga que uma vertical não usa (por
 não ter o que consultar) passa para as outras.
 
 **Fluxo de Saúde**, um passo por vez:
@@ -183,7 +191,11 @@ não ter o que consultar) passa para as outras.
    Sales Navigator, usa a lista comum de funcionários da página.
 
 Nas empresas com Saúde ou LF, só o perfil do contato do negócio aberto é lido; os outros vêm das listas.
-RE segue, por enquanto, a leitura geral: **ler** (perfil, ou página da
+**Fluxo de RE**: setor e funcionários (a página só é lida se faltarem); se algum produto faz sentido e ninguém
+da área que decide é conhecido (a ponte já pode ser), a lista do Sales Navigator pelos cargos do produto
+(`linkedin_cargos_fianca` ou `linkedin_cargos_patrimonial`, data própria `pessoas_re`).
+
+Empresas sem vertical conhecida (raro) seguem a leitura geral: **ler** (perfil, ou página da
 empresa com decisores e posts), **buscar** (procura pelo nome; a pessoa só é aceita se o nome e a
 empresa conferirem no título, e a empresa pelo domínio ou pelo nome com local no Brasil) e
 **funcionários** (lista de até 50 pessoas da página da empresa, quando falta alguém da área que

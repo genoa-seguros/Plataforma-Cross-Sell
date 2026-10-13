@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from crosssell.models import Empresa, Noticia, Pessoa
-from crosssell.potencial import influencia, potencial, produto_lf, produtos_lf
+from crosssell.potencial import areas_re, influencia, potencial, produto_lf, produto_re, produtos_lf, produtos_re
 
 
 def empresa(**kw) -> Empresa:
@@ -109,11 +109,25 @@ def test_linhas_financeiras_site_lido_pela_ia_e_portais():
     assert "profissional: grandes clientes" not in " ".join(textos(potencial("linhas_financeiras", e, None)))
 
 
-def test_re_galpao_e_industria_movem_o_ponteiro():
-    # Em RE o perfil vem do setor do LinkedIn (o CNAE só vale para as regras de Linhas Financeiras)
+def test_re_por_produto_fianca_patrimonial_e_transportes():
+    # Em RE o setor vem do LinkedIn (o CNAE só vale para as regras de Linhas Financeiras)
+    assert produto_re("Seguro Fiança Locatícia") == "fianca" and produto_re("Capitalização") == "fianca"
+    assert produto_re("Empresarial") == "patrimonial" and produto_re("RCTR-C Transportes") == "transportes"
     transp = empresa(nome="Rota Sul", setor="Transporte rodoviário de carga", funcionarios=300)
-    escritorio = empresa(nome="Consultoria X", setor="Consultoria", funcionarios=30)
-    a, b = potencial("ramos_elementares", transp, None), potencial("ramos_elementares", escritorio, None)
-    assert a["score"] > b["score"]
-    assert any("galpão/indústria/frota" in t for t in textos(a))
-    assert "escritório: incêndio/empresarial básico" in textos(b)
+    voke = empresa(nome="Voke", setor="Distribuidora de hardware", descricao="Galpão com estoque de equipamentos",
+                   funcionarios=80)
+    consultoria = empresa(nome="Consultoria X", setor="Consultoria", funcionarios=400, noticias_em=datetime(2026, 9, 1))
+    pequena = empresa(nome="Consultoria Y", setor="Consultoria", funcionarios=30)
+    assert [x["produto"] for x in produtos_re(transp) if x["sugerido"]] == ["Transportes"]
+    assert [x["produto"] for x in produtos_re(voke) if x["sugerido"]] == ["Patrimonial/Roubo"]
+    assert [x["produto"] for x in produtos_re(consultoria) if x["sugerido"]] == ["Fiança"]
+    assert not [x for x in produtos_re(pequena) if x["sugerido"]]  # escritório com menos de 50 funcionários
+    assert "Fiança: escritório com menos de 50 funcionários" in textos(potencial("ramos_elementares", pequena, None))
+    assert potencial("ramos_elementares", consultoria, None)["score"] > potencial("ramos_elementares", pequena, None)["score"]
+    # Notícia de nova sede pesa no momento
+    consultoria.noticias.append(Noticia(titulo="Consultoria X inaugura nova sede na Faria Lima"))
+    assert any(t.startswith("momento: Consultoria X inaugura nova sede") for t in
+               textos(potencial("ramos_elementares", consultoria, None)))
+    # Quem decide cada produto
+    assert areas_re(["fianca"]) == ["financeiro", "juridico"]
+    assert areas_re(["patrimonial", "transportes"]) == ["compras", "facilities", "logistica", "operacoes"]

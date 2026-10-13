@@ -142,14 +142,18 @@ _AREA_REGRAS = [
                    r"fiscal|tribut\w*|fp&a)\b"),
     ("juridico", r"\b(juridic\w*|legal|advogad\w*|lawyer|counsel|compliance|clo)\b"),
     ("riscos", r"\b(riscos?|risk|seguros|insurance|auditoria|audit)\b"),
-    ("operacoes", r"\b(coo|chief operating|operac\w*|operations|facilities|manutencao|logistic\w*|supply|industrial|planta|"
-                  r"producao|patrimonio|infraestrutura predial)\b"),
+    # Quem decide os produtos de RE (Patrimonial e Transportes): compras, facilities, logística e operações
+    ("compras", r"\b(compras?|comprador\w*|procurement|purchasing|buyer|suprimentos?|sourcing)\b"),
+    ("facilities", r"\b(facilities|facility|predial|manutencao|patrimonio|infraestrutura predial|servicos gerais)\b"),
+    ("logistica", r"\b(logistic\w*|logistics|supply chain|supply|armazem|armazenagem|distribuicao|expedicao|frota|fleet)\b"),
+    ("operacoes", r"\b(coo|chief operating|operac\w*|operations|industrial|planta|producao)\b"),
     ("ti", r"\b(cto|cio|ciso|ti|it|tecnologia|technology|sistemas)\b"),
     ("executivo", r"\b(ceo|chief executive|managing director|presidente|president|fundador|founder|cofundador|co-founder|socio|socia|owner|"
                   r"diretor geral|country manager|general manager)\b"),
 ]
 AREA_LABEL = {"rh": "RH / Pessoas", "financeiro": "Financeiro", "juridico": "Jurídico", "riscos": "Riscos",
-              "operacoes": "Operações", "ti": "TI", "executivo": "Executivo"}
+              "operacoes": "Operações", "compras": "Compras / Suprimentos", "facilities": "Facilities",
+              "logistica": "Logística", "ti": "TI", "executivo": "Executivo"}
 
 
 def classificar_area(texto: str | None) -> str | None:

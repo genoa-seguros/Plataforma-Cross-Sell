@@ -284,9 +284,10 @@ def test_saude_com_sales_navigator_decide_a_praca_e_acha_quem_decide(db, setting
     # Na praça: lista de quem decide por cargo (Sales Navigator), paga pela cota de pessoas de Saúde
     pessoas = [p["def"]["then"][0]["filter"]["positions"] for p in api.pedidos.values()
                if p["def"]["actionType"] == "nv.openCompanyPage" and p["def"]["then"][0].get("filter")]
-    # Uma lista de Saúde (RH) e uma de Linhas Financeiras (cargos-chave): a Alfa tem as duas oportunidades
-    assert sorted("diretor de rh" in x for x in pessoas) == [False, True]
+    # Uma lista por vertical: Saúde (RH), Linhas Financeiras (cargos-chave) e RE (quem decide o produto)
+    assert sum("diretor de rh" in x for x in pessoas) == 1
     assert any("cfo" in x and "dpo" in x for x in pessoas)
+    assert len(pessoas) == 3
     # Cada lista paga a cota da sua vertical: Saúde (grupo pessoas) e LF (a Alfa tem card no funil Pipo Saúde)
     peds = {p.area: p for p in db.scalars(select(LinkedinPedido).where(LinkedinPedido.acao == "pessoas"))}
     assert (peds[None].vertical, peds[None].grupo) == ("saude", "pessoas")

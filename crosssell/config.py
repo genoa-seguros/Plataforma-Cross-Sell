@@ -14,7 +14,9 @@ VERTICAL_LABEL = {
 AREAS_VERTICAL = {
     "saude": ("rh",),
     "linhas_financeiras": ("financeiro", "juridico", "riscos"),
-    "ramos_elementares": ("operacoes", "riscos", "financeiro"),
+    # RE por produto (config/criterios.yaml, ramos_elementares.areas): Fiança → Financeiro e Jurídico;
+    # Patrimonial e Transportes → Compras, Facilities, Logística e Operações. Esta é a lista sem produto conhecido.
+    "ramos_elementares": ("compras", "facilities", "logistica", "operacoes", "financeiro", "juridico"),
 }
 
 
@@ -64,6 +66,7 @@ class Settings(BaseSettings):
     linkedin_cota_lf_pipo: int = 5  # da cota de LF, para empresas com card no funil Pipo Saúde (o resto, outros funis)
     linkedin_funil_pipo: int = 34
     linkedin_cota_re: int = 10
+    linkedin_cota_re_fianca: int = 5  # da cota de RE, para empresas de Fiança (o resto: Patrimonial e Transportes)
     # Sales Navigator na conta do LinkedIn: onde estão os funcionários (praça) e a lista de quem decide por cargo.
     # Ligar só depois de testar com `crosssell linkedin-teste` no servidor.
     linkedin_sales_navigator: bool = False

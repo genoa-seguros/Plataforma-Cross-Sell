@@ -62,7 +62,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   (page → praça via Sales Navigator employee locations → decision makers by cargo; SN actions only with
   `LINKEDIN_SALES_NAVIGATOR=true`, test first with `crosssell linkedin-teste`). LF companies follow `_passos_lf` (page
   only if VC/setor/funcionários/urn is missing → SN list of `linhas_financeiras.linkedin_cargos`, stored under
-  `linkedin_areas["pessoas_lf"]`, re-read early after an M&A news item); LF quota split by `grupo_lf` (Pipo funnel or not). Rate-limited by
+  `linkedin_areas["pessoas_lf"]`, re-read early after an M&A news item); LF quota split by `grupo_lf` (Pipo funnel or not). RE companies follow `_passos_re` (setor/funcionários → if a
+  product fits and nobody from its area is known, SN list by product cargos under `linkedin_areas["pessoas_re"]`); RE quota
+  split by `grupo_re_empresa` (fianca / patrimonial). Rate-limited by
   `LINKEDIN_LOTE`/`LINKEDIN_LIMITE_DIA` and tracked in
   `LinkedinPedido` rows.
 - **Web** (`crosssell/web/app.py`): server-rendered Jinja templates for auth pages only. The main UI is a
@@ -74,10 +76,12 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   `ROTINA_INTERNA=true` makes the server run `crosssell rotina` in a background thread.
 - **Oportunidades shows only "analisadas"** (`tabela.VERTICAIS_OPORTUNIDADES`: `saude` and `linhas_financeiras`;
   `tabela.faltando()` says what is missing. Saúde: praça/cidade, funcionários, setor. LF (`faltando_lf`): Receita,
-  notícias, site (IA), cargos-chave. Both: quem decide, ponte por e-mail. `tabela.FINAIS` ("fora da praça", "MEI") never
-  enter, not even the queue). LF is per product (`potencial.FITS`: E&O, D&O, Cyber, IMI; `tabela.produtos_da_empresa`):
-  one row per company with suggested products, `tipo` "cross" (default view) or "mais_lf" (`?oferta=mais_lf`), and
-  `etiquetas` from open and lost (`Negocio.perdido_em`) LF deals. LF Score: profissionalização, momento (news from
+  notícias, site (IA), cargos-chave. RE (`faltando_re`): setor, funcionários. All: quem decide, ponte por e-mail.
+  `tabela.FINAIS` ("fora da praça", "MEI", "sem produto de RE") never enter, not even the queue). LF and RE are per
+  product (`tabela.POR_PRODUTO`: `potencial.FITS` E&O, D&O, Cyber, IMI; `potencial.FITS_RE` Fiança, Patrimonial/Roubo,
+  Transportes; `tabela.produtos_da_empresa`): one row per company with suggested products, `tipo` "cross" (default view)
+  or "mais" (`?oferta=mais`), and `etiquetas` from open and lost (`Negocio.perdido_em`) deals. RE's quem decide depends
+  on the product (`potencial.areas_re`, `ramos_elementares.areas` in criterios.yaml); a ponte already in that area counts. LF Score: profissionalização, momento (news from
   `noticias.PORTAIS` weigh more), produto, influência. Employees and sector count only from LinkedIn or manual
   (`potencial.funcionarios_validos` / `setor_valido`); Pipedrive's are ignored and CNAE is not a sector. The ponte is
   e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled

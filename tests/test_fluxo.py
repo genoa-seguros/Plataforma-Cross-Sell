@@ -630,3 +630,33 @@ def test_quem_decide_saude_rh_ou_executivo_mas_nao_socio_da_receita(db, settings
     db.refresh(e)
     decide = tabela.quem_decide(db, e, "saude", nomes)
     assert "quem decide" not in tabela.faltando("saude", e, decide, True)  # sem RH, a founder decide
+
+
+def test_vincula_usuario_pelo_nome_e_na_hora_da_atividade(db, settings):
+    from tests.fakes import DADOS
+    fake = FakePipedrive()
+    client = carregar(db, settings, fake)
+    novo = Usuario(email="carla@innoaseguros.com.br", nome="Carla Souza", ativo=True)
+    db.add(novo)
+    db.commit()
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    usuarios = DADOS["users"]
+    try:  # no Pipedrive ela entra com outro e-mail; convidada depois da última sincronização
+        DADOS["users"] = usuarios + [{"id": 3, "email": "carla.souza@outro.com.br", "name": "Carla Souza"},
+                                     {"id": 4, "email": "x@y.com", "name": "Inativa", "active_flag": False}]
+        pipedrive.criar_atividade(db, client, empresa=neg(db, 4).empresa, pessoa_id=None, assunto="Ligar",
+                                  vencimento=tabela.semana(HOJE)[1], responsavel=novo,
+                                  criada_por=victor)
+        assert novo.pipedrive_user_id == 3 and fake.criadas[-1]["owner_id"] == 3
+        fantasma = Usuario(email="ze@innoaseguros.com.br", nome="Zé", ativo=True)
+        db.add(fantasma)
+        db.commit()
+        try:
+            pipedrive.criar_atividade(db, client, empresa=neg(db, 4).empresa, pessoa_id=None, assunto="Ligar",
+                                      vencimento=tabela.semana(HOJE)[1],
+                                      responsavel=fantasma, criada_por=victor)
+            assert False
+        except ValueError as exc:
+            assert "ze@innoaseguros.com.br" in str(exc)
+    finally:
+        DADOS["users"] = usuarios

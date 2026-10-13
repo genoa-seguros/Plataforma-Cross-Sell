@@ -199,3 +199,28 @@ def test_linkedin_lf_cota_pipo_e_ma_antecipa_releitura(db, settings):
                    titulo="Pipo"))
     db.commit()
     assert lk.grupo_lf(e, s) == "pipo"
+
+
+def test_site_montado_por_javascript_tenta_paginas_institucionais(db, settings):
+    """Site de JavaScript chega sem texto nem links: tenta /sobre, /quem-somos... E o "}" que a IA às vezes deixa sai."""
+    e = Empresa(razao_social="Cilia Tecnologia SA", nome_normalizado="cilia", dominio="cilia.com.br")
+    db.add(e)
+    db.commit()
+    pedidas = []
+
+    def handler(req: httpx.Request):
+        pedidas.append(req.url.path)
+        if req.url.path == "/quem-somos":
+            return httpx.Response(200, text="<html><body><p>" + "Plataforma de orçamentação para seguradoras. " * 10
+                                  + "</p></body></html>", headers={"content-type": "text/html"})
+        if req.url.path in ("", "/"):
+            return httpx.Response(200, text='<html><body><div id="root"></div><script>app()</script></body></html>',
+                                  headers={"content-type": "text/html"})
+        return httpx.Response(404, text="")
+
+    falso = _ClaudeFalso(json.dumps({**RESPOSTA, "resumo": "Software para seguradoras.}"}))
+    leitor = site_ia.LeitorSite(settings, client=falso, modelo="claude-sonnet-5-5")
+    res = site_ia.ler_empresa(e, leitor, httpx.Client(transport=httpx.MockTransport(handler)))
+    assert pedidas[:3] == ["/", "/sobre", "/quem-somos"]
+    assert res["paginas"] == ["https://cilia.com.br", "https://cilia.com.br/quem-somos"]
+    assert res["resumo"] == "Software para seguradoras."

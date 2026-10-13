@@ -418,6 +418,7 @@ def test_lista_do_sales_navigator_so_guarda_quem_decide(db):
              ("Thiago Fagundes", "Cientista de dados"), ("Brayan Dauria", "Product Owner"), ("Noah Stern", "Investor")]
     lk.receber(db, [{"id_alvo": f"E{cilia.id}", "tipo": "empresa", "acao": "pessoas",
                      "funcionarios_area": [{"nome": n, "headline": h} for n, h in lista], "capturado_em": "2026-10-13T10:00:00"}])
+    db.expire_all()
     assert sorted(p.nome for p in cilia.pessoas) == ["Catarine Sales", "Daniel Barbosa", "Felipe Affonso", "Thomas Khalil"]
     assert lk.pessoa_relevante("Gerente de Controladoria e Finanças", "linhas_financeiras")
     assert not lk.pessoa_relevante("Gerente de Controladoria e Finanças", None)  # em Saúde decide o RH (ou executivo)

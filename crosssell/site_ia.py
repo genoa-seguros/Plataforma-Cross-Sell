@@ -30,6 +30,8 @@ log = logging.getLogger(__name__)
 VALIDADE_DIAS = 180  # o site é relido depois disso
 MAX_TEXTO = 15000  # caracteres de texto do site enviados à IA (página inicial + internas)
 MAX_PAGINAS_INTERNAS = 3
+# Site montado por JavaScript chega sem texto e sem links: tenta direto os endereços institucionais mais comuns
+CAMINHOS_COMUNS = ("/sobre", "/quem-somos", "/sobre-nos", "/a-empresa", "/empresa", "/about", "/about-us")
 _INTERNAS = re.compile(r"sobre|about|quem-somos|quem_somos|empresa|clientes|clients|cases|investidores|investors|"
                        r"ri\b|servicos|services|solucoes|solutions|portfolio", re.I)
 
@@ -37,10 +39,12 @@ SISTEMA = """Você analisa o site de uma empresa brasileira para uma corretora d
 (D&O, E&O, Cyber e IMI, o seguro de fundos e gestoras).
 
 Você recebe o texto de algumas páginas do site. Responda só com base no que está escrito:
-- fundo_gestora: a própria empresa é um fundo de investimento, gestora de recursos, asset, private equity ou venture \
-capital.
+- fundo_gestora: a atividade PRINCIPAL da empresa é ser fundo de investimento, gestora de recursos, asset, private \
+equity ou venture capital. Se a gestão de recursos for só uma área ou unidade de outro negócio (ex.: banco, \
+instituição de pagamento ou fintech que também tem uma gestora), responda false e marque fundos_investidores.
 - fundos_investidores: a empresa diz ter fundos, investidores ou aporte de capital (venture capital, private equity, \
-rodada de investimento, empresa investida, capital aberto na bolsa). Cite os nomes em "investidores" quando houver.
+rodada de investimento, empresa investida, capital aberto na bolsa), ou tem uma área de gestão de fundos. Cite os nomes \
+em "investidores" quando houver.
 - grandes_clientes: o site mostra clientes grandes ou conhecidos (logos, cases, depoimentos de empresas). Cite até 5 \
 nomes em "clientes".
 - servico_intelectual: a empresa vende conhecimento ou serviço profissional (consultoria, tecnologia/software, \
@@ -144,15 +148,22 @@ def baixar_site(url: str, http: httpx.Client) -> tuple[str, list[str]]:
         if urlparse(u).netloc.removeprefix("www.") == host and u not in paginas and u not in internas \
                 and _INTERNAS.search(urlparse(u).path or ""):
             internas.append(u)
-    for u in internas[:MAX_PAGINAS_INTERNAS]:
+    if len(texto) < 200 and not internas:
+        raiz = f"{urlparse(base).scheme}://{urlparse(base).netloc}"
+        internas = [raiz + c for c in CAMINHOS_COMUNS]
+    lidas = 0
+    for u in internas:
+        if lidas >= MAX_PAGINAS_INTERNAS:
+            break
         try:
             ri = http.get(u)
         except httpx.HTTPError:
             continue
-        if ri.status_code == 200:
-            t, _ = texto_da_pagina(ri.text)
-            paginas.append(u)
-            blocos.append(f"<pagina url=\"{u}\">\n{t[:MAX_TEXTO // 4]}\n</pagina>")
+        t = texto_da_pagina(ri.text)[0] if ri.status_code == 200 else ""
+        if len(t) >= 40:  # página vazia (erro ou só script) não conta
+            paginas.append(str(ri.url))
+            blocos.append(f"<pagina url=\"{ri.url}\">\n{t[:MAX_TEXTO // 4]}\n</pagina>")
+            lidas += 1
     return "\n\n".join(blocos)[:MAX_TEXTO], paginas
 
 
@@ -210,7 +221,8 @@ def ler_empresa(e: Empresa, leitor: LeitorSite, http: httpx.Client) -> dict | No
     if res is None:
         return None
     res["investidores"], res["clientes"] = res.get("investidores", [])[:5], res.get("clientes", [])[:5]
-    res["resumo"], res["servico"] = (res.get("resumo") or "")[:300], (res.get("servico") or "")[:120]
+    limpo = lambda t: (t or "").strip().rstrip("}").strip()  # noqa: E731  (às vezes a IA deixa um "}" no fim)
+    res["resumo"], res["servico"] = limpo(res.get("resumo"))[:300], limpo(res.get("servico"))[:120]
     return {**res, "site": url, "paginas": paginas, "modelo": leitor.modelo}
 
 

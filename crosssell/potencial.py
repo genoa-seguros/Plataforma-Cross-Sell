@@ -8,7 +8,8 @@ Potencial  = critérios da vertical, pesos e palavras em config/criterios.yaml:
   LF      influência · profissionalização (investidores, S.A., conselho, grandes clientes, site) ·
           momento (M&A/aporte nas notícias, mais peso nos portais) · encaixe do produto (E&O:
           serviço intelectual; D&O: gestão profissional; Cyber: CTO/DPO; IMI: fundos e gestoras)
-  RE      influência · perfil (galpões, indústrias, transportadoras) · porte
+  RE      encaixe do produto (Fiança: escritório com 50+ funcionários; Patrimonial/Roubo: grandes ativos;
+          Transportes: cargas e frota) · porte · influência · momento (nova sede, expansão)
   Canais  só influência
 
 Cada critério devolve um valor de 0 a 1 e uma frase para a coluna "Por quê", com sinal
@@ -450,16 +451,114 @@ def c_momento(e: Empresa | None) -> dict:
     return _crit("momento", 0.3, None, "")
 
 
-def c_perfil_re(e: Empresa | None) -> dict:
-    t = texto_empresa(e, cnae=False)
-    achou = _acha(t, criterios()["ramos_elementares"]["perfil_forte"])
-    if achou:
-        return _crit("perfil", 1.0, f"{_setor_rotulo(e)}: galpão/indústria/frota move o ponteiro", "+")
-    if (funcionarios_validos(e) or 0) >= 200:
-        return _crit("perfil", 0.6, "empresa grande em escritório: empresarial e seguro fiança", "+")
+# --- Ramos Elementares (por produto) -------------------------------------------------
+
+def produto_re(produto: str | None) -> str | None:
+    t = _norm(produto)
+    if re.search(r"fianca|capitaliza|locat|garantia de aluguel", t):
+        return "fianca"
+    if re.search(r"transport|\bcarga|\brctr|\brcf-?dc|\bfrete", t):
+        return "transportes"
+    if re.search(r"empresarial|patrimon|roubo|incendio|riscos nomeados|risco operacional|riscos operacionais|"
+                 r"compreensivo|multirrisco|estoque", t):
+        return "patrimonial"
+    return None
+
+
+def _re() -> dict:
+    return criterios()["ramos_elementares"]
+
+
+def fit_fianca(e: Empresa | None) -> tuple[float, str | None, str]:
+    """Empresa de escritório com muitos funcionários: aluga salas e precisa de fiança ou capitalização."""
+    c, t = _re(), texto_empresa(e, cnae=False)
+    minimo = c.get("fianca_funcionarios_minimo", 50)
+    func = funcionarios_validos(e)
     if not t:
-        return _crit("perfil", SEM_DADO, "setor desconhecido", "?")
-    return _crit("perfil", 0.35, "escritório: incêndio/empresarial básico", "")
+        return SEM_DADO, "Fiança: setor desconhecido", "?"
+    if not _acha(t, c.get("escritorio", [])):
+        return 0.2, None, ""
+    if func is None:
+        return SEM_DADO, f"Fiança: escritório ({_setor_rotulo(e)}), falta o número de funcionários", "?"
+    if func < minimo:
+        return 0.25, f"Fiança: escritório com menos de {minimo} funcionários", "-"
+    valor = min(1.0, 0.6 + 0.4 * math.log10(func / minimo))  # 50 → 0,6 · 500+ → 1
+    return valor, f"Fiança: escritório com {func:,} funcionários ({_setor_rotulo(e)})".replace(",", "."), "+"
+
+
+def fit_patrimonial(e: Empresa | None) -> tuple[float, str | None, str]:
+    achou = _acha(texto_empresa(e, cnae=False), _re().get("grandes_ativos", []))
+    if achou:
+        return 1.0, f"Patrimonial/Roubo: grandes ativos ({_setor_rotulo(e)})", "+"
+    return 0.2, None, ""
+
+
+def fit_transportes(e: Empresa | None) -> tuple[float, str | None, str]:
+    achou = _acha(texto_empresa(e, cnae=False), _re().get("transportes", []))
+    if achou:
+        return 1.0, f"Transportes: transporte de cargas ou frota ({_setor_rotulo(e)})", "+"
+    return 0.1, None, ""
+
+
+# Produtos de RE que a plataforma sugere
+FITS_RE = {"fianca": ("Fiança", fit_fianca), "patrimonial": ("Patrimonial/Roubo", fit_patrimonial),
+           "transportes": ("Transportes", fit_transportes)}
+
+
+def produtos_re(e: Empresa | None, excluir: set[str] = frozenset()) -> list[dict]:
+    """Encaixe de cada produto de RE, do melhor para o pior, sem os de `excluir` (já tem ou negocia)."""
+    saida = []
+    for chave, (nome, f) in FITS_RE.items():
+        if chave in excluir:
+            continue
+        v, txt, sinal = f(e)
+        saida.append({"chave": chave, "produto": nome, "valor": round(v, 3), "texto": txt, "sinal": sinal,
+                      "sugerido": v >= SUGERE_A_PARTIR})
+    return sorted(saida, key=lambda x: -x["valor"])
+
+
+def c_produto_re(e: Empresa | None, produto: str | None, excluir: set[str] = frozenset()) -> dict:
+    alvo = produto_re(produto)
+    if alvo:
+        v, txt, sinal = FITS_RE[alvo][1](e)
+        return _crit("produto", v, txt or f"{FITS_RE[alvo][0]}: sem sinal forte", sinal)
+    melhores = produtos_re(e, excluir)
+    if not melhores:
+        return _crit("produto", 0.0, "já tem ou negocia todos os produtos de RE", "")
+    m = melhores[0]
+    return _crit("produto", m["valor"], m["texto"] or "nenhum produto de RE com encaixe forte", m["sinal"])
+
+
+def c_momento_re(e: Empresa | None) -> dict:
+    """Notícia de nova sede ou escritório (Fiança), expansão, fábrica ou galpão novo (Patrimonial)."""
+    from crosssell.connectors.noticias import portal
+
+    if e is None or e.noticias_em is None:
+        return _crit("momento", SEM_DADO, "notícias ainda não buscadas", "?")
+    achadas = [x for x in e.noticias if _acha(_norm(x.titulo), _re().get("momento", []))]
+    if achadas:
+        x = next((n for n in achadas if portal(n.site)), achadas[0])
+        return _crit("momento", 1.0 if portal(x.site) else 0.8, f"momento: {x.titulo[:80]}", "+")
+    return _crit("momento", 0.4 if e.noticias else 0.3, None, "")
+
+
+def areas_re(chaves) -> list[str]:
+    """Áreas que decidem os produtos de RE indicados (sem repetir, na ordem da configuração)."""
+    areas: list[str] = []
+    for k in chaves:
+        for a in (_re().get("areas") or {}).get(k, []):
+            if a not in areas:
+                areas.append(a)
+    return areas
+
+
+def grupo_re(chave: str | None) -> str:
+    """Grupo da cota do LinkedIn de RE: Fiança ou Patrimonial (que inclui Transportes)."""
+    return "fianca" if chave == "fianca" else "patrimonial"
+
+
+def cargos_re(grupo: str) -> list[str]:
+    return list(_re().get(f"linkedin_cargos_{grupo}") or [])
 
 
 def c_influencia(p: Pessoa | None) -> dict:
@@ -480,7 +579,8 @@ def potencial(vertical: str | None, e: Empresa | None, p: Pessoa | None, n: Nego
         crit = [c_influencia(p), c_profissionalizacao(e), c_momento(e),
                 c_produto_lf(e, produto or (n.produto if n else None), excluir)]
     elif vertical == "ramos_elementares":
-        crit = [c_influencia(p), c_perfil_re(e), c_funcionarios(n, e, saude=False, nome="porte")]
+        crit = [c_influencia(p), c_produto_re(e, produto or (n.produto if n else None), excluir),
+                c_funcionarios(n, e, saude=False, nome="porte"), c_momento_re(e)]
     else:
         crit = [c_influencia(p)]
     pesos = criterios().get(vertical, {}).get("pesos", {"influencia": 100})

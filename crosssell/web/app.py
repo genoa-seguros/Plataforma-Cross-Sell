@@ -620,8 +620,8 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                       _u: Usuario = Depends(usuario_atual)):
     """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
     rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead.
-    oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais_lf (mais produtos de LF para quem
-    já tem ou negocia LF)."""
+    oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais (mais produtos de LF ou RE para quem
+    já tem ou negocia a vertical)."""
     todas, relacoes = OPORTUNIDADES.obter(db)
     if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
         return {"itens": [o for o in todas if o["empresa"]["id"] == empresa]}
@@ -638,7 +638,7 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())
                  and (not tipo or (tipo == "cliente") == o["cliente"])
                  and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
-    ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais_lf")}
+    ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
     filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ofertas else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
             "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas}
@@ -896,6 +896,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
         "funcionariosManualDias": lk.FUNCIONARIOS_MANUAL_DIAS,
         "siteIa": {"ativo": s.site_ia_ativo, "lote": s.site_ia_lote, "validadeDias": site_ia.VALIDADE_DIAS,
                    "configurado": bool(s.anthropic_api_key)},
+        "re": {"fiancaMinimo": criterios()["ramos_elementares"].get("fianca_funcionarios_minimo", 50)},
         "lf": {"pesos": criterios()["linhas_financeiras"]["pesos"], "cargos": criterios()["linhas_financeiras"].get("linkedin_cargos", []),
                "portais": list(PORTAIS.values()), "funilPipo": s.linkedin_funil_pipo},
         "email": {"configurado": bool(s.ms_tenant_id and s.ms_client_id), "temperatura": bool(s.anthropic_api_key),

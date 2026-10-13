@@ -82,7 +82,34 @@ linhas_financeiras:
     data protection, encarregado de dados]
 
 ramos_elementares:
-  pesos: {influencia: 30, perfil: 45, porte: 25}
-  # Quem move o ponteiro: galpões, indústrias, transportadoras
-  perfil_forte: [galpao, armazem, armazenagem, centro de distribuicao, logistic, industria, fabricacao, manufatura,
-    metalurg, quimic, plastic, alimentos, frigorific, papel, textil, tecelagem, transporte, transportadora, frota]
+  # Encaixe do produto: o melhor entre Fiança, Patrimonial/Roubo e Transportes que a empresa ainda não tem nem negocia.
+  # Porte: funcionários (Fiança maior; mais ativos). Momento: nova sede, mudança de escritório, expansão, nova fábrica.
+  pesos: {produto: 35, porte: 25, influencia: 25, momento: 15}
+  # Fiança/capitalização: empresa de escritório (setor abaixo) a partir de N funcionários (LinkedIn ou à mão)
+  fianca_funcionarios_minimo: 50
+  escritorio: [tecnologia, technology, software, saas, internet, fintech, financeir, banco, pagamento, seguros, corretora,
+    consultoria, advocacia, juridic, servicos juridicos, contab, auditoria, marketing, publicidade, comunicacao, midia,
+    educacao, ensino, recrutamento, recursos humanos, imobiliari, telecom, servicos profissionais, gestao, investimento,
+    asset, private equity, venture capital, e-commerce, ecommerce]
+  # Patrimonial/Roubo: grandes ativos (usinas, indústrias, fábricas, galpões com estoque de valor)
+  grandes_ativos: [usina, energia, geracao de energia, eletrica, industria, industrial, fabricacao, fabrica, manufatura,
+    metalurg, siderurg, quimic, petroquim, plastic, alimentos, bebidas, frigorific, papel, celulose, textil, tecelagem,
+    mineracao, mineradora, agronegocio, agroindustria, galpao, armazem, armazenagem, centro de distribuicao, estoque,
+    hardware, eletronicos, equipamentos, atacad, distribuidora, construcao]
+  # Transportes: transporte de cargas, frota
+  transportes: [transporte, transportadora, cargas, frota, rodoviario, logistic, frete, mudancas]
+  # Notícias de momento: nova sede ou escritório (Fiança), expansão, fábrica ou galpão novo (Patrimonial)
+  momento: [nova sede, novo escritorio, muda de sede, mudanca de sede, muda de escritorio, inaugura, inauguracao, expansao,
+    expande, amplia, ampliacao, nova fabrica, nova planta, novo galpao, novo centro de distribuicao, nova unidade,
+    novo cd, investe, investimento de]
+  # Quem decide cada produto (áreas do cargo)
+  areas:
+    fianca: [financeiro, juridico]
+    patrimonial: [compras, facilities, logistica, operacoes, riscos]
+    transportes: [compras, facilities, logistica, operacoes, riscos]
+  # Cargos procurados na lista do Sales Navigator, por grupo da cota
+  linkedin_cargos_fianca: [cfo, diretor financeiro, diretora financeira, gerente financeiro, gerente financeira,
+    controller, head de financas, juridico, legal, general counsel, gerente juridico, gerente juridica]
+  linkedin_cargos_patrimonial: [compras, procurement, suprimentos, facilities, logistica, supply chain, operacoes,
+    coo, diretor de operacoes, diretora de operacoes, gerente de operacoes, gerente industrial, diretor industrial,
+    riscos, gerente de riscos, seguros, gerente de seguros, risk manager]

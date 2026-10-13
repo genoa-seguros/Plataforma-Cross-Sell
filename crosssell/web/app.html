@@ -257,7 +257,7 @@ function aviso(msg){ if (msg === OBSOLETA) return; const a = document.getElement
 
 /* ---------- Explicação dos títulos das colunas (passar o mouse ou focar com Tab) ---------- */
 const AJUDA = {
-  "Potencial": "<b>Quão bom é este negócio pelos critérios da vertical</b>, de 0 a 100. Ordena a tabela.<br>• <b>Saúde</b>: influência 30, funcionários 25, qualificação do time 20, localização 15, RH estruturado 10.<br>• <b>Linhas Financeiras</b>: profissionalização 40, influência 25, encaixe do produto 20 (E&O, D&O, Cyber, IMI), momento 15 (M&A e aporte nas notícias).<br>• <b>RE</b>: influência 30, perfil 45 (galpão, indústria, frota), porte 25.<br>Passe o mouse no número para ver a nota de cada critério. Abaixo dele, o Score de Influência do contato.",
+  "Potencial": "<b>Quão bom é este negócio pelos critérios da vertical</b>, de 0 a 100. Ordena a tabela.<br>• <b>Saúde</b>: influência 30, funcionários 25, qualificação do time 20, localização 15, RH estruturado 10.<br>• <b>Linhas Financeiras</b>: profissionalização 40, influência 25, encaixe do produto 20 (E&O, D&O, Cyber, IMI), momento 15 (M&A e aporte nas notícias).<br>• <b>RE</b>: encaixe do produto 35 (Fiança, Patrimonial/Roubo, Transportes), porte 25, influência 25, momento 15 (nova sede, expansão).<br>Passe o mouse no número para ver a nota de cada critério. Abaixo dele, o Score de Influência do contato.",
   "op:Score": "<b>Score da oportunidade</b>, de 0 a 100, com os critérios da vertical da oportunidade (veja <i>Critérios do Score</i> acima da tabela). Ordena a tabela. Passe o mouse no número para ver a nota de cada critério; abaixo dele, a influência de quem decide. O porquê está na coluna <i>Por quê</i>.",
   "op:Próxima atividade": "<b>Próxima atividade aberta</b> para esta empresa fora de negócios. <i>Criar atividade</i> registra no Pipedrive, na organização (e na pessoa, se escolhida), e aparece em To-dos da semana.",
   "op:Empresa": "<b>Empresa da oportunidade.</b> <b>Cliente</b>: tem seguro vigente conosco. <b>Lead</b>: ainda não tem. Funcionários (✎ para informar à mão: vale sobre o LinkedIn por 180 dias) e local (cidade/UF da Receita, do endereço no Pipedrive ou da sede no LinkedIn).",
@@ -265,8 +265,8 @@ const AJUDA = {
   "Cliente/Lead": "<b>Empresa e contato do negócio.</b> <b>Cliente</b>: tem pelo menos um seguro vigente conosco. <b>Lead</b>: nenhum. Funcionários: LinkedIn (preferência) ou Pipedrive; em Saúde, as vidas do negócio. Se o negócio não tem contato, aparece o contato mais influente da empresa.",
   "Empresa": "<b>Empresa da oportunidade.</b> <b>Cliente</b>: tem seguro vigente conosco. <b>Lead</b>: ainda não tem, mas está em negociação em outra vertical.",
   "Temperatura": "<b>Abertura do contato</b>, lida pela IA nas últimas respostas dele aos e-mails da equipe: Muita, Média ou Pouca abertura, com o motivo. O texto dos e-mails não fica guardado.",
-  "Quem decide": "<b>Quem costuma decidir esta vertical na empresa</b>, pela área do cargo (Pipedrive) ou do título no LinkedIn: Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos, Financeiro. Sem ninguém da área, o executivo (CEO, sócio).<br><b>infl.</b> = Score de Influência. Se ninguém da área tem relação com a equipe, a <b>Ponte</b> é o contato da empresa com relação mais forte e quem da equipe fala com ele.",
-  "Quem decide · ponte": "<b>Quem costuma decidir a vertical da oportunidade</b>, pela área do cargo (Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → Operações, Riscos, Financeiro). <b>infl.</b> = Score de Influência. <b>Ponte</b>: contato da empresa com relação mais forte com a equipe, que pode apresentar quem decide.",
+  "Quem decide": "<b>Quem costuma decidir esta vertical na empresa</b>, pela área do cargo (Pipedrive) ou do título no LinkedIn: Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → pelo produto (Fiança: Financeiro, Jurídico; Patrimonial e Transportes: Compras, Facilities, Logística, Operações, Riscos). Sem ninguém da área, o executivo (CEO, sócio).<br><b>infl.</b> = Score de Influência. Se ninguém da área tem relação com a equipe, a <b>Ponte</b> é o contato da empresa com relação mais forte e quem da equipe fala com ele.",
+  "Quem decide · ponte": "<b>Quem costuma decidir a vertical da oportunidade</b>, pela área do cargo (Saúde → RH/Pessoas; Linhas Financeiras → Financeiro, Jurídico, Riscos; RE → pelo produto: Fiança → Financeiro, Jurídico; Patrimonial e Transportes → Compras, Facilities, Logística, Operações, Riscos). <b>infl.</b> = Score de Influência. <b>Ponte</b>: contato da empresa com relação mais forte com a equipe, que pode apresentar quem decide.",
   "Seguros vigentes": "<b>O que a empresa já tem conosco</b>, por produto. Vigente = negócio ganho no Pipedrive com fim de vigência depois de hoje. Saúde ganho vale até alguém desmarcar <i>Ainda é cliente Saúde</i> (contrato sem fim de vigência). Também contam apólice ativa no Zeca e a caixa marcada.",
   "Já tem conosco": "<b>Seguros vigentes</b> da empresa, por produto (mesma regra da aba Negócios).",
   "Em negociação": "<b>Negócios abertos</b> da empresa em outras verticais. Leads aparecem aqui porque já estão sendo trabalhados.",
@@ -309,9 +309,10 @@ function marcarAjuda(raiz = document) {
 })();
 
 /* ---------- Camada de dados: servidor real ou prévia embutida ---------- */
-// O que nunca entra em Oportunidades (nem na fila): Saúde fora da praça e MEI em Linhas Financeiras
-const FINAIS = ["fora da praça", "MEI"];
-const FINAL_TXT = {"fora da praça": "fora da praça: não entra em Oportunidades de Saúde", "MEI": "MEI: não entra em Linhas Financeiras"};
+// O que nunca entra em Oportunidades (nem na fila): Saúde fora da praça, MEI em LF, RE sem produto que faça sentido
+const FINAIS = ["fora da praça", "MEI", "sem produto de RE"];
+const FINAL_TXT = {"fora da praça": "fora da praça: não entra em Oportunidades de Saúde", "MEI": "MEI: não entra em Linhas Financeiras",
+  "sem produto de RE": "setor e porte sem produto de RE: não entra"};
 // Prévia (exportar_preview.py, sem servidor): os mesmos filtros e a paginação de /api/oportunidades
 function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
@@ -321,7 +322,7 @@ function opsPrevia(path) {
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel"), oferta = p.get("oferta") || "cross";
   const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
-  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais_lf: filtradas.filter(o => o.tipo === "mais_lf").length};
+  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length};
   const ls = filtradas.filter(o => (o.tipo || "cross") === oferta);
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas};
 }
@@ -700,7 +701,7 @@ function opHTML(o) {
       <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}
         <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
     <td class="negociando"><div class="chips">${o.negociando.map(v => `<span title="${esc(v.produto)}${v.etapa ? " · " + esc(v.etapa) : ""}">${vchip(v.vertical, v.produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
-    <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais_lf" ? ' <span class="sub" title="A empresa já tem ou negocia Linhas Financeiras">mais produtos</span>' : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
+    <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais" ? ` <span class="sub" title="A empresa já tem ou negocia ${esc(o.verticalNome)}">mais produtos</span>` : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
       ${(o.produtos || []).length ? `<div class="chips" style="margin-top:4px" aria-label="Produtos sugeridos">${o.produtos.map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")} · encaixe ${Math.round(x.valor * 100)}">${esc(x.produto)}</span>`).join("")}</div>` : ""}
       ${(o.etiquetas || []).map(t => `<div><span class="chip" style="--c:var(--warn);margin-top:4px">${esc(t)}</span></div>`).join("")}
       ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
@@ -733,7 +734,7 @@ function mostrarOps() {
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
   const of = r.ofertas || {}, sel = document.getElementById("f-oferta-op");
-  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais_lf" ${filtroOp.oferta === "mais_lf" ? "selected" : ""}>Mais produtos em LF (${of.mais_lf ?? 0})</option>`;
+  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option>`;
   document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
@@ -765,9 +766,10 @@ const EXPLICA_CRIT = {
           profissionalizacao: "fundos e investidores (LinkedIn ou site), S.A., conselho e diretoria (CFO, CTO, jurídico, riscos), grandes clientes e site profissional (lidos pela IA), porte; capital social alto soma um pouco",
           momento: "notícia de M&A, aporte ou investimento: mais peso nos portais (NeoFeed, Brazil Journal, Valor, Exame) que no Google Notícias",
           produto: "o melhor produto que a empresa ainda não tem nem negocia · E&O: serviço intelectual · D&O: gestão profissional · Cyber: CTO, DPO ou setor com muitos dados · IMI: fundos e gestoras"},
-  ramos_elementares: {influencia: "de quem decide (Operações, Riscos, Financeiro): relação por e-mail e nível do cargo",
-          perfil: "galpão, armazém, indústria, transportadora, frota",
-          porte: "número de funcionários"},
+  ramos_elementares: {produto: "o melhor produto que a empresa ainda não tem nem negocia · Fiança: escritório com 50+ funcionários · Patrimonial/Roubo: grandes ativos (usinas, indústrias, fábricas, galpões com estoque) · Transportes: cargas e frota",
+          porte: "número de funcionários (do LinkedIn ou informado à mão): fiança maior, mais ativos",
+          influencia: "de quem decide o produto (Fiança: Financeiro, Jurídico; Patrimonial e Transportes: Compras, Facilities, Logística, Operações, Riscos)",
+          momento: "notícia de nova sede, mudança de escritório, expansão, nova fábrica ou galpão"},
 };
 function painelCriterios() {
   const vs = Object.keys(V).filter(v => PESOS[v]);
@@ -794,7 +796,7 @@ function desenharOportunidades() {
     <div class="tabela"><table class="larga">
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); nas duas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras, uma linha por empresa com os produtos sugeridos (E&O, D&O, Cyber, IMI); "Mais produtos em LF" mostra quem já tem ou negocia LF, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. RE entra quando o fluxo dela estiver definido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Operações, Riscos, Financeiro); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); em RE, com setor e funcionários do LinkedIn (ou informados à mão); em todas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras e RE, uma linha por empresa com os produtos sugeridos (LF: E&O, D&O, Cyber, IMI; RE: Fiança, Patrimonial/Roubo, Transportes); "Mais produtos na mesma vertical" mostra quem já tem ou negocia a vertical, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Financeiro e Jurídico para Fiança, Compras, Facilities, Logística, Operações e Riscos para Patrimonial e Transportes); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -1232,7 +1234,7 @@ async function telaRotina() {
         </div>
         <div class="lk-cotas">
           <b>Consultas por dia, por vertical</b>
-          <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)} <span class="sub">${{pessoas: "quem decide", caracteristicas: "empresa e praça", pipo: "funil Pipo Saúde", outros: "outros funis"}[c.grupo] || ""}</span></td>
+          <table><tbody>${(L.cotas || []).map(c => `<tr><td>${vchip(c.vertical, V[c.vertical] || c.vertical)} <span class="sub">${{pessoas: "quem decide", caracteristicas: "empresa e praça", pipo: "funil Pipo Saúde", outros: "outros funis", fianca: "Fiança", patrimonial: "Patrimonial e Transportes"}[c.grupo] || ""}</span></td>
             <td class="num">${c.usadas24h} de ${c.cota}</td></tr>`).join("")}</tbody></table>
           <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras. Relê tudo a cada ${L.validadeDias} dias; quem não foi encontrado é procurado de novo em ${L.buscaDias} dias.</span>
         </div>
@@ -1326,30 +1328,67 @@ async function telaRotina() {
     </div>
 
     <div class="rot-secao" id="rot-re">
-      ${cabVertical("ramos_elementares", "fluxo a definir · ainda não aparece em Oportunidades")}
+      ${cabVertical("ramos_elementares", "fluxo ativo · aparece em Oportunidades")}
+      <div class="rot-painel">
+        <h2>O que move o RE</h2>
+        <p style="margin:0">Seguro <b>fiança ou capitalização</b> alto, de empresas que alugam salas comerciais, e <b>patrimonial de grandes ativos</b>: usinas, indústrias, fábricas, transporte de cargas e galpões com estoque de valor (como o roubo da Voke, com hardware em galpão).</p>
+        <h2 style="margin-top:12px">Uma linha por empresa, com os produtos sugeridos</h2>
+        <div class="tabela" style="border:0"><table class="rot-fontes"><thead><tr><th>Produto</th><th>Quando sugerir</th><th>Quem decide</th></tr></thead><tbody>
+          <tr><td><b>Fiança / capitalização</b></td><td>Empresa de escritório (tecnologia, serviços, financeiro, consultoria...) com <b>${r.re?.fiancaMinimo ?? 50} funcionários ou mais</b></td><td>Financeiro e Jurídico</td></tr>
+          <tr><td><b>Patrimonial / Roubo</b></td><td>Grandes ativos: usinas, indústrias, fábricas, galpões com estoque de valor</td><td>Compras, Facilities, Logística, Operações, Riscos</td></tr>
+          <tr><td><b>Transportes</b></td><td>Transporte de cargas, frota</td><td>Compras, Facilities, Logística, Operações, Riscos</td></tr>
+        </tbody></table></div>
+        <p class="nota" style="margin:0">Como em LF: o padrão da tela é o <b>cross sell</b> (quem não tem nem negocia RE); o filtro <b>Mais produtos na mesma vertical</b> mostra quem já tem RE, com as etiquetas <i>negociando X agora</i> e <i>X ofertado em mm/aaaa, perdido</i>.</p>
+      </div>
+      <div class="rot-painel">
+        <h2>Condições para virar oportunidade</h2>
+        <p style="margin:0">A empresa entra na <b>fila de análise</b> de RE e só aparece em Oportunidades quando <b>todas</b> as condições abaixo estão cumpridas. Se o setor e o porte não pedem nenhum produto (ex.: escritório com menos de ${r.re?.fiancaMinimo ?? 50} funcionários), <b>RE não entra</b>, nem na fila.</p>
+        ${lista([
+          ["Setor", "Do LinkedIn (o mais específico) ou informado à mão. É ele que diz se faz sentido: escritório (Fiança), grandes ativos (Patrimonial) ou cargas (Transportes)."],
+          ["Funcionários", `Do LinkedIn ou informado à mão. Fiança só a partir de ${r.re?.fiancaMinimo ?? 50}.`],
+          ["Quem decide", "Alguém da área do produto. <b>Se a ponte já é dessa área</b> (ex.: o contato que fala conosco é de Compras numa indústria), <b>ela mesma é quem decide</b>; senão, o LinkedIn procura alguém com o cargo certo."],
+          ["Ponte por e-mail", "Alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses."],
+        ])}
+      </div>
       <div class="rot-paineis">
         <div class="rot-painel">
-          <h2>Fluxo de pesquisa</h2>
-          <p style="margin:0">Ainda a definir com a equipe. Hoje roda a leitura geral do LinkedIn (página da empresa, perfil dos contatos e funcionários de Operações, Riscos e Financeiro), com cota de ${cota("ramos_elementares", "geral").cota} consultas por dia.</p>
+          <h2>Fluxo de pesquisa no LinkedIn</h2>
+          <p class="sub" style="margin:0">Cota: ${cota("ramos_elementares", "fianca").cota} consultas por dia para Fiança e ${cota("ramos_elementares", "patrimonial").cota} para Patrimonial e Transportes (a sobra de uma passa à outra).</p>
+          ${lista([
+            ["Setor e funcionários", "A página da empresa só é lida se faltar o setor, os funcionários ou o endereço do Sales Navigator. Se a empresa também tem Saúde ou LF, é lida uma vez só."],
+            ["Faz sentido?", "Com o setor, a plataforma vê quais produtos fazem sentido. Se nenhum faz, não gasta mais consulta."],
+            ["Quem decide", `Se já conhecemos alguém da área do produto (a ponte, por exemplo), basta. Senão, ${sn ? "a lista do Sales Navigator filtrada pelos cargos do produto" : "a lista de funcionários da empresa"}: Fiança → CFO, financeiro, jurídico; Patrimonial e Transportes → compras, suprimentos, facilities, logística, operações, riscos e seguros.`],
+            ["Contato do negócio", "O perfil de quem está no card aberto é lido para trazer o cargo atual."],
+          ])}
         </div>
         <div class="rot-painel">
-          <h2>Critérios do Score (hoje)</h2>
+          <h2>Critérios do Score</h2>
+          <p class="sub" style="margin:0">Ordenam as oportunidades. Os pesos somam 100.</p>
           ${criteriosHTML("ramos_elementares")}
         </div>
+      </div>
+      <div class="rot-painel">
+        <h2>Exemplo completo</h2>
+        <ol class="rot-linha">
+          <li><b>Segunda, 9h</b><span>A Pamela abre um card de Saúde para a "Distribuidora Exemplo". Na rodada das 10h, a empresa vira uma oportunidade de RE <i>na fila de análise</i>.</span></li>
+          <li><b>10h</b><span>O LinkedIn traz o setor "Distribuidora de eletrônicos" e 120 funcionários. Grandes ativos: a plataforma sugere <b>Patrimonial/Roubo</b>.</span></li>
+          <li><b>10h</b><span>Quem troca e-mails com a Pamela lá dentro é o gerente de Compras. Compras decide Patrimonial: <b>ele mesmo é quem decide</b>, sem gastar consulta.</span></li>
+          <li><b>11h</b><span>Com tudo cumprido, a empresa entra em <b>Oportunidades</b> de RE, com o produto sugerido e quem decide prontos para a abordagem.</span></li>
+        </ol>
       </div>
     </div>
 
     <div class="rot-painel" id="rot-glossario">
       <h2>Palavras da plataforma</h2>
       <dl class="rot-glossario">
-        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa com algum card aberto no Pipedrive. Em Linhas Financeiras, conta por produto (E&O, D&O, Cyber, IMI).</dd></div>
+        <div><dt>Oportunidade</dt><dd>Vertical que a empresa ainda não tem nem está negociando, em uma empresa com algum card aberto no Pipedrive. Em Linhas Financeiras e RE, conta por produto (LF: E&O, D&O, Cyber, IMI; RE: Fiança, Patrimonial/Roubo, Transportes).</dd></div>
         <div><dt>Analisada</dt><dd>Empresa que cumpre todas as condições da vertical (em Saúde: praça, funcionários, setor, quem decide e ponte; em LF: Receita, notícias, site, cargos-chave, quem decide e ponte). Só as analisadas aparecem em Oportunidades.</dd></div>
         <div><dt>Fila de análise</dt><dd>Empresas esperando essas condições. Anda pela ordem do Score.</dd></div>
-        <div><dt>Mais produtos em LF</dt><dd>Em Linhas Financeiras, oportunidade de outros produtos (E&O, D&O, Cyber, IMI) para quem já tem ou negocia LF. Filtro da tela Oportunidades; o padrão é o cross sell.</dd></div>
+        <div><dt>Mais produtos na mesma vertical</dt><dd>Em Linhas Financeiras e RE, oportunidade de outros produtos da vertical para quem já tem ou negocia a vertical. Filtro da tela Oportunidades; o padrão é o cross sell.</dd></div>
         <div><dt>Fora da praça</dt><dd>Em Saúde, empresa onde não somos competitivos (cidade fora das cidades alvo e menos de ${Math.round(100 * L.fatiaMinima)}% dos funcionários nelas). Não entra em Oportunidades.</dd></div>
         <div><dt>Score (Potencial)</dt><dd>De 0 a 100, o quanto a oportunidade vale a pena, pelos critérios de cada vertical.</dd></div>
         <div><dt>Score de Influência</dt><dd>De 0 a 100, o peso da pessoa: metade pelo relacionamento por e-mail (valoriza o recente), metade pelo cargo.</dd></div>
-        <div><dt>Quem decide</dt><dd>Pessoa da área que costuma decidir a vertical (RH em Saúde; Financeiro, Jurídico e Riscos em LF; Operações, Riscos e Financeiro em RE).</dd></div>
+        <div><dt>Quem decide</dt><dd>Pessoa da área que costuma decidir a vertical (RH em Saúde; Financeiro, Jurídico e Riscos em LF; em RE, pelo produto: Financeiro e Jurídico para Fiança; Compras, Facilities, Logística, Operações e Riscos para Patrimonial e Transportes).</dd></div>
         <div><dt>Ponte</dt><dd>Alguém da empresa que escreveu para a equipe e recebeu resposta nos últimos 12 meses. Pode apresentar quem decide.</dd></div>
         <div><dt>Temperatura</dt><dd>Abertura do contato, lida pela Claude nas respostas de e-mail: pouca, média ou muita.</dd></div>
         <div><dt>Cota do LinkedIn</dt><dd>Consultas por dia de cada vertical. Paga a vertical de maior Score da empresa; a sobra passa às outras.</dd></div>

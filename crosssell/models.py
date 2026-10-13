@@ -108,6 +108,10 @@ class Pessoa(Base):
     linkedin_pedido_em: Mapped[datetime | None]
     linkedin_busca_em: Mapped[datetime | None]
     linkedin_nao_encontrado: Mapped[bool] = mapped_column(default=False)
+    # Ponte informada à mão (conhecido pessoal, WhatsApp): vale como a ponte por e-mail
+    ponte_manual: Mapped[bool] = mapped_column(default=False, server_default=false())
+    ponte_manual_por: Mapped[str | None]  # e-mail de quem marcou
+    ponte_manual_em: Mapped[datetime | None]
 
     empresa: Mapped[Empresa | None] = relationship(back_populates="pessoas")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="pessoa")
@@ -350,3 +354,37 @@ class Configuracao(Base):
     valor: Mapped[str]
     atualizado_em: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
     atualizado_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class OportunidadeManual(Base):
+    """Oportunidade levada à mão para a tela Oportunidades (antes da reunião de sexta), mesmo faltando algo."""
+
+    __tablename__ = "oportunidades_manuais"
+    __table_args__ = (UniqueConstraint("empresa_id", "vertical"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    vertical: Mapped[str]
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    criada_em: Mapped[datetime] = mapped_column(default=_now)
+
+    usuario: Mapped[Usuario] = relationship()
+
+
+class NotaOportunidade(Base):
+    """O que aconteceu com a oportunidade, escrito pela equipe. A IA lê as notas da vertical e ajusta o Score
+    (ajuste de -50 a +20, com o motivo); vale o ajuste da nota mais recente."""
+
+    __tablename__ = "notas_oportunidade"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    vertical: Mapped[str]
+    texto: Mapped[str]
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    criada_em: Mapped[datetime] = mapped_column(default=_now)
+    ajuste: Mapped[int | None]  # None: a IA ainda não avaliou (tenta de novo na rotina)
+    motivo: Mapped[str | None]
+    avaliada_em: Mapped[datetime | None]
+
+    usuario: Mapped[Usuario] = relationship()

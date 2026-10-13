@@ -19,7 +19,8 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS_LF, mudou_de_empresa
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
-from crosssell.models import Atividade, Empresa, Interacao, Negocio, Pessoa, Usuario
+from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeManual, Pessoa,
+                               Usuario)
 from crosssell.normalize import AREA_LABEL, classificar_area
 from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei,
                                  melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
@@ -111,7 +112,8 @@ def com_relacao(db: Session, empresas) -> set[int]:
 
 
 def tem_relacao(p: Pessoa, relacao: set[int] | None) -> bool:
-    return (p.score_relacionamento or 0) >= 20 or (relacao is not None and p.id in relacao)
+    """Ponte: troca e-mails com a equipe ou foi marcada à mão (conhecido pessoal, WhatsApp)."""
+    return p.ponte_manual or (p.score_relacionamento or 0) >= 20 or (relacao is not None and p.id in relacao)
 
 
 FONTE_FUNC = {"linkedin": "no LinkedIn", "pipedrive": "no Pipedrive", "planilha": "na planilha", "manual": "informado à mão"}
@@ -130,7 +132,7 @@ def _pessoa_json(db: Session, p: Pessoa, nomes: dict[str, str], pontes: dict[int
             "areaNome": AREA_LABEL.get(area or ""), "linkedin": p.linkedin_url, "fonte": p.fonte,
             "noPipedrive": bool(p.pipedrive_person_id), "relacao": round(p.score_relacionamento or 0),
             "temperatura": p.temperatura, "quemFala": nomes.get(proximo, proximo) if proximo else None,
-            "influencia": influencia(p)["score"]}
+            "influencia": influencia(p)["score"], "ponteManual": p.ponte_manual}
 
 
 def quem_decide(db: Session, e: Empresa | None, vertical: str | None, nomes: dict[str, str],
@@ -408,6 +410,14 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         relacoes_de[empresa_id].add(email)
     pontes = _pontes(db, ids)
     relacao = com_relacao(db, ids)
+    nomes_id = {u.id: u.nome for u in db.scalars(select(Usuario))}
+    # Incluídas à mão em Oportunidades e notas da equipe (a IA ajusta o Score pela nota mais recente avaliada)
+    manuais = {(m.empresa_id, m.vertical): m for m in db.scalars(select(OportunidadeManual)
+                                                                  .where(OportunidadeManual.empresa_id.in_(ids)))}
+    notas_de: dict[tuple, list] = defaultdict(list)
+    for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.empresa_id.in_(ids))
+                        .order_by(NotaOportunidade.criada_em.desc(), NotaOportunidade.id.desc())):
+        notas_de[(n.empresa_id, n.vertical)].append(n)
     proxima_de: dict[int, Atividade] = {}
     for a in db.scalars(select(Atividade).where(Atividade.empresa_id.in_(ids), Atividade.negocio_id.is_(None),
                                                 Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
@@ -438,6 +448,11 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
             alvo = db.get(Pessoa, decide["pessoas"][0]["id"]) if decide and decide["pessoas"] else None
             contato = alvo or melhor_contato(e)
             pot = potencial(v, e, contato, excluir=lf["excluir"] if lf else frozenset())
+            notas = notas_de.get((e.id, v), [])
+            nota = next((n for n in notas if n.ajuste is not None), None)
+            if nota is not None and nota.ajuste:
+                pot["score"] = round(max(0.0, min(100.0, pot["score"] + nota.ajuste)), 1)
+            manual = manuais.get((e.id, v))
             prox = proxima_de.get(e.id)
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
@@ -454,13 +469,20 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "relacoes": relacoes,
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
                                 "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos],
-                "quemDecide": decide, "motivos": _extras(e, None, v, vigentes) + motivos_potencial(pot),
+                "quemDecide": decide,
+                "motivos": ([{"texto": f"nota da equipe ({nota.ajuste:+d}): {nota.motivo}", "sinal": "+" if nota.ajuste > 0 else "-"}]
+                            if nota is not None and nota.ajuste else []) + _extras(e, None, v, vigentes) + motivos_potencial(pot),
+                "notas": [{"id": n.id, "texto": n.texto, "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes"),
+                           "ajuste": n.ajuste, "motivo": n.motivo} for n in notas],
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
                 "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
                                      "responsavel": prox.responsavel.email} if prox else None,
                 "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas),
                                                sem_produto=bool(lf) and not lf["algumSugerido"])),
-                "analisada": not falta,
+                # Incluída à mão (antes da reunião de sexta): entra mesmo faltando algo
+                "analisada": not falta or manual is not None,
+                "manual": {"por": nomes_id.get(manual.usuario_id), "em": manual.criada_em.isoformat(timespec="minutes")}
+                if manual else None,
                 "praca": praca(e) if v == "saude" else None,
                 # LF e RE: "cross" (a empresa ainda não tem nem negocia a vertical) ou "mais" (mais produtos para quem
                 # já tem); produtos sugeridos e etiquetas ("negociando D&O agora", "Cyber ofertado em 03/2026, perdido")

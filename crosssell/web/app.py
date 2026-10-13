@@ -22,7 +22,8 @@ from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.connectors.noticias import PORTAIS, portal
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import Atividade, Configuracao, Empresa, Melhoria, Negocio, Pessoa, SyncLog, Usuario
+from crosssell.models import (Atividade, Configuracao, Empresa, Melhoria, Negocio, NotaOportunidade, OportunidadeManual,
+                               Pessoa, SyncLog, Usuario)
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
 
@@ -364,6 +365,132 @@ def e_estado(cidade: str) -> bool:
 class LocalIn(BaseModel):
     cidade: str | None = None
     uf: str | None = None
+
+
+# --- Fila de análise: completar à mão e levar para Oportunidades -------------------------
+
+@app.get("/api/fila")
+def api_fila(pagina: int = 1, vertical: str = "", q: str = "", finais: bool = False, db: Session = Depends(get_db),
+             _u: Usuario = Depends(usuario_atual)):
+    """Oportunidades ainda não analisadas, com o que falta e as pessoas da empresa (para escolher quem decide e a
+    ponte). finais=true: as que nunca entram sozinhas (fora da praça, MEI, sem produto de RE)."""
+    todas, _ = OPORTUNIDADES.obter(db)
+    fila = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["analisada"]]
+    final = lambda o: bool(set(o["faltando"]) & set(tabela.FINAIS))  # noqa: E731
+    busca = q.strip().lower()
+    filtradas = [o for o in fila if final(o) == finais and (not vertical or o["vertical"] == vertical)
+                 and (not busca or busca in (o["empresa"]["nome"] or "").lower())]
+    pag = qualidade.pagina(filtradas, pagina)
+    ids = {o["empresa"]["id"] for o in pag["itens"]}
+    pessoas: dict[int, list] = {}
+    for p in db.scalars(select(Pessoa).where(Pessoa.empresa_id.in_(ids)).order_by(Pessoa.nome)):
+        pessoas.setdefault(p.empresa_id, []).append(
+            {"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline,
+             "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""), "ponteManual": p.ponte_manual,
+             "relacao": round(p.score_relacionamento or 0)})
+    itens = [{"id": o["id"], "vertical": o["vertical"], "verticalNome": o["verticalNome"], "score": o["score"],
+              "empresa": o["empresa"], "faltando": o["faltando"], "produtos": o.get("produtos", []),
+              "quemDecide": o["quemDecide"], "pessoas": pessoas.get(o["empresa"]["id"], [])} for o in pag["itens"]]
+    return {**pag, "itens": itens, "totalFila": sum(not final(o) for o in fila), "totalFinais": sum(final(o) for o in fila)}
+
+
+class ManualIn(BaseModel):
+    empresa_id: int
+    vertical: str
+    incluir: bool = True
+
+
+@app.post("/api/oportunidades/manual")
+def api_oportunidade_manual(dados: ManualIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Leva a oportunidade para a tela Oportunidades mesmo faltando algo (ou desfaz), com o nome de quem levou."""
+    if db.get(Empresa, dados.empresa_id) is None or dados.vertical not in tabela.VERTICAIS_OPORTUNIDADES:
+        raise HTTPException(404, "Oportunidade não encontrada.")
+    m = db.scalar(select(OportunidadeManual).where(OportunidadeManual.empresa_id == dados.empresa_id,
+                                                   OportunidadeManual.vertical == dados.vertical))
+    if dados.incluir and m is None:
+        db.add(OportunidadeManual(empresa_id=dados.empresa_id, vertical=dados.vertical, usuario_id=u.id))
+    elif not dados.incluir and m is not None:
+        db.delete(m)
+    db.commit()
+    return {"ok": True}
+
+
+class PessoaNovaIn(BaseModel):
+    nome: str
+    cargo: str | None = None
+
+
+@app.post("/api/empresas/{empresa_id}/pessoas")
+def api_pessoa_nova(empresa_id: int, dados: PessoaNovaIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Cadastra à mão alguém da empresa (ex.: quem decide que a equipe já conhece)."""
+    from crosssell.normalize import normalizar_nome_pessoa
+    from crosssell.resolver import resolver_pessoa
+
+    e = db.get(Empresa, empresa_id)
+    nome = " ".join((dados.nome or "").split())[:120]
+    if e is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    if len(nome) < 3:
+        raise HTTPException(400, "Informe o nome da pessoa.")
+    cargo = (dados.cargo or "").strip()[:120] or None
+    ja = next((p for p in e.pessoas if p.nome_normalizado == normalizar_nome_pessoa(nome)), None)
+    p = ja or resolver_pessoa(db, nome=nome, empresa=e, cargo=cargo, fonte="manual")
+    if cargo:
+        p.cargo = cargo
+        p.senioridade = classificar_senioridade(cargo)
+    db.commit()
+    return {"id": p.id, "nome": p.nome, "cargo": p.cargo, "area": AREA_LABEL.get(tabela.area_pessoa(p) or "")}
+
+
+class PonteIn(BaseModel):
+    ponte: bool
+
+
+@app.post("/api/pessoas/{pessoa_id}/ponte")
+def api_ponte(pessoa_id: int, dados: PonteIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Marca à mão quem é nossa ponte na empresa (conhecido pessoal, WhatsApp): vale como a ponte por e-mail."""
+    p = db.get(Pessoa, pessoa_id)
+    if p is None:
+        raise HTTPException(404, "Pessoa não encontrada.")
+    p.ponte_manual = dados.ponte
+    p.ponte_manual_por, p.ponte_manual_em = (u.email, datetime.utcnow()) if dados.ponte else (None, None)
+    db.commit()
+    return {"ponteManual": p.ponte_manual}
+
+
+class NotaIn(BaseModel):
+    vertical: str
+    texto: str
+
+
+def leitor_notas(db: Session):
+    """Leitor das notas pela IA (o mesmo modelo da temperatura). Trocado nos testes."""
+    from crosssell import nota_ia
+
+    s = get_settings()
+    return nota_ia.LeitorNotas(s, modelo=temperatura.modelo_em_uso(db, s)[0])
+
+
+@app.post("/api/empresas/{empresa_id}/notas")
+def api_nota(empresa_id: int, dados: NotaIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """O que aconteceu com a oportunidade. A IA lê as notas da vertical e ajusta o Score (de -50 a +20); se ela
+    não responder agora, a rotina avalia depois."""
+    from crosssell import nota_ia
+
+    texto = (dados.texto or "").strip()[:2000]
+    if db.get(Empresa, empresa_id) is None or dados.vertical not in VERTICAIS:
+        raise HTTPException(404, "Oportunidade não encontrada.")
+    if len(texto) < 5:
+        raise HTTPException(400, "Escreva o que aconteceu.")
+    nota = NotaOportunidade(empresa_id=empresa_id, vertical=dados.vertical, texto=texto, usuario_id=u.id)
+    db.add(nota)
+    db.commit()
+    try:
+        nota_ia.avaliar(db, leitor_notas(db), empresa_id, dados.vertical)
+    except Exception:  # a nota fica salva; a rotina tenta a avaliação de novo
+        logging.getLogger(__name__).exception("Falha ao avaliar a nota pela IA")
+    db.refresh(nota)
+    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
 
 
 @app.post("/api/empresas/{empresa_id}/local")

@@ -36,6 +36,14 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   LinkedIn (ou à mão), quem decide do produto (se a ponte já é dessa área, ela mesma) e ponte por e-mail. Setor e
   porte sem nenhum produto (ex.: escritório pequeno) não entram, nem na fila. O filtro *Mais produtos na mesma
   vertical* vale para LF e RE.
+  **Fila de análise** (botão na tela): painel lateral com as oportunidades que esperam a análise e o que falta em cada
+  uma. Ali mesmo dá para informar cidade, funcionários, setor e cargo, cadastrar uma pessoa, marcar **nossa ponte** à
+  mão (conhecido, WhatsApp; vale como a ponte por e-mail) e **Mover para Oportunidades** mesmo faltando algo (fica a
+  etiqueta "incluída à mão por Fulano", com o que ainda falta, e dá para desfazer). Um grupo à parte mostra as que não
+  entram sozinhas (fora da praça, MEI, sem produto de RE). **Notas da equipe**: em cada oportunidade, "+ nota" registra
+  o que aconteceu (ex.: "corretor da família, muito difícil entrar"), por vertical. A IA (mesmo modelo da temperatura)
+  lê as notas e ajusta o Score de −50 a +20, com o motivo no "Por quê"; se ela não responder na hora, a rotina avalia
+  depois (`crosssell notas`). Qualquer pessoa da equipe pode mover e escrever notas; fica o nome de quem fez.
   O acompanhamento dos negócios abertos fica no Pipedrive; quando a oportunidade vira negócio lá,
   ela sai daqui. Colunas, nesta ordem: Score (o Potencial e o Score de Influência), Empresa
   (Cliente/Lead, funcionários e local), Em negociação, Oportunidade, Por quê (+ a favor, − contra,

@@ -205,7 +205,7 @@ def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das 
 
     db, s = _db(), get_settings()
     leitor = site_ia.LeitorSite(s, modelo=modelo_em_uso(db, s)[0])
-    http = httpx.Client(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    http = httpx.Client(timeout=15, follow_redirects=True, headers=site_ia.CABECALHOS)
     typer.echo(f"Modelo: {leitor.modelo}")
     for chave in empresas:
         e = db.get(Empresa, int(chave)) if chave.isdigit() else db.scalar(
@@ -225,6 +225,8 @@ def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das 
         if "erro" in res:
             typer.echo(f"  {res['erro']}")
         else:
+            if res.get("problema_site"):
+                typer.echo(f"  {res['problema_site']}: lido o \"Sobre\" do LinkedIn")
             sim = lambda v: "sim" if v else "não"  # noqa: E731
             typer.echo(f"  fundo/gestora: {sim(res['fundo_gestora'])} · fundos/investidores: "
                        f"{sim(res['fundos_investidores'])} {', '.join(res['investidores'])}")
@@ -232,7 +234,7 @@ def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das 
             typer.echo(f"  serviço intelectual: {sim(res['servico_intelectual'])} ({res['servico']}) · "
                        f"site profissional: {sim(res['site_profissional'])}")
             typer.echo(f"  resumo: {res['resumo']}")
-            typer.echo(f"  páginas lidas: {', '.join(res['paginas'])}")
+            typer.echo(f"  páginas lidas: {', '.join(res['paginas']) or 'LinkedIn (Sobre)'}")
         if aplicar:
             e.site_ia, e.site_ia_em = res, datetime.utcnow()
             db.commit()

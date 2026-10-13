@@ -1787,7 +1787,7 @@ function siteIaHTML(x) {
     <p style="margin:0 0 6px">${esc(x.resumo || "")}</p>
     <div style="display:grid;gap:2px">${item(x.fundo_gestora, "fundo ou gestora")}${item(x.fundos_investidores, "fundos e investidores", x.investidores)}
       ${item(x.grandes_clientes, "grandes clientes", x.clientes)}${item(x.servico_intelectual, "serviço intelectual" + (x.servico ? ` (${esc(x.servico)})` : ""))}${item(x.site_profissional, "site profissional")}</div>
-    <div class="sub" style="margin-top:6px">Lido em ${dia(x.em)}${x.site ? ` · <a href="${esc(x.site)}" target="_blank" rel="noopener">${esc(x.site)}</a>` : ""}</div></div></section>`;
+    <div class="sub" style="margin-top:6px">Lido em ${dia(x.em)}${x.fonte === "LinkedIn" ? ` do "Sobre" no LinkedIn (o site não abriu: ${esc(x.problema_site || "")})` : ""}${x.site ? ` · <a href="${esc(x.site)}" target="_blank" rel="noopener">${esc(x.site)}</a>` : ""}</div></div></section>`;
 }
 async function telaEmpresa(id) {
   await carregarBase();

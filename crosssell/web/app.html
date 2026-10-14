@@ -119,7 +119,7 @@ ul.motivos li.falta{color:var(--mute)}
 .fila-lista{overflow:auto;padding:12px 16px;display:grid;gap:10px;align-content:start}
 .fila-item{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:6px;font-size:13px}
 .fila-item .cab{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.fila-item .cab a{font-weight:700}
-.fila-campos{display:grid;gap:6px}.fila-pessoas{display:grid;gap:3px;padding-left:8px;border-left:3px solid var(--line)}.fila-pessoas label{display:inline-flex;gap:4px;align-items:center}
+.fila-campos{display:grid;gap:6px}.fila-campos select{max-width:100%}.fila-pessoas{display:grid;gap:3px;padding-left:8px;border-left:3px solid var(--line)}.fila-pessoas label{display:inline-flex;gap:4px;align-items:center}
 .nota-hist{display:grid;gap:6px;max-height:220px;overflow:auto}.nota-hist div{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}
 .modal-fundo{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 40%,transparent);display:grid;place-items:center;padding:16px;z-index:20}
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;width:100%;max-width:460px;display:grid;gap:12px;max-height:90vh;overflow:auto}
@@ -880,10 +880,12 @@ function pendenciaHTML(x, o) {
   if (x.campo === "setor") return `<div>Setor ${btnSetor(e.id, "", e.nome)}</div>`;
   if (x.campo === "cargo") return `<div>Cargo de ${esc(x.pessoa.nome)} <span class="sub">(nossa ponte)</span> ${btnCargo({...x.pessoa, cargo: ""})}</div>`;
   if (x.campo === "quem_decide") return `<div>${esc(x.texto[0].toUpperCase() + x.texto.slice(1))} <button type="button" class="lapis" data-pessoa-nova="${e.id}" data-pessoa-empresa="${esc(e.nome)}">+ pessoa</button></div>`;
-  if (x.campo === "ponte") return `<div class="fila-pessoas"><span class="sub">Ponte: ninguém da empresa troca e-mails com a equipe. Marque quem é nossa ponte (conhecido, WhatsApp) e informe o cargo.</span>
-    ${(o.pessoas || []).map(p => `<div>${esc(p.nome)} <span class="sub">${esc(p.cargo || "cargo não informado")}</span> ${p.cargo ? "" : btnCargo(p)}
-      <label class="sub"><input type="checkbox" data-ponte="${p.id}" ${p.ponteManual ? "checked" : ""}> nossa ponte</label></div>`).join("")}
-    <div><button type="button" class="lapis" data-pessoa-nova="${e.id}" data-pessoa-empresa="${esc(e.nome)}">+ pessoa</button></div></div>`;
+  if (x.campo === "ponte") {  // um seletor em vez da lista de todo mundo da empresa
+    const ps = [...(o.pessoas || [])].sort((a, b) => (!a.cargo - !b.cargo) || a.nome.localeCompare(b.nome));
+    return `<div>Ponte <span class="sub">(ninguém troca e-mails com a equipe)</span>
+      ${ps.length ? `<select data-ponte-sel aria-label="Quem é nossa ponte"><option value="">Escolher quem é nossa ponte…</option>${ps.map(p => `<option value="${p.id}">${esc(p.nome)}${p.cargo ? " · " + esc(p.cargo.slice(0, 50)) : ""}</option>`).join("")}</select> ou` : ""}
+      <button type="button" class="lapis" data-pessoa-nova="${e.id}" data-pessoa-empresa="${esc(e.nome)}">+ pessoa</button></div>`;
+  }
   return `<div>${esc(x.texto)}</div>`;
 }
 function filaItemHTML(o) {
@@ -926,7 +928,7 @@ async function abrirFila() {
       <h2>${dados ? "Completar dados" : "Fila de análise"} <button type="button" class="btn sec" id="fila-fechar" aria-label="Fechar">Fechar</button></h2>
       <div class="filtros" role="tablist"><button type="button" class="chip ${dados ? "off" : ""}" data-aba="fila" aria-pressed="${!dados}">Fila de análise</button>
         <button type="button" class="chip ${dados ? "" : "off"}" data-aba="dados" aria-pressed="${dados}">Completar dados</button></div>
-      <p class="sub" style="margin:0">${dados ? "Oportunidades já na tela com campos vazios para preencher à mão: só o que falta (o que já foi capturado não aparece). Ponte: quando alguém já troca e-mails com a equipe, só o cargo dele, se faltar; quando ninguém troca, marcar quem é a ponte. Também quem decide da área (quando só há executivo), cidade, funcionários e setor. Ao completar, o item sai da lista."
+      <p class="sub" style="margin:0">${dados ? "Oportunidades já na tela com campos vazios para preencher à mão: só o que falta (o que já foi capturado não aparece). Ponte: quando alguém já troca e-mails com a equipe, só o cargo dele, se faltar; quando ninguém troca, escolher quem é a ponte. Também quem decide da área (quando só há executivo), cidade, funcionários e setor. Ao completar, o item sai da lista."
         : "Complete o que falta (cidade, funcionários, setor, quem decide, ponte) ou leve a empresa para Oportunidades à mão, antes da reunião de sexta."}</p>
       ${dados && (r.resumo || []).length ? `<div class="filtros" aria-label="Pendências por responsável"><span class="sub">Por responsável:</span>
         <button type="button" class="chip ${FILA.dono ? "off" : ""}" data-dono="">Todos (${r.totalPendencias})</button>
@@ -1885,6 +1887,12 @@ document.addEventListener("click", ev => {
 });
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir, pt = ev.target.dataset?.ponte;
+  if (ev.target.matches?.("[data-ponte-sel]")) {
+    if (!ev.target.value) return;
+    try { await api.post(`/api/pessoas/${ev.target.value}/ponte`, {ponte: true}); aviso("Marcada como nossa ponte"); OPS_RESP = null; render(); }
+    catch (err) { aviso(err.message); ev.target.value = ""; }
+    return;
+  }
   try {
     if (pt) { await api.post(`/api/pessoas/${pt}/ponte`, {ponte: ev.target.checked}); aviso(ev.target.checked ? "Marcada como nossa ponte" : "Não é mais ponte");
       OPS_RESP = null; render(); }

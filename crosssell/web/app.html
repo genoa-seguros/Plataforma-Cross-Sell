@@ -41,6 +41,8 @@ nav.abas a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accen
 .top .dir{margin-left:auto;display:flex;gap:12px;align-items:center;font-size:13px;color:var(--mute)}
 .pill-demo{font-size:12px;padding:2px 10px;border-radius:99px;background:var(--soft);color:var(--warn);border:1px solid var(--line)}
 main{max-width:1320px;margin:0 auto;padding-inline:16px;padding-block:20px 56px;display:grid;gap:18px}
+/* Oportunidades usa a tela toda: em telas maiores as colunas alargam (larguras em %) */
+main.largo{max-width:none}
 h1{font:700 21px/1.2 var(--f-display);margin:0;text-wrap:balance}
 h2{font:700 15px/1.2 var(--f-display);margin:0 0 10px}
 .mute{color:var(--mute)} .small{font-size:12px}
@@ -1915,6 +1917,7 @@ async function render() {
   abas(m ? "oportunidades" : h.slice(1));
   if (h !== "#oportunidades") document.getElementById("fila")?.remove();  // o painel da fila é só da tela Oportunidades
   document.getElementById("app").innerHTML = '<p class="vazio">Carregando…</p>';  // a aba muda já no clique
+  document.getElementById("app").classList.toggle("largo", h === "#oportunidades" || !!m);
   try {
     if (m) await telaEmpresa(m[1]);
     else if (h === "#todos") await telaTodos();

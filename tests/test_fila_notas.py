@@ -90,21 +90,31 @@ def test_completar_dados_lista_o_que_falta_por_responsavel(cenario, db):  # noqa
     por_vertical = {o["vertical"]: o for o in r["itens"]}
     lf = por_vertical["linhas_financeiras"]
     assert lf["donos"] == ["victor.boldrini@innoaseguros.com.br"] and lf["manual"]
-    assert any(x.startswith("falta: ") for x in lf["pendencias"])
+    # só o que dá para preencher à mão (Receita, notícias e site a rotina lê sozinha)
+    assert [x["campo"] for x in lf["pendencias"]] == ["quem_decide", "cargo"]
     assert r["totalPendencias"] == len(r["itens"])
     assert {"dono": "victor.boldrini@innoaseguros.com.br", "nome": "Victor", "n": len(r["itens"])} in [
         {**x, "nome": x["nome"].split()[0]} for x in r["resumo"]]
     assert c.get("/api/oportunidades?oferta=mais").json()["pendencias"] >= 1
     assert not c.get("/api/pendencias?dono=-").json()["itens"]  # todos têm responsável
     assert c.get("/api/pendencias?vertical=linhas_financeiras&q=capim").json()["itens"][0]["id"] == lf["id"]
-    assert por_vertical["saude"]["pendencias"] == ["cargo de Caio Lima"]  # a ponte sem cargo
+    assert por_vertical["saude"]["pendencias"] == [{"campo": "cargo", "texto": "cargo de Caio Lima",  # a ponte sem cargo
+                                                    "pessoa": {"id": s["id"], "nome": "Caio Lima"}}]
 
 
-def test_pendencias_so_de_analisadas():
+def test_pendencias_so_campos_vazios():
     from crosssell import tabela
+    ponte = {"id": 1, "nome": "Ana", "cargo": "CFO", "relacao": 40}
     base = {"analisada": True, "faltando": [], "manual": None, "empresa": {"local": "SP", "funcionarios": 10, "setor": "x"},
-            "quemDecide": {"areas": ["Financeiro"], "pessoas": [{"nome": "Ana", "cargo": "CEO"}], "daArea": False}}
-    assert tabela.pendencias(base) == ["ninguém de Financeiro (só executivo)"]
+            "quemDecide": {"areas": ["Financeiro"], "pessoas": [ponte], "daArea": True,
+                           "contato": {"id": 2, "nome": "Mayane", "cargo": None, "relacao": 0}}}
+    assert tabela.pendencias(base) == []  # tudo capturado; o cargo do contato do Pipedrive não é pedido
     assert tabela.pendencias({**base, "analisada": False}) == []
-    sem = {**base, "empresa": {"local": None, "funcionarios": None, "setor": None}, "quemDecide": {}}
-    assert tabela.pendencias(sem) == ["cidade", "funcionários", "setor"]
+    sem_cargo = {**base, "quemDecide": {**base["quemDecide"], "pessoas": [{**ponte, "cargo": None}]}}
+    assert [x["texto"] for x in tabela.pendencias(sem_cargo)] == ["cargo de Ana"]
+    so_pipedrive = {**base, "quemDecide": {**base["quemDecide"], "pessoas": [{**ponte, "relacao": 0}]}}
+    assert [x["campo"] for x in tabela.pendencias(so_pipedrive)] == ["ponte"]
+    executivo = {**base, "quemDecide": {**base["quemDecide"], "daArea": False}}
+    assert [x["texto"] for x in tabela.pendencias(executivo)] == ["quem decide de Financeiro"]
+    vazia = {**base, "empresa": {"local": None, "funcionarios": None, "setor": None}}
+    assert [x["campo"] for x in tabela.pendencias(vazia)] == ["cidade", "funcionarios", "setor"]

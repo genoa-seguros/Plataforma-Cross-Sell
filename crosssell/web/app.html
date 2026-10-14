@@ -64,6 +64,11 @@ input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;margin:0}
 .tabela{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 table.larga{min-width:1500px}
+/* Oportunidades cabe na largura da tela (colunas fixas, texto quebra); só rola em telas estreitas */
+table.ops{table-layout:fixed;min-width:1020px;font-size:13px}
+table.ops th{white-space:normal;padding:8px 6px}table.ops td{padding:9px 6px;overflow-wrap:break-word}
+table.ops .score,table.ops .prox,table.ops .negociando{min-width:0;max-width:none}table.ops .negociando .chip{max-width:100%}
+table.ops .btn,table.ops .chip,table.ops .comp{white-space:normal}table.ops .vig,table.ops td div{min-width:0}table.ops .chip{max-width:100%}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);font-weight:600;background:var(--soft);white-space:nowrap}
@@ -748,7 +753,7 @@ function opHTML(o) {
   const prox = o.proximaAtividade;
   return `<tr>
     <td>${celulaScore(o)}</td>
-    <td style="min-width:170px"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><div>${o.cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}${o.empresa.funcionarios ? ` <span class="sub" title="${esc(o.empresa.funcionariosOrigem || "")}">· ${o.empresa.funcionarios.toLocaleString("pt-BR")} func.</span>` : ""}
+    <td><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><div>${o.cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}${o.empresa.funcionarios ? ` <span class="sub" title="${esc(o.empresa.funcionariosOrigem || "")}">· ${o.empresa.funcionarios.toLocaleString("pt-BR")} func.</span>` : ""}
       <button type="button" class="lapis" data-func="${o.empresa.id}" data-func-atual="${o.empresa.funcionarios || ""}" data-func-nome="${esc(o.empresa.nome)}" title="Informar o número de funcionários">${o.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
       <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}
         <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
@@ -762,10 +767,10 @@ function opHTML(o) {
         <button type="button" class="lapis" data-nota="${o.empresa.id}|${o.vertical}" title="O que aconteceu com a oportunidade (a IA ajusta o Score)">${(o.notas || []).length ? `notas (${o.notas.length})` : "+ nota"}</button></div>
       ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
         : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
-    <td style="min-width:240px">${listaMotivos(o.motivos)}</td>
+    <td>${listaMotivos(o.motivos)}</td>
     <td>${celulaVigentes(o)}</td>
-    <td style="min-width:210px">${celulaDecide(o.quemDecide, o.vertical, true)}</td>
-    <td class="not" style="min-width:190px;max-width:240px">${o.noticias.length ? o.noticias.map(noticiaHTML).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
+    <td>${celulaDecide(o.quemDecide, o.vertical, true)}</td>
+    <td class="not">${o.noticias.length ? o.noticias.map(noticiaHTML).join("") : '<span class="sub">Sem notícias recentes</span>'}</td>
     <td><div class="prox">${prox ? `<span>${esc(prox.assunto)}<br><span class="sub">${dm(prox.vencimento)} · ${esc(nomeDe(prox.responsavel))}</span></span>` : '<span class="sub">Nenhuma atividade aberta</span>'}
       <button class="btn sec" data-ativ-op="${esc(o.id)}" ${o.empresa.noPipedrive || o.contatos.length ? "" : 'disabled title="A empresa não está no Pipedrive"'}>Criar atividade</button></div></td>
   </tr>`;
@@ -851,7 +856,8 @@ function desenharOportunidades() {
       <button type="button" class="btn sec" id="abrir-fila" title="Completar à mão o que falta e levar para Oportunidades">Fila de análise</button>
     </div>
     ${painelCriterios()}
-    <div class="tabela"><table class="larga">
+    <div class="tabela"><table class="ops">
+      <colgroup><col style="width:7%"><col style="width:12%"><col style="width:8.5%"><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:14.5%"><col style="width:12%"><col style="width:9%"></colgroup>
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
     <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); em RE, com setor e funcionários do LinkedIn (ou informados à mão); em todas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras e RE, uma linha por empresa com os produtos sugeridos (LF: E&O, D&O, Cyber, IMI; RE: Fiança, Patrimonial/Roubo, Transportes); "Mais produtos na mesma vertical" mostra quem já tem ou negocia a vertical, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Financeiro e Jurídico para Fiança, Compras, Facilities, Logística, Operações e Riscos para Patrimonial e Transportes); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
@@ -1852,7 +1858,7 @@ async function telaEmpresa(id) {
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>
     ${temSaudeZeca ? "" : `<label class="check"><input type="checkbox" data-saude="${e.id}" ${vig.some(n => n.vertical === "saude") ? "checked" : ""}> Cliente Saúde${e.negocios.some(n => n.vertical === "saude" && n.status === "ganho" && !n.fim) ? " (ganho no Pipedrive; desmarque se cancelou)" : " (fora da planilha do Zeca)"}</label>`}
   </section>
-  <section><h2>Oportunidades</h2><div class="tabela"><table class="larga">
+  <section><h2>Oportunidades</h2><div class="tabela"><table class="ops"><colgroup><col style="width:7%"><col style="width:12%"><col style="width:8.5%"><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:14.5%"><col style="width:12%"><col style="width:9%"></colgroup>
     <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
     <tbody id="ops">${ops.length ? ops.map(opHTML).join("") : '<tr><td colspan="9" class="vazio">Nenhuma oportunidade: a empresa já tem ou está negociando todas as verticais.</td></tr>'}</tbody></table></div></section>
   <section><h2>Em negociação no Pipedrive</h2><div class="grupo" style="padding:12px 14px">${abertos.length ? `<div class="chips">${abertos.map(n => vchip(n.vertical, `${n.produto}${n.etapa ? " · " + n.etapa : ""}`)).join("")}</div>` : '<span class="sub">Nenhum negócio aberto.</span>'}</div></section>

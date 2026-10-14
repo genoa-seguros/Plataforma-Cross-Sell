@@ -133,11 +133,41 @@ def endereco(e: Empresa) -> str | None:
     return f"https://{e.dominio}" if e.dominio else None
 
 
+# Navegador comum (alguns sites recusam quem não parece navegador), identificando a plataforma
+CABECALHOS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0 Safari/537.36 CrossSell", "Accept-Language": "pt-BR,pt;q=0.9"}
+
+
+class SiteIndisponivel(Exception):
+    """O site não pôde ser lido; a mensagem diz o porquê (aparece na ficha e no site-teste)."""
+
+
+def _por_que(exc: httpx.HTTPError) -> str:
+    texto = str(exc).lower()
+    if isinstance(exc, httpx.TimeoutException):
+        return "site não respondeu (tempo esgotado)"
+    if isinstance(exc, httpx.ConnectError) and ("name" in texto or "resolve" in texto or "nodename" in texto):
+        return "endereço não existe (domínio não encontrado)"
+    if isinstance(exc, httpx.ConnectError) and ("ssl" in texto or "certificate" in texto):
+        return "site com certificado de segurança inválido"
+    return "site fora do ar (não aceitou a conexão)"
+
+
 def baixar_site(url: str, http: httpx.Client) -> tuple[str, list[str]]:
-    """Texto da página inicial e das internas mais úteis, e as páginas lidas."""
-    r = http.get(url)
-    if r.status_code != 200 or "html" not in r.headers.get("content-type", "html"):
-        return "", []
+    """Texto da página inicial e das internas mais úteis, e as páginas lidas. SiteIndisponivel com o motivo
+    quando o site recusa a leitura, não existe ou não é uma página."""
+    try:
+        r = http.get(url)
+    except httpx.HTTPError as exc:
+        raise SiteIndisponivel(_por_que(exc)) from exc
+    if r.status_code in (401, 403, 429):
+        raise SiteIndisponivel(f"site recusou a leitura ({r.status_code}: bloqueia robôs)")
+    if r.status_code == 404:
+        raise SiteIndisponivel("página inicial não encontrada (404)")
+    if r.status_code != 200:
+        raise SiteIndisponivel(f"site respondeu com erro ({r.status_code})")
+    if "html" not in r.headers.get("content-type", "html"):
+        raise SiteIndisponivel(f"o endereço não é uma página ({r.headers.get('content-type')})")
     base = str(r.url)
     texto, links = texto_da_pagina(r.text)
     paginas, blocos = [base], [f"<pagina url=\"{base}\">\n{texto[:MAX_TEXTO // 2]}\n</pagina>"]
@@ -205,25 +235,36 @@ class LeitorSite:
         return dados if isinstance(dados, dict) and "servico_intelectual" in dados else None
 
 
+MIN_DESCRICAO = 80  # "Sobre" do LinkedIn curto demais não serve de plano B
+
+
 def ler_empresa(e: Empresa, leitor: LeitorSite, http: httpx.Client) -> dict | None:
-    """Lê o site e devolve o resultado (com as páginas lidas), ou {"erro": ...} quando não deu para ler o site.
+    """Lê o site e devolve o resultado (com as páginas lidas). Se o site não puder ser lido, a IA lê o "Sobre" da
+    empresa no LinkedIn (plano B; o motivo fica em "problema_site"); sem isso, {"erro": motivo}.
     None: a IA não respondeu (tenta de novo na próxima rodada)."""
     url = endereco(e)
     if not url:
         return {"erro": "sem site"}
+    problema, paginas, texto = None, [], ""
     try:
         texto, paginas = baixar_site(url, http)
-    except httpx.HTTPError:
-        return {"erro": "site fora do ar", "site": url}
-    if len(texto) < 200:
-        return {"erro": "site sem texto (página em construção ou só imagem)", "site": url, "paginas": paginas}
+        if len(texto) < 200:
+            problema = "site só com JavaScript ou imagens (sem texto para ler)"
+    except SiteIndisponivel as exc:
+        problema = str(exc)
+    fonte = "site"
+    if problema:
+        if len((e.descricao or "").strip()) < MIN_DESCRICAO:
+            return {"erro": problema, "site": url, "paginas": paginas}
+        texto, paginas, fonte = f"<pagina url=\"LinkedIn (Sobre)\">\n{e.descricao.strip()[:MAX_TEXTO]}\n</pagina>", [], "LinkedIn"
     res = leitor.analisar(e.nome_fantasia or e.razao_social, texto)
     if res is None:
         return None
     res["investidores"], res["clientes"] = res.get("investidores", [])[:5], res.get("clientes", [])[:5]
     limpo = lambda t: (t or "").strip().rstrip("}").strip()  # noqa: E731  (às vezes a IA deixa um "}" no fim)
     res["resumo"], res["servico"] = limpo(res.get("resumo"))[:300], limpo(res.get("servico"))[:120]
-    return {**res, "site": url, "paginas": paginas, "modelo": leitor.modelo}
+    extra = {"fonte": fonte, "problema_site": problema} if problema else {"fonte": fonte}
+    return {**res, **extra, "site": url, "paginas": paginas, "modelo": leitor.modelo}
 
 
 def precisa(e: Empresa, agora: datetime) -> bool:
@@ -233,7 +274,7 @@ def precisa(e: Empresa, agora: datetime) -> bool:
 def atualizar(db: Session, empresa_ids: list[int], leitor: LeitorSite, http: httpx.Client | None = None,
               limite: int = 20) -> dict:
     """Lê o site das empresas (na ordem recebida, a do Score) que ainda não foram lidas ou passaram da validade."""
-    http = http or httpx.Client(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (CrossSell)"})
+    http = http or httpx.Client(timeout=15, follow_redirects=True, headers=CABECALHOS)
     agora = datetime.utcnow()
     por_id = {e.id: e for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresa_ids)))}
     cont = {"lidos": 0, "sem_site": 0, "falhas_ia": 0}

@@ -88,7 +88,8 @@ def test_site_lido_pela_ia(db, settings):
     assert falso.chamadas[0]["output_config"]["effort"] == "low"
     assert viva.site_ia["grandes_clientes"] and viva.site_ia["paginas"] == ["https://viva.com.br", "https://viva.com.br/clientes"]
     assert "Projetos corporativos" not in json.dumps(viva.site_ia, ensure_ascii=False)  # o texto do site não fica
-    assert fora.site_ia == {"erro": "site fora do ar", "site": "https://foradoar.com.br"} and fora.site_ia_em
+    assert fora.site_ia == {"erro": "site fora do ar (não aceitou a conexão)", "site": "https://foradoar.com.br",
+                            "paginas": []} and fora.site_ia_em
     assert sem.site_ia_em is None
     # Lido: só volta depois da validade
     assert site_ia.atualizar(db, [viva.id, fora.id], leitor, http=httpx.Client(transport=httpx.MockTransport(handler))) == \
@@ -224,3 +225,27 @@ def test_site_montado_por_javascript_tenta_paginas_institucionais(db, settings):
     assert pedidas[:3] == ["/", "/sobre", "/quem-somos"]
     assert res["paginas"] == ["https://cilia.com.br", "https://cilia.com.br/quem-somos"]
     assert res["resumo"] == "Software para seguradoras."
+
+
+def test_site_que_nao_abre_diz_o_motivo_e_usa_o_linkedin(db, settings):
+    """Mensagem clara (recusou, não existe, só JavaScript) e plano B: o "Sobre" da empresa no LinkedIn."""
+    bloqueia = Empresa(razao_social="Bloqueia SA", nome_normalizado="bloqueia", dominio="bloqueia.com.br",
+                       descricao="Plataforma de orçamentação de sinistros automotivos para seguradoras e oficinas, "
+                                 "com inteligência artificial e mais de 500 clientes no Brasil e no México.")
+    sumiu = Empresa(razao_social="Sumiu SA", nome_normalizado="sumiu", dominio="sumiu.edu.br")
+    db.add_all([bloqueia, sumiu])
+    db.commit()
+
+    def handler(req: httpx.Request):
+        if req.url.host == "sumiu.edu.br":
+            raise httpx.ConnectError("[Errno -2] Name or service not known")
+        return httpx.Response(403, text="Forbidden")
+
+    falso = _ClaudeFalso(json.dumps(RESPOSTA))
+    leitor = site_ia.LeitorSite(settings, client=falso, modelo="claude-sonnet-5-5")
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    res = site_ia.ler_empresa(bloqueia, leitor, http)
+    assert res["fonte"] == "LinkedIn" and res["problema_site"] == "site recusou a leitura (403: bloqueia robôs)"
+    assert "orçamentação de sinistros" in falso.chamadas[0]["messages"][0]["content"]
+    assert site_ia.ler_empresa(sumiu, leitor, http) == {"erro": "endereço não existe (domínio não encontrado)",
+                                                        "site": "https://sumiu.edu.br", "paginas": []}

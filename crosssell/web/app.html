@@ -331,7 +331,8 @@ function opsPrevia(path) {
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
   const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length};
   const ls = filtradas.filter(o => (o.tipo || "cross") === oferta);
-  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas};
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas,
+    pendencias: todas.filter(o => (o.pendencias || []).length).length};
 }
 function filaPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
@@ -341,6 +342,18 @@ function filaPrevia(path) {
   const ls = fila.filter(o => final(o) === finais && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)))
     .map(o => ({...o, pessoas: (D.empresas[o.empresa.id]?.pessoas || o.contatos || []).map(x => ({...x, ponteManual: !!x.ponteManual}))}));
   return {...pagLocal(ls, +p.get("pagina") || 1), totalFila: fila.filter(o => !final(o)).length, totalFinais: fila.filter(final).length};
+}
+function pendenciasPrevia(path) {
+  const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
+  const com = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && o.analisada && (o.pendencias || []).length);
+  const resumo = {};
+  com.forEach(o => (o.donos && o.donos.length ? o.donos : ["-"]).forEach(d => resumo[d] = (resumo[d] || 0) + 1));
+  const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), dono = p.get("dono");
+  const ls = com.filter(o => (!v || o.vertical === v) && (!dono || (dono === "-" ? !(o.donos || []).length : (o.donos || []).includes(dono)))
+    && (!q || o.empresa.nome.toLowerCase().includes(q)))
+    .map(o => ({...o, pessoas: (D.empresas[o.empresa.id]?.pessoas || o.contatos || []).map(x => ({...x, ponteManual: !!x.ponteManual}))}));
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalPendencias: com.length,
+    resumo: Object.entries(resumo).map(([d, n]) => ({dono: d, nome: d === "-" ? "sem responsável" : nomeDe(d), n})).sort((a, b) => b.n - a.n)};
 }
 function negociosPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), todos = D.negocios || [];
@@ -386,6 +399,7 @@ const previa = {
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     if (path.startsWith("/api/fila")) return filaPrevia(path);
+    if (path.startsWith("/api/pendencias")) return pendenciasPrevia(path);
     if (path.startsWith("/api/negocios")) return negociosPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     if (path === "/api/rotina") return D.rotina;
@@ -779,7 +793,7 @@ function mostrarOps() {
   if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option>`;
   document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
-  const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila})`;
+  const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila}) · Completar dados (${r.pendencias ?? 0})`;
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
   ligarPaginacao("op", async n => { filtroOp.pagina = n;
     try { if (await buscarOps()) { mostrarOps(); document.getElementById("ops").closest(".tabela").scrollIntoView({block: "start"}); } }
@@ -855,14 +869,15 @@ function desenharOportunidades() {
 }
 
 /* ---------- Fila de análise (painel lateral): completar à mão e levar para Oportunidades ---------- */
-const FILA = {aberta: false, vertical: "", q: "", finais: false, pagina: 1};
+const FILA = {aberta: false, aba: "fila", vertical: "", q: "", finais: false, dono: "", pagina: 1};
 let FILA_BUSCA = 0;
 function fecharFila() { FILA.aberta = false; document.getElementById("fila")?.remove(); }
 function filaItemHTML(o) {
-  const e = o.empresa, final = o.faltando.some(f => FINAIS.includes(f)), decide = o.quemDecide || {};
+  const e = o.empresa, dados = FILA.aba === "dados", final = !dados && o.faltando.some(f => FINAIS.includes(f)), decide = o.quemDecide || {};
   return `<div class="fila-item">
-    <div class="cab"><a href="#empresa-${e.id}">${esc(e.nome)}</a>${vchip(o.vertical, o.verticalNome)}<span class="sub">Score ${Math.round(o.score)}</span></div>
-    <div style="color:var(--warn)">${final ? esc(FINAL_TXT[o.faltando[0]] || o.faltando[0]) : `falta: ${esc(o.faltando.join(", "))}`}</div>
+    <div class="cab"><a href="#empresa-${e.id}">${esc(e.nome)}</a>${vchip(o.vertical, o.verticalNome)}<span class="sub">Score ${Math.round(o.score)}</span>
+      ${dados && (o.donos || []).length ? `<span class="sub">· ${esc(o.donos.map(nomeDe).join(", "))}</span>` : ""}</div>
+    <div style="color:var(--warn)">${dados ? `completar: ${esc(o.pendencias.join(", "))}` : final ? esc(FINAL_TXT[o.faltando[0]] || o.faltando[0]) : `falta: ${esc(o.faltando.join(", "))}`}</div>
     ${(o.produtos || []).length ? `<div class="sub">Produtos: ${o.produtos.map(x => esc(x.produto)).join(", ")}</div>` : ""}
     <div class="sub">${e.local ? esc(e.local) : "local não informado"} <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.local ? "✎" : "+ cidade"}</button>
       · ${e.funcionarios ? `${e.funcionarios.toLocaleString("pt-BR")} func.` : "funcionários ?"} <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎" : "+ funcionários"}</button>
@@ -871,7 +886,7 @@ function filaItemHTML(o) {
       ${(o.pessoas || []).map(x => `<div>${esc(x.nome)} <span class="sub">${esc(x.cargo || "cargo não informado")}${x.area ? " · " + esc(x.area) : ""}</span> ${btnCargo(x)}
         <label class="sub"><input type="checkbox" data-ponte="${x.id}" ${x.ponteManual ? "checked" : ""}> nossa ponte</label>${x.relacao >= 20 ? ' <span class="sub" style="color:var(--good)">· troca e-mails</span>' : ""}</div>`).join("") || '<span class="sub">Ninguém cadastrado.</span>'}
       <div><button type="button" class="lapis" data-pessoa-nova="${e.id}" data-pessoa-empresa="${esc(e.nome)}">+ pessoa</button></div></div>
-    <div><button type="button" class="btn" data-mover="${e.id}|${o.vertical}" title="Entra em Oportunidades mesmo faltando algo, com o seu nome">Mover para Oportunidades</button></div>
+    ${dados ? "" : `<div><button type="button" class="btn" data-mover="${e.id}|${o.vertical}" title="Entra em Oportunidades mesmo faltando algo, com o seu nome">Mover para Oportunidades</button></div>`}
   </div>`;
 }
 async function abrirFila() {
@@ -881,25 +896,35 @@ async function abrirFila() {
     document.body.insertAdjacentHTML("beforeend", '<aside class="fila" id="fila" aria-label="Fila de análise"><p class="vazio">Carregando…</p></aside>');
     painel = document.getElementById("fila");
   }
+  const dados = FILA.aba === "dados";
   const p = new URLSearchParams({pagina: FILA.pagina});
   if (FILA.vertical) p.set("vertical", FILA.vertical);
   if (FILA.q) p.set("q", FILA.q);
-  if (FILA.finais) p.set("finais", "true");
+  if (FILA.finais && !dados) p.set("finais", "true");
+  if (FILA.dono && dados) p.set("dono", FILA.dono);
   let r;
-  try { r = await api.get("/api/fila?" + p); } catch (err) { aviso(err.message); return; }
+  try { r = await api.get((dados ? "/api/pendencias?" : "/api/fila?") + p); } catch (err) { aviso(err.message); return; }
   if (!FILA.aberta) return;
   const busca = document.activeElement?.id === "fila-q";
   painel.innerHTML = `<div class="fila-topo">
-      <h2>Fila de análise <button type="button" class="btn sec" id="fila-fechar" aria-label="Fechar">Fechar</button></h2>
-      <p class="sub" style="margin:0">Complete o que falta (cidade, funcionários, setor, quem decide, ponte) ou leve a empresa para Oportunidades à mão, antes da reunião de sexta.</p>
+      <h2>${dados ? "Completar dados" : "Fila de análise"} <button type="button" class="btn sec" id="fila-fechar" aria-label="Fechar">Fechar</button></h2>
+      <div class="filtros" role="tablist"><button type="button" class="chip ${dados ? "off" : ""}" data-aba="fila" aria-pressed="${!dados}">Fila de análise</button>
+        <button type="button" class="chip ${dados ? "" : "off"}" data-aba="dados" aria-pressed="${dados}">Completar dados</button></div>
+      <p class="sub" style="margin:0">${dados ? "Oportunidades já na tela com algo a completar: cargo das pessoas, alguém da área que decide (quando só há executivo), cidade, funcionários e setor. Ao completar, o item sai da lista."
+        : "Complete o que falta (cidade, funcionários, setor, quem decide, ponte) ou leve a empresa para Oportunidades à mão, antes da reunião de sexta."}</p>
+      ${dados && (r.resumo || []).length ? `<div class="filtros" aria-label="Pendências por responsável"><span class="sub">Por responsável:</span>
+        <button type="button" class="chip ${FILA.dono ? "off" : ""}" data-dono="">Todos (${r.totalPendencias})</button>
+        ${r.resumo.map(x => `<button type="button" class="chip ${FILA.dono === x.dono ? "" : "off"}" data-dono="${esc(x.dono)}">${esc(x.nome)} · ${x.n}</button>`).join("")}</div>` : ""}
       <div class="filtros"><select id="fila-v" aria-label="Vertical"><option value="">Todas as verticais</option>${Object.entries(V).filter(([k]) => (OPS_RESP?.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<option value="${k}" ${FILA.vertical === k ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
         <input type="search" id="fila-q" placeholder="Buscar empresa" value="${esc(FILA.q)}">
-        <label class="sub"><input type="checkbox" id="fila-finais" ${FILA.finais ? "checked" : ""}> só as que não entram sozinhas (${r.totalFinais})</label></div>
-      <span class="sub">${r.total} ${FILA.finais ? "que não entram sozinhas" : "na fila"}</span></div>
-    <div class="fila-lista">${r.itens.map(filaItemHTML).join("") || '<p class="vazio">Nada na fila com esses filtros.</p>'}<div id="pag-fila">${paginacao(r, "fila")}</div></div>`;
+        ${dados ? "" : `<label class="sub"><input type="checkbox" id="fila-finais" ${FILA.finais ? "checked" : ""}> só as que não entram sozinhas (${r.totalFinais})</label>`}</div>
+      <span class="sub">${r.total} ${dados ? "com algo a completar" : FILA.finais ? "que não entram sozinhas" : "na fila"}</span></div>
+    <div class="fila-lista">${r.itens.map(filaItemHTML).join("") || `<p class="vazio">${dados ? "Nada a completar com esses filtros." : "Nada na fila com esses filtros."}</p>`}<div id="pag-fila">${paginacao(r, "fila")}</div></div>`;
   document.getElementById("fila-fechar").onclick = fecharFila;
   document.getElementById("fila-v").onchange = e => { FILA.vertical = e.target.value; FILA.pagina = 1; abrirFila(); };
-  document.getElementById("fila-finais").onchange = e => { FILA.finais = e.target.checked; FILA.pagina = 1; abrirFila(); };
+  const ff = document.getElementById("fila-finais"); if (ff) ff.onchange = e => { FILA.finais = e.target.checked; FILA.pagina = 1; abrirFila(); };
+  painel.querySelectorAll("[data-aba]").forEach(b => b.onclick = () => { FILA.aba = b.dataset.aba; FILA.pagina = 1; abrirFila(); });
+  painel.querySelectorAll("[data-dono]").forEach(b => b.onclick = () => { FILA.dono = b.dataset.dono; FILA.pagina = 1; abrirFila(); });
   const q = document.getElementById("fila-q");
   q.oninput = e => { FILA.q = e.target.value; FILA.pagina = 1; clearTimeout(FILA_BUSCA); FILA_BUSCA = setTimeout(abrirFila, 300); };
   if (busca) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }

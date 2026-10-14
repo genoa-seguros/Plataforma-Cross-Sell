@@ -462,8 +462,10 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "influencia": influencia(contato)["score"], "cliente": bool(vigentes),
                 "empresa": {"id": e.id, "nome": e.razao_social, "funcionarios": func, "funcionariosOrigem": func_origem,
                             "noPipedrive": bool(e.pipedrive_org_id), "local": local(e), "cidade": e.cidade, "uf": e.uf,
-                            "cidadeFonte": e.cidade_fonte},
+                            "cidadeFonte": e.cidade_fonte, "setor": setor_valido(e)},
                 "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
+                # Responsáveis pelos cards abertos da empresa (resumo de pendências por responsável)
+                "donos": sorted({x.responsavel_email for x in abertos if x.responsavel_email}),
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
                 "relacoes": relacoes,
@@ -490,7 +492,28 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "produtos": lf["produtos"] if lf else [],
                 "etiquetas": lf["etiquetas"] if lf else [],
             })
+    for item in saida:
+        item["pendencias"] = pendencias(item)
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
+
+
+def pendencias(o: dict) -> list[str]:
+    """O que ainda dá para completar à mão numa oportunidade já na tela (aba "Completar dados"): pessoas sem cargo,
+    quem decide só executivo (ninguém da área), cidade, funcionários e setor, e o que faltava quando foi incluída
+    à mão."""
+    if not o["analisada"]:
+        return []
+    saida = [f"falta: {x}" for x in o["faltando"]] if o.get("manual") else []
+    d = o.get("quemDecide") or {}
+    if d.get("pessoas") and not d.get("daArea"):
+        saida.append(f"ninguém de {' / '.join(d.get('areas') or [])} (só executivo)")
+    for x in [*(d.get("pessoas") or []), d.get("ponte"), d.get("contato")]:
+        if x and not x.get("cargo") and f"cargo de {x['nome']}" not in saida:
+            saida.append(f"cargo de {x['nome']}")
+    emp = o["empresa"]
+    saida += [rot for rot, ok in (("cidade", emp.get("local")), ("funcionários", emp.get("funcionarios")),
+                                  ("setor", emp.get("setor"))) if not ok and f"falta: {rot}" not in saida]
+    return saida
 
 
 def semana(ref: date) -> tuple[date, date]:

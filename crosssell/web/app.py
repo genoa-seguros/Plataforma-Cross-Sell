@@ -381,17 +381,47 @@ def api_fila(pagina: int = 1, vertical: str = "", q: str = "", finais: bool = Fa
     filtradas = [o for o in fila if final(o) == finais and (not vertical or o["vertical"] == vertical)
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())]
     pag = qualidade.pagina(filtradas, pagina)
-    ids = {o["empresa"]["id"] for o in pag["itens"]}
+    pessoas = _pessoas_das_empresas(db, {o["empresa"]["id"] for o in pag["itens"]})
+    itens = [{"id": o["id"], "vertical": o["vertical"], "verticalNome": o["verticalNome"], "score": o["score"],
+              "empresa": o["empresa"], "faltando": o["faltando"], "produtos": o.get("produtos", []),
+              "quemDecide": o["quemDecide"], "pessoas": pessoas.get(o["empresa"]["id"], [])} for o in pag["itens"]]
+    return {**pag, "itens": itens, "totalFila": sum(not final(o) for o in fila), "totalFinais": sum(final(o) for o in fila)}
+
+
+def _pessoas_das_empresas(db: Session, ids) -> dict[int, list]:
     pessoas: dict[int, list] = {}
     for p in db.scalars(select(Pessoa).where(Pessoa.empresa_id.in_(ids)).order_by(Pessoa.nome)):
         pessoas.setdefault(p.empresa_id, []).append(
             {"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline,
              "area": AREA_LABEL.get(tabela.area_pessoa(p) or ""), "ponteManual": p.ponte_manual,
              "relacao": round(p.score_relacionamento or 0)})
+    return pessoas
+
+
+@app.get("/api/pendencias")
+def api_pendencias(pagina: int = 1, vertical: str = "", dono: str = "", q: str = "", db: Session = Depends(get_db),
+                   _u: Usuario = Depends(usuario_atual)):
+    """Aba "Completar dados": oportunidades já na tela com algo a completar à mão (cargo, quem decide da área,
+    cidade, funcionários, setor), com o resumo por responsável (dono dos cards abertos da empresa)."""
+    todas, _ = OPORTUNIDADES.obter(db)
+    com = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and o["analisada"] and o["pendencias"]]
+    nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
+    resumo: dict[str, int] = {}
+    for o in com:
+        for d in o["donos"] or ["-"]:
+            resumo[d] = resumo.get(d, 0) + 1
+    busca = q.strip().lower()
+    filtradas = [o for o in com if (not vertical or o["vertical"] == vertical)
+                 and (not dono or (dono in o["donos"] if dono != "-" else not o["donos"]))
+                 and (not busca or busca in (o["empresa"]["nome"] or "").lower())]
+    pag = qualidade.pagina(filtradas, pagina)
+    pessoas = _pessoas_das_empresas(db, {o["empresa"]["id"] for o in pag["itens"]})
     itens = [{"id": o["id"], "vertical": o["vertical"], "verticalNome": o["verticalNome"], "score": o["score"],
-              "empresa": o["empresa"], "faltando": o["faltando"], "produtos": o.get("produtos", []),
+              "empresa": o["empresa"], "pendencias": o["pendencias"], "donos": o["donos"], "manual": o.get("manual"),
               "quemDecide": o["quemDecide"], "pessoas": pessoas.get(o["empresa"]["id"], [])} for o in pag["itens"]]
-    return {**pag, "itens": itens, "totalFila": sum(not final(o) for o in fila), "totalFinais": sum(final(o) for o in fila)}
+    return {**pag, "itens": itens, "totalPendencias": len(com),
+            "resumo": sorted(({"dono": d, "nome": nomes.get(d, "sem responsável" if d == "-" else d), "n": n}
+                              for d, n in resumo.items()), key=lambda x: -x["n"])}
 
 
 class ManualIn(BaseModel):
@@ -768,7 +798,8 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
     ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
     filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ofertas else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
-            "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas}
+            "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas,
+            "pendencias": sum(bool(o["pendencias"]) for o in itens)}
 
 
 def falta_por_vertical(visiveis: list[dict]) -> dict[int, list[dict]]:

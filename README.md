@@ -40,7 +40,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   uma. Ali mesmo dá para informar cidade, funcionários, setor e cargo, cadastrar uma pessoa, marcar **nossa ponte** à
   mão (conhecido, WhatsApp; vale como a ponte por e-mail) e **Mover para Oportunidades** mesmo faltando algo (fica a
   etiqueta "incluída à mão por Fulano", com o que ainda falta, e dá para desfazer). Um grupo à parte mostra as que não
-  entram sozinhas (fora da praça, MEI, sem produto de RE). **Notas da equipe**: em cada oportunidade, "+ nota" registra
+  entram sozinhas (fora da praça, MEI, sem produto de RE). A aba **Completar dados** do mesmo painel lista as que já
+  estão na tela com algo a completar à mão (cargo de uma pessoa, ninguém da área que decide quando só há executivo,
+  cidade, funcionários, setor e, nas incluídas à mão, o que ainda falta), com o resumo por responsável (dono dos cards
+  abertos da empresa no Pipedrive). **Notas da equipe**: em cada oportunidade, "+ nota" registra
   o que aconteceu (ex.: "corretor da família, muito difícil entrar"), por vertical. A IA (mesmo modelo da temperatura)
   lê as notas e ajusta o Score de −50 a +20, com o motivo no "Por quê"; se ela não responder na hora, a rotina avalia
   depois (`crosssell notas`). Qualquer pessoa da equipe pode mover e escrever notas; fica o nome de quem fez.

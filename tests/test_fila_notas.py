@@ -71,3 +71,40 @@ def test_nota_da_equipe_ajusta_o_score_pela_ia(cenario, db, settings, monkeypatc
     assert r["ajuste"] is None
     falso2 = _ClaudeFalso(json.dumps({"ajuste": 15, "motivo": "Pediu cotação."}))
     assert nota_ia.pendentes(db, nota_ia.LeitorNotas(settings, client=falso2, modelo="m")) == {"avaliadas": 1, "falhas": 0}
+
+
+def test_completar_dados_lista_o_que_falta_por_responsavel(cenario, db):  # noqa: F811
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = _lead(db)
+    e.negocios[0].responsavel_email = "victor.boldrini@innoaseguros.com.br"
+    db.commit()
+    # LF levada à mão faltando dados: entra no relatório com o que falta e o responsável do card
+    c.post("/api/oportunidades/manual", headers=H, json={"empresa_id": e.id, "vertical": "linhas_financeiras"})
+    # Saúde analisada, mas a ponte foi cadastrada sem cargo
+    c.post(f"/api/empresas/{e.id}/pessoas", headers=H, json={"nome": "Rita Souza", "cargo": "Gerente de RH"})
+    s = c.post(f"/api/empresas/{e.id}/pessoas", headers=H, json={"nome": "Caio Lima", "cargo": ""}).json()
+    c.post(f"/api/pessoas/{s['id']}/ponte", headers=H, json={"ponte": True})
+
+    r = c.get("/api/pendencias").json()
+    por_vertical = {o["vertical"]: o for o in r["itens"]}
+    lf = por_vertical["linhas_financeiras"]
+    assert lf["donos"] == ["victor.boldrini@innoaseguros.com.br"] and lf["manual"]
+    assert any(x.startswith("falta: ") for x in lf["pendencias"])
+    assert r["totalPendencias"] == len(r["itens"])
+    assert {"dono": "victor.boldrini@innoaseguros.com.br", "nome": "Victor", "n": len(r["itens"])} in [
+        {**x, "nome": x["nome"].split()[0]} for x in r["resumo"]]
+    assert c.get("/api/oportunidades?oferta=mais").json()["pendencias"] >= 1
+    assert not c.get("/api/pendencias?dono=-").json()["itens"]  # todos têm responsável
+    assert c.get("/api/pendencias?vertical=linhas_financeiras&q=capim").json()["itens"][0]["id"] == lf["id"]
+    assert por_vertical["saude"]["pendencias"] == ["cargo de Caio Lima"]  # a ponte sem cargo
+
+
+def test_pendencias_so_de_analisadas():
+    from crosssell import tabela
+    base = {"analisada": True, "faltando": [], "manual": None, "empresa": {"local": "SP", "funcionarios": 10, "setor": "x"},
+            "quemDecide": {"areas": ["Financeiro"], "pessoas": [{"nome": "Ana", "cargo": "CEO"}], "daArea": False}}
+    assert tabela.pendencias(base) == ["ninguém de Financeiro (só executivo)"]
+    assert tabela.pendencias({**base, "analisada": False}) == []
+    sem = {**base, "empresa": {"local": None, "funcionarios": None, "setor": None}, "quemDecide": {}}
+    assert tabela.pendencias(sem) == ["cidade", "funcionários", "setor"]

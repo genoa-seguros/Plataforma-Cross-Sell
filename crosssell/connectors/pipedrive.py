@@ -173,15 +173,35 @@ def produto_do_negocio(d: dict, chaves_produto: list[str]) -> str | None:
     return re.split(r"\s+(?:19|20)\d{2}\b", titulo)[0].strip() or None
 
 
+def _nome_chave(nome: str | None) -> str:
+    return " ".join(sem_acento(nome or "").lower().split())
+
+
 def vincular_usuarios(db: Session, client: PipedriveClient) -> dict[int, str]:
-    """Liga os usuários da plataforma aos do Pipedrive pelo e-mail. Retorna id -> e-mail."""
-    mapa = {}
-    for u in client.usuarios():
+    """Liga os usuários da plataforma aos do Pipedrive pelo e-mail; sem e-mail igual, pelo nome completo
+    (só quando um único usuário ativo do Pipedrive tem aquele nome). Retorna id -> e-mail."""
+    mapa, por_nome = {}, {}
+    usuarios = client.usuarios()
+    for u in usuarios:
         email = (u.get("email") or "").lower()
         mapa[u["id"]] = email
-        local = db.scalar(select(Usuario).where(Usuario.email == email))
-        if local is not None:
-            local.pipedrive_user_id = u["id"]
+        if u.get("active_flag", True):
+            por_nome.setdefault(_nome_chave(u.get("name")), []).append(u["id"])
+    locais = list(db.scalars(select(Usuario)))
+    por_email = {em: i for i, em in mapa.items() if em}
+    ligados = {}
+    for local in locais:  # e-mail primeiro; o nome só entra para quem não tem e-mail igual
+        if (local.email or "").lower() in por_email:
+            ligados[local.id] = por_email[(local.email or "").lower()]
+    usados = set(ligados.values())
+    for local in locais:
+        achados = por_nome.get(_nome_chave(local.nome)) or []
+        if local.id not in ligados and _nome_chave(local.nome) and len(achados) == 1 and achados[0] not in usados:
+            ligados[local.id] = achados[0]
+            usados.add(achados[0])
+    for local in locais:
+        if local.id in ligados:
+            local.pipedrive_user_id = ligados[local.id]
     db.flush()
     return mapa
 
@@ -306,7 +326,14 @@ def criar_atividade(db: Session, client: PipedriveClient, *, negocio: Negocio | 
     if pessoa is None and (negocio is not None or empresa is None or not empresa.pipedrive_org_id):
         raise ValueError("A atividade precisa de uma pessoa que exista no Pipedrive.")
     if not responsavel.pipedrive_user_id:
-        raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
+        try:  # convidado depois da última sincronização ou e-mail trocado no Pipedrive: tenta ligar agora
+            vincular_usuarios(db, client)
+        except httpx.HTTPError:
+            pass
+    if not responsavel.pipedrive_user_id:
+        raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive: nenhum usuário ativo "
+                         f"lá tem o e-mail {responsavel.email} nem o nome \"{responsavel.nome}\". Confira o e-mail "
+                         "de login dele no Pipedrive (Configurações > Usuários).")
     dados = {
         "subject": assunto, "type": tipo, "due_date": vencimento.isoformat(),
         "owner_id": responsavel.pipedrive_user_id,

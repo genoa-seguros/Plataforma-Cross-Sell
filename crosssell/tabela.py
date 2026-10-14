@@ -497,22 +497,33 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 
 
-def pendencias(o: dict) -> list[str]:
-    """O que ainda dá para completar à mão numa oportunidade já na tela (aba "Completar dados"): pessoas sem cargo,
-    quem decide só executivo (ninguém da área), cidade, funcionários e setor, e o que faltava quando foi incluída
-    à mão."""
+def _e_ponte(p: dict | None) -> bool:
+    return bool(p) and (p.get("relacao", 0) >= 20 or bool(p.get("ponteManual")))
+
+
+def pendencias(o: dict) -> list[dict]:
+    """Só os campos vazios que a equipe pode preencher à mão numa oportunidade já na tela (aba "Completar dados").
+    O que já foi capturado não entra. Ponte: com alguém que troca e-mails com a equipe (ou marcado à mão), só o cargo
+    dele, se faltar; sem ninguém, marcar a ponte. Cada item: {campo, texto, pessoa?}."""
     if not o["analisada"]:
         return []
-    saida = [f"falta: {x}" for x in o["faltando"]] if o.get("manual") else []
-    d = o.get("quemDecide") or {}
-    if d.get("pessoas") and not d.get("daArea"):
-        saida.append(f"ninguém de {' / '.join(d.get('areas') or [])} (só executivo)")
-    for x in [*(d.get("pessoas") or []), d.get("ponte"), d.get("contato")]:
-        if x and not x.get("cargo") and f"cargo de {x['nome']}" not in saida:
-            saida.append(f"cargo de {x['nome']}")
-    emp = o["empresa"]
-    saida += [rot for rot, ok in (("cidade", emp.get("local")), ("funcionários", emp.get("funcionarios")),
-                                  ("setor", emp.get("setor"))) if not ok and f"falta: {rot}" not in saida]
+    d, emp = o.get("quemDecide") or {}, o["empresa"]
+    falta = " ".join(o["faltando"]) if o.get("manual") else ""
+    saida = []
+    if (d.get("pessoas") and not d.get("daArea")) or "quem decide" in falta:
+        saida.append({"campo": "quem_decide",
+                      "texto": f"quem decide de {' / '.join(d.get('areas') or [])}" if d.get("areas") else "quem decide"})
+    ponte = next((p for p in [*(d.get("pessoas") or []), d.get("ponte")] if _e_ponte(p)), None)
+    if ponte is None:
+        saida.append({"campo": "ponte", "texto": "ponte (ninguém troca e-mails com a equipe)"})
+    elif not ponte.get("cargo"):
+        saida.append({"campo": "cargo", "texto": f"cargo de {ponte['nome']}",
+                      "pessoa": {"id": ponte["id"], "nome": ponte["nome"]}})
+    for campo, texto, ok in (("cidade", "cidade", emp.get("local") and "cidade" not in falta and "praça" not in falta),
+                             ("funcionarios", "funcionários", emp.get("funcionarios")),
+                             ("setor", "setor", emp.get("setor"))):
+        if not ok:
+            saida.append({"campo": campo, "texto": texto})
     return saida
 
 

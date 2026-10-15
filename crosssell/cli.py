@@ -348,7 +348,7 @@ def _rodar_rotina(dias: int) -> None:
     if get_settings().anthropic_api_key:
         passos.insert(passos.index(("recalcular", recalcular)), ("notas", notas))
     if get_settings().site_ia_ativo:
-        passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", sites_ia))
+        passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", lambda: sites_ia(limite=0)))  # 0 = SITE_IA_LOTE
     if lk.configurado(get_settings()):
         passos.insert(len(passos) - 1, ("linkedin", linkedin))  # antes de recalcular
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal

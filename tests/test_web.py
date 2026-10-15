@@ -605,3 +605,33 @@ def test_fora_da_praca_nao_entra_em_oportunidades_nem_na_fila(cenario, db):
     assert ficha["faltando"] == ["fora da praça"] and ficha["praca"] == "fora"
     n = next(x for x in c.get("/api/negocios").json()["itens"] if x["empresa"] and x["empresa"]["id"] == e.id)
     assert next(f for f in n["faltaParaOportunidade"] if f["vertical"] == "saude")["faltando"] == ["fora da praça"]
+
+
+def test_rotina_chama_cada_passo_com_valores_de_verdade(monkeypatch, settings):
+    """Chamada fora do Typer, uma função com padrão typer.Option recebe o OptionInfo (sites-ia quebrava assim)."""
+    import inspect
+
+    import typer.models
+
+    from crosssell import cli
+    from crosssell.connectors import linkedin as lk
+
+    chamados = []
+    for nome in ("pipedrive", "pipedrive_excluidas", "cnpj_sites", "dominios", "emails", "noticias", "enriquecer",
+                 "linkedin_sites", "recalcular", "notas", "sites_ia", "linkedin", "qualidade"):
+        original = getattr(cli, nome)
+
+        def falso(*a, _nome=nome, _orig=original, **k):
+            args = inspect.signature(_orig).bind(*a, **k)
+            args.apply_defaults()
+            assert not any(isinstance(v, typer.models.ParameterInfo) for v in args.arguments.values()), _nome
+            chamados.append(_nome)
+        monkeypatch.setattr(cli, nome, falso)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings.model_copy(update={"site_ia_ativo": True,
+                                                                               "anthropic_api_key": "x"}))
+    monkeypatch.setattr(lk, "configurado", lambda s: True)
+    monkeypatch.setattr(cli, "_ultima_ha_dias", lambda fonte: 999)
+    erros = []
+    monkeypatch.setattr(cli.typer, "echo", lambda msg, err=False: erros.append(msg) if err else None)
+    cli._rodar_rotina(1)
+    assert erros == [] and {"sites_ia", "linkedin", "qualidade", "notas"} <= set(chamados)

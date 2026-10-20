@@ -816,7 +816,7 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  if (not vertical or o["vertical"] == vertical)
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())
                  and (not tipo or (tipo == "cliente") == o["cliente"])
-                 and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
+                 and (not rel or _relacao_ok(o, rel))]
     ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
     # Ganhos recentes: quem fechou negócio nos últimos 14 dias, analisada ou não (mostra o que falta), cross e mais
     ganhos = [o for o in recentes if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES
@@ -824,15 +824,23 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
               and (not vertical or o["vertical"] == vertical)
               and (not busca or busca in (o["empresa"]["nome"] or "").lower())
               and (not tipo or (tipo == "cliente") == o["cliente"])
-              and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
+              and (not rel or _relacao_ok(o, rel))]
     ofertas["ganhos"] = len(ganhos)
-    if oferta == "ganhos":  # quem fechou mais recentemente primeiro; na mesma data, pelo Score
-        filtradas = sorted(ganhos, key=lambda o: (o["ganhos"][0]["em"], o["score"]), reverse=True)
+    if oferta == "ganhos":  # pelo Score, como a lista padrão (a influência desempata)
+        filtradas = sorted(ganhos, key=lambda o: (o["score"], o["influencia"]), reverse=True)
     else:
         filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ("cross", "mais") else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
             "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas,
             "pendencias": sum(bool(o["pendencias"]) for o in itens)}
+
+
+def _relacao_ok(o: dict, rel: str) -> bool:
+    """Filtro "Relação": e-mail de quem da equipe tem relação, "-" (sem relação) ou "baixa" (Score alto e influência
+    baixa: boas oportunidades onde falta relação)."""
+    if rel == "baixa":
+        return o["score"] >= tabela.SCORE_ALTO and o["influencia"] < tabela.INFLUENCIA_BAIXA
+    return not o["relacoes"] if rel == "-" else rel in o["relacoes"]
 
 
 def falta_por_vertical(visiveis: list[dict]) -> dict[int, list[dict]]:

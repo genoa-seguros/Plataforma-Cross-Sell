@@ -175,6 +175,12 @@ def cidade_alvo(cidade: str | None) -> bool:
     return bool(nome) and nome in {_norm(x) for x in criterios()["saude"]["metropoles"]}
 
 
+def cidade_com_clientes(cidade: str | None) -> bool:
+    """Cidade onde a Innoa já tem clientes de Saúde (lista saude.cidades_com_clientes): localização 1,0."""
+    nome = _norm((cidade or "").split(",")[0]).strip()
+    return bool(nome) and nome in {_norm(x) for x in criterios()["saude"].get("cidades_com_clientes") or []}
+
+
 _REGIAO = re.compile(r"^(greater|grande|regiao (metropolitana )?de|metropolitan region of)\s+|"
                      r"\s+(e regiao|area|metropolitan area|region|metropolitana)$")
 
@@ -238,11 +244,13 @@ def c_localizacao(e: Empresa | None) -> dict:
     if p == "fora":
         return _crit("localizacao", 0.0, f"fora da praça{': ' + rotulo if rotulo else ''} (sem rede hospitalar forte ou "
                      "Unimed local dominante)", "-")
-    if p == "alvo" and cidade and cidade_alvo(cidade):
+    if p == "alvo" and cidade and cidade_com_clientes(cidade):  # onde a Innoa já tem clientes de Saúde
         return _crit("localizacao", 1.0, None, "")
-    if p == "alvo":  # matriz fora da lista, mas boa parte da equipe em cidades alvo
+    if p == "alvo" and cidade and cidade_alvo(cidade):
+        return _crit("localizacao", 0.5, f"{rotulo}: boa rede hospitalar, mas ainda sem clientes da Innoa", "")
+    if p == "alvo":  # matriz fora da lista, mas boa parte da equipe em cidades alvo (não se sabe quais)
         fatia = f"{round(100 * e.praca_fatia)}% " if e.praca_fatia is not None else ""
-        return _crit("localizacao", 0.8, f"{fatia}dos funcionários em cidades alvo", "+")
+        return _crit("localizacao", 0.5, f"{fatia}dos funcionários em cidades alvo", "")
     if not cidade:
         return _crit("localizacao", SEM_DADO, "localização desconhecida", "?")
     return _crit("localizacao", 0.2, f"{rotulo}: fora das cidades alvo; falta ver onde estão os funcionários", "?")
@@ -584,6 +592,8 @@ def potencial(vertical: str | None, e: Empresa | None, p: Pessoa | None, n: Nego
     else:
         crit = [c_influencia(p)]
     pesos = criterios().get(vertical, {}).get("pesos", {"influencia": 100})
+    # Só os critérios com peso: nas verticais a influência não entra no Score (é uma métrica à parte)
+    crit = [c for c in crit if pesos.get(c["nome"])]
     total = sum(pesos.get(c["nome"], 0) for c in crit) or 1
     for c in crit:
         c["peso"] = pesos.get(c["nome"], 0)

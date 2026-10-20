@@ -51,7 +51,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   está feito (`tabela.pesquisa`): os dados da vertical (Saúde: cidade e praça, funcionários, setor; LF: Receita,
   notícias, site lido pela IA, cargos-chave; RE: setor, funcionários), quem decide da área e a ponte por e-mail com
   cargo. Preenchido à mão conta como feito. Verde = completa; azul = a plataforma ainda está buscando algo (ex.: a
-  lista de quem decide no Sales Navigator); amarelo = o que falta só se resolve à mão. Ao passar o mouse, a lista de
+  lista de quem decide no Sales Navigator); amarelo = o que falta só se resolve à mão por enquanto (quem decide já
+  procurado no LinkedIn sem achar ninguém mostra a data da busca e a da próxima, `LINKEDIN_VALIDADE_DIAS`). Ao passar o mouse, a lista de
   etapas com ✓/○ e quem resolve cada uma. **Atualizações do negócio**: em cada oportunidade, "+ atualização" registra
   o que aconteceu (ex.: "corretor da família, muito difícil entrar"), por vertical. A IA (mesmo modelo da temperatura)
   lê as notas e ajusta o Score de −50 a +20, com o motivo no "Por quê"; se ela não responder na hora, a rotina avalia

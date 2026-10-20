@@ -506,7 +506,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     por_id = {e.id: e for e in empresas}
     for item in saida:
         item["pendencias"] = pendencias(item)
-        item["pesquisa"] = pesquisa(item, por_id[item["empresa"]["id"]])
+        item["pesquisa"] = pesquisa(item, por_id[item["empresa"]["id"]], settings.linkedin_validade_dias)
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 
 
@@ -566,11 +566,13 @@ LISTA_PESSOAS = {"saude": PESSOAS, "linhas_financeiras": PESSOAS_LF, "ramos_elem
 SEM_LINKEDIN = {"Receita Federal", "notícias", "site lido pela IA"}
 
 
-def pesquisa(o: dict, e: Empresa) -> dict:
+def pesquisa(o: dict, e: Empresa, validade_dias: int = 180, agora: datetime | None = None) -> dict:
     """Quanto da pesquisa da oportunidade está feito (barrinha em Oportunidades): os dados da vertical, quem decide
     da área e a ponte por e-mail (com cargo). Preenchido à mão conta como feito. Cada etapa pendente diz quem vai
     resolver: a plataforma (ainda vai buscar sozinha) ou a equipe (só à mão, em Completar dados).
-    Estado: "completo" (100%), "pesquisando" (a plataforma ainda busca algo) ou "equipe" (o resto depende da equipe)."""
+    Estado: "completo" (100%), "pesquisando" (a plataforma ainda busca algo) ou "equipe" (o resto depende da equipe).
+    Quem decide já procurado no LinkedIn sem achar ninguém diz quando foi e quando será a nova busca (`dica`)."""
+    agora = agora or datetime.utcnow()
     falta = set(o["faltando"])
     areas = e.linkedin_areas or {}
     # Sem página no LinkedIn, o que viria de lá só chega à mão
@@ -585,9 +587,17 @@ def pesquisa(o: dict, e: Empresa) -> dict:
     if d.get("daArea"):
         etapas.append({"texto": f"quem decide ({area})" if area else "quem decide", "ok": True, "quem": None})
     else:
-        lida = LISTA_PESSOAS[o["vertical"]] in areas if o["vertical"] in LISTA_PESSOAS else True
-        etapas.append({"texto": f"quem decide ({area})" if area else "quem decide", "ok": False,
-                       "quem": "equipe" if lida or sem_linkedin else "plataforma"})
+        etapa = {"texto": f"quem decide ({area})" if area else "quem decide", "ok": False, "quem": "plataforma"}
+        lida = areas.get(LISTA_PESSOAS.get(o["vertical"], ""))
+        if sem_linkedin:
+            etapa |= {"quem": "equipe", "dica": "empresa sem LinkedIn; só por e-mail, Pipedrive ou à mão"}
+        elif lida:
+            lida = datetime.fromisoformat(lida)
+            nova = lida + timedelta(days=validade_dias)
+            if nova > agora:  # já procurado e sem ninguém da área: até a nova busca, só à mão
+                etapa |= {"quem": "equipe", "dica": f"LinkedIn procurado em {lida:%d/%m/%Y} sem achar ninguém; "
+                                                     f"nova busca em {nova:%d/%m/%Y}, ou preencha à mão"}
+        etapas.append(etapa)
     campos = {x["campo"] for x in o.get("pendencias") or []}
     etapas.append({"texto": "ponte por e-mail", "ok": "ponte" not in campos, "quem": "equipe" if "ponte" in campos else None})
     if "ponte" not in campos:

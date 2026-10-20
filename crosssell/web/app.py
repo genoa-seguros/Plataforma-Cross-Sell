@@ -509,22 +509,27 @@ def leitor_notas(db: Session):
 def api_nota(empresa_id: int, dados: NotaIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     """O que aconteceu com a oportunidade. A IA lê as notas da vertical e ajusta o Score (de -50 a +20); se ela
     não responder agora, a rotina avalia depois."""
+    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
+    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
+
+
+def _salvar_nota(db: Session, u: Usuario, empresa_id: int, vertical: str, texto: str | None) -> NotaOportunidade:
     from crosssell import nota_ia
 
-    texto = (dados.texto or "").strip()[:2000]
-    if db.get(Empresa, empresa_id) is None or dados.vertical not in VERTICAIS:
+    texto = (texto or "").strip()[:2000]
+    if db.get(Empresa, empresa_id) is None or vertical not in VERTICAIS:
         raise HTTPException(404, "Oportunidade não encontrada.")
     if len(texto) < 5:
         raise HTTPException(400, "Escreva o que aconteceu.")
-    nota = NotaOportunidade(empresa_id=empresa_id, vertical=dados.vertical, texto=texto, usuario_id=u.id)
+    nota = NotaOportunidade(empresa_id=empresa_id, vertical=vertical, texto=texto, usuario_id=u.id)
     db.add(nota)
     db.commit()
     try:
-        nota_ia.avaliar(db, leitor_notas(db), empresa_id, dados.vertical)
+        nota_ia.avaliar(db, leitor_notas(db), empresa_id, vertical)
     except Exception:  # a nota fica salva; a rotina tenta a avaliação de novo
         logging.getLogger(__name__).exception("Falha ao avaliar a nota pela IA")
     db.refresh(nota)
-    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
+    return nota
 
 
 @app.post("/api/empresas/{empresa_id}/local")
@@ -655,6 +660,26 @@ def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(g
     except httpx.HTTPError:
         raise HTTPException(502, "O Pipedrive não aceitou a nova data; tente de novo.")
     return {"ok": True, "vencimento": at.vencimento.isoformat()}
+
+
+@app.post("/api/atividades/{atividade_id}/nota")
+def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(get_db),
+                       u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Nota escrita na atividade (To-dos, reunião de sexta): vira Nota da oportunidade da empresa na vertical
+    (a IA ajusta o Score) e é acrescentada à nota da atividade no Pipedrive."""
+    at = db.get(Atividade, atividade_id)
+    if at is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+    empresa_id = at.empresa_id or (at.negocio.empresa_id if at.negocio else None)
+    if empresa_id is None:
+        raise HTTPException(400, "A atividade não tem empresa.")
+    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
+    try:
+        pd.anotar_atividade(db, client, at, f"[{date.today():%d/%m} · {u.nome}] {nota.texto}")
+        no_pipedrive = True
+    except httpx.HTTPError:
+        no_pipedrive = False  # a nota da oportunidade fica salva; a da atividade não chegou ao Pipedrive
+    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo, "pipedrive": no_pipedrive}
 
 
 @app.get("/api/todos")

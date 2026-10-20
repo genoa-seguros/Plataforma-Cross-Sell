@@ -78,7 +78,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   (✎), com as mesmas regras da tela Oportunidades.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita ou
-  mudar a data (escolher no calendário e clicar em Confirmar) atualiza o Pipedrive; o que for mudado direto no Pipedrive (feita/pendente e data) volta
+  mudar a data (escolher no calendário e clicar em Confirmar) atualiza o Pipedrive; "+ nota" em
+  cada atividade (reunião de sexta) grava uma nota da oportunidade da empresa na vertical escolhida (a IA
+  ajusta o Score) e a acrescenta à nota da atividade no Pipedrive; o que for mudado direto no Pipedrive (feita/pendente e data) volta
   para a plataforma na rotina de hora em hora.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal

@@ -362,17 +362,30 @@ def concluir_atividade(db: Session, client: PipedriveClient, atividade: Atividad
     db.commit()
 
 
+def mudar_data_atividade(db: Session, client: PipedriveClient, atividade: Atividade, vencimento: date) -> None:
+    """Muda o vencimento da atividade no Pipedrive e na plataforma."""
+    if atividade.pipedrive_id:
+        client.atualizar_atividade(atividade.pipedrive_id, {"due_date": vencimento.isoformat()})
+    atividade.vencimento = vencimento
+    db.commit()
+
+
 def sincronizar_atividades(db: Session, client: PipedriveClient, desde: date) -> int:
-    """Atualiza no banco o status (feita/pendente) das atividades criadas pela plataforma."""
+    """Atualiza no banco o status (feita/pendente) e o vencimento das atividades criadas pela plataforma
+    (quem muda a data direto no Pipedrive vê a mudança na plataforma na rodada seguinte)."""
     n = 0
     for at in db.scalars(select(Atividade).where(Atividade.pipedrive_id.is_not(None), Atividade.vencimento >= desde)):
         dados = client.atividade(at.pipedrive_id)
         if dados is None:
             continue
-        feita = bool(dados.get("done"))
+        feita, mudou = bool(dados.get("done")), False
         if feita != at.concluida:
             at.concluida = feita
             at.concluida_em = datetime.utcnow() if feita else None
-            n += 1
+            mudou = True
+        venc = parse_data((dados.get("due_date") or "")[:10])
+        if venc and venc != at.vencimento:
+            at.vencimento, mudou = venc, True
+        n += mudou
     db.commit()
     return n

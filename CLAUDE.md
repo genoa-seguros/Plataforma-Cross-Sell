@@ -87,7 +87,10 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled
   mailbox reads 12 months once (`Usuario.historico_em`). `potencial.praca(e)` decides the Saúde praça: a manual city
   (`cidade_fonte="manual"`) decides alone, a city in `metropoles` is alvo, otherwise `Empresa.praca` (set by the
-  employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha.
+  employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha. `?oferta=ganhos` lists companies with a
+  Pipedrive deal won in the last `tabela.GANHOS_DIAS` days (item `ganhos`), analyzed or not, even without an open
+  card (`soGanho` items appear only there; `_calcular_oportunidades` keeps them out of the default list, fila and
+  pendências); `linkedin._candidatos_alvo` puts them first.
   `/api/fila` feeds the "Fila de análise" drawer (not analyzed, with company people); `/api/pendencias` feeds its
   "Completar dados" tab (analyzed items with `tabela.pendencias`, summary by `donos` = open-deal owners). `OportunidadeManual` forces an
   opportunity in ("incluída à mão"); `Pessoa.ponte_manual` counts as ponte (`tabela.tem_relacao`); `NotaOportunidade`

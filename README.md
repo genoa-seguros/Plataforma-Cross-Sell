@@ -13,7 +13,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   (seguro vigente) e leads com **algum card aberto** no Pipedrive (negócio aberto com vertical, em
   qualquer funil) que ainda não têm seguro nem negócio aberto em outra vertical (ex.: tem D&O e está
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
-  nada aberto fica de fora (terá uma tela própria, ainda a desenhar). Só aparecem as empresas já
+  nada aberto fica de fora, exceto no filtro **Ganhos recentes** (negócio ganho no Pipedrive nos últimos
+  14 dias, `tabela.GANHOS_DIAS`): ali aparece mesmo sem card aberto e ainda em análise (com o que falta),
+  com a etiqueta do que foi ganho e de quem fechou, quem fechou mais recentemente primeiro; essas empresas
+  vão para a frente da fila do LinkedIn. Só aparecem as empresas já
   **analisadas**, para a equipe não precisar buscar nada na mão. Em Saúde: **na praça** (cidade alvo ou
   ≥ 30% dos funcionários em cidades alvo, `saude.praca_fatia_minima`), **funcionários** e **setor** do
   LinkedIn ou informados à mão, **quem decide** mapeado (RH ou, sem RH, um executivo; sócio vindo só da
@@ -74,8 +77,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   praça: não entra em Oportunidades*). Funcionários, cidade/UF e setor podem ser informados ali mesmo
   (✎), com as mesmas regras da tela Oportunidades.
 - **To-dos da semana**: atividades criadas pela plataforma, por responsável. Mostra as
-  pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita
-  atualiza o Pipedrive.
+  pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita ou
+  mudar a data atualiza o Pipedrive; o que for mudado direto no Pipedrive (feita/pendente e data) volta
+  para a plataforma na rotina de hora em hora.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal
   do cadastro), o que cada um faz,

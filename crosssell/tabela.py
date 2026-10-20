@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
-from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS_LF, mudou_de_empresa
+from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS, PESSOAS_LF, PESSOAS_RE, mudou_de_empresa
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
 from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeManual, Pessoa,
@@ -503,8 +503,10 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "produtos": lf["produtos"] if lf else [],
                 "etiquetas": lf["etiquetas"] if lf else [],
             })
+    por_id = {e.id: e for e in empresas}
     for item in saida:
         item["pendencias"] = pendencias(item)
+        item["pesquisa"] = pesquisa(item, por_id[item["empresa"]["id"]])
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
 
 
@@ -549,6 +551,51 @@ def pendencias(o: dict) -> list[dict]:
         if not ok:
             saida.append({"campo": campo, "texto": texto})
     return saida
+
+
+# Etapas da pesquisa de cada vertical (barrinha em Oportunidades): rótulo na tela e o nome em `faltando`
+ETAPAS_BASE = {
+    "saude": (("cidade e praça", ("cidade", "praça")), ("funcionários", ("funcionários",)), ("setor", ("setor",))),
+    "linhas_financeiras": (("Receita Federal", ("Receita",)), ("notícias", ("notícias",)),
+                           ("site lido pela IA", ("site (IA)",)), ("cargos-chave no LinkedIn", ("cargos-chave",))),
+    "ramos_elementares": (("setor", ("setor",)), ("funcionários", ("funcionários",))),
+}
+# A lista de quem decide pelo Sales Navigator, por vertical (chave em Empresa.linkedin_areas)
+LISTA_PESSOAS = {"saude": PESSOAS, "linhas_financeiras": PESSOAS_LF, "ramos_elementares": PESSOAS_RE}
+# O que a plataforma busca sozinha mesmo sem LinkedIn
+SEM_LINKEDIN = {"Receita Federal", "notícias", "site lido pela IA"}
+
+
+def pesquisa(o: dict, e: Empresa) -> dict:
+    """Quanto da pesquisa da oportunidade está feito (barrinha em Oportunidades): os dados da vertical, quem decide
+    da área e a ponte por e-mail (com cargo). Preenchido à mão conta como feito. Cada etapa pendente diz quem vai
+    resolver: a plataforma (ainda vai buscar sozinha) ou a equipe (só à mão, em Completar dados).
+    Estado: "completo" (100%), "pesquisando" (a plataforma ainda busca algo) ou "equipe" (o resto depende da equipe)."""
+    falta = set(o["faltando"])
+    areas = e.linkedin_areas or {}
+    # Sem página no LinkedIn, o que viria de lá só chega à mão
+    sem_linkedin = e.linkedin_nao_encontrado and not e.linkedin_url
+    etapas = []
+    for texto, chaves in ETAPAS_BASE.get(o["vertical"], ()):
+        ok = not falta.intersection(chaves)
+        quem = "plataforma" if texto in SEM_LINKEDIN or not sem_linkedin else "equipe"
+        etapas.append({"texto": texto, "ok": ok, "quem": None if ok else quem})
+    d = o.get("quemDecide") or {}
+    area = " / ".join(d.get("areas") or [])
+    if d.get("daArea"):
+        etapas.append({"texto": f"quem decide ({area})" if area else "quem decide", "ok": True, "quem": None})
+    else:
+        lida = LISTA_PESSOAS[o["vertical"]] in areas if o["vertical"] in LISTA_PESSOAS else True
+        etapas.append({"texto": f"quem decide ({area})" if area else "quem decide", "ok": False,
+                       "quem": "equipe" if lida or sem_linkedin else "plataforma"})
+    campos = {x["campo"] for x in o.get("pendencias") or []}
+    etapas.append({"texto": "ponte por e-mail", "ok": "ponte" not in campos, "quem": "equipe" if "ponte" in campos else None})
+    if "ponte" not in campos:
+        etapas.append({"texto": "cargo da ponte", "ok": "cargo" not in campos, "quem": "equipe" if "cargo" in campos else None})
+    feitas = sum(x["ok"] for x in etapas)
+    pendentes = {x["quem"] for x in etapas if not x["ok"]}
+    estado = "completo" if not pendentes else "pesquisando" if "plataforma" in pendentes else "equipe"
+    return {"pct": round(100 * feitas / len(etapas)), "estado": estado, "etapas": etapas}
 
 
 def semana(ref: date) -> tuple[date, date]:

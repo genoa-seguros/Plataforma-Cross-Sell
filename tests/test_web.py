@@ -646,3 +646,10 @@ def test_filtro_score_alto_influencia_baixa(cenario, db, monkeypatch):  # noqa: 
     assert [webapp._relacao_ok(o, "baixa") for o in itens] == [True, False, False]
     assert [webapp._relacao_ok(o, "-") for o in itens] == [True, False, True]
     assert c.get("/api/oportunidades?rel=baixa").status_code == 200
+
+
+def test_conferir_cidade_antes_de_gravar(cenario):  # noqa: F811
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    assert c.get("/api/cidades/conferir?cidade=Salavador").json() == {"sugestao": "Salvador"}
+    assert c.get("/api/cidades/conferir?cidade=Salvador").json() == {"sugestao": None}

@@ -412,6 +412,7 @@ const previa = {
     if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
+    if (path.startsWith("/api/cidades/conferir")) return {sugestao: /salavador/i.test(path) ? "Salvador" : null};
     if (path.startsWith("/api/fila")) return filaPrevia(path);
     if (path.startsWith("/api/pendencias")) return pendenciasPrevia(path);
     if (path.startsWith("/api/negocios")) return negociosPrevia(path);
@@ -745,6 +746,16 @@ function editarLocal(id, cidade, uf, nome) {
       return;
     }
     try {
+      // Grafia quase igual a uma cidade alvo ("Salavador")? Pergunta antes de gravar
+      const el = document.getElementById("local-erro"), conferida = el.dataset.conferida === c;
+      const sug = c && !conferida ? (await api.get("/api/cidades/conferir?cidade=" + encodeURIComponent(c))).sugestao : null;
+      if (sug) {
+        el.dataset.conferida = c;
+        el.innerHTML = `Você quis dizer <b>${esc(sug)}</b>? <button type="button" class="btn sec" id="local-usar">Usar ${esc(sug)}</button> <span class="sub">ou clique em Salvar para manter como digitou</span>`;
+        el.hidden = false;
+        document.getElementById("local-usar").onclick = () => { document.getElementById("local-cidade").value = sug; el.hidden = true; delete el.dataset.conferida; };
+        return;
+      }
       await api.post(`/api/empresas/${id}/local`, {cidade: c || null, uf: u || null});
       fechar(); aviso(c ? "Cidade salva" : "Cidade voltou ao automático");
       OPS_RESP = null; render();

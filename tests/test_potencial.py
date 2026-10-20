@@ -148,3 +148,10 @@ def test_score_nao_depende_da_influencia_e_localizacao_pelas_cidades_com_cliente
     assert potencial("saude", rio, None)["score"] < sem["score"]
     for v in ("linhas_financeiras", "ramos_elementares"):
         assert potencial(v, sp, ceo)["score"] == potencial(v, sp, None)["score"]
+
+
+def test_cidade_parecida_sugere_a_grafia_certa():
+    from crosssell.potencial import cidade_parecida
+    assert cidade_parecida("Salavador") == "Salvador" and cidade_parecida("Curitba") == "Curitiba"
+    assert cidade_parecida("Salvador") is None  # já é alvo
+    assert cidade_parecida("Campinas") is None and cidade_parecida("Santos") is None  # fora da lista, sem parecida

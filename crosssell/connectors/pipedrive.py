@@ -396,22 +396,29 @@ def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade,
     pessoa = db.get(Pessoa, pessoa_id) if pessoa_id else None
     if pessoa_id and (pessoa is None or not pessoa.pipedrive_person_id or pessoa.empresa_id != empresa_id):
         raise ValueError("Escolha uma pessoa da empresa que exista no Pipedrive.")
-    if responsavel.id != atividade.responsavel_id and not responsavel.pipedrive_user_id:
-        raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
     nota = (nota or "").strip() or None
-    # Só vai ao Pipedrive o que mudou: trocar só a oportunidade não escreve nada lá
+    # Só vai ao Pipedrive o que mudou: trocar só a oportunidade não escreve nada lá. A comparação é com a atividade
+    # como está agora no Pipedrive (alguém pode ter mudado lá, ex.: quem executa), não só com o que temos aqui
+    atual = client.atividade(atividade.pipedrive_id) if atividade.pipedrive_id else None
+    if atual is None:
+        atual = {"subject": atividade.assunto, "type": atividade.tipo, "due_date": atividade.vencimento.isoformat(),
+                 "owner_id": atividade.responsavel.pipedrive_user_id if atividade.responsavel else None,
+                 "person_id": atividade.pessoa.pipedrive_person_id if atividade.pessoa else None,
+                 "note": atividade.nota}
     mudancas = {}
-    if assunto != atividade.assunto:
+    if assunto != atual.get("subject"):
         mudancas["subject"] = assunto
-    if tipo != atividade.tipo:
+    if tipo != atual.get("type"):
         mudancas["type"] = tipo
-    if vencimento != atividade.vencimento:
+    if vencimento.isoformat() != (atual.get("due_date") or "")[:10]:
         mudancas["due_date"] = vencimento.isoformat()
-    if responsavel.id != atividade.responsavel_id:
+    if responsavel.pipedrive_user_id != atual.get("owner_id"):
+        if not responsavel.pipedrive_user_id:
+            raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
         mudancas["owner_id"] = responsavel.pipedrive_user_id
-    if pessoa_id != atividade.pessoa_id:
+    if (pessoa.pipedrive_person_id if pessoa else None) != atual.get("person_id"):
         mudancas["participants"] = [{"person_id": pessoa.pipedrive_person_id, "primary": True}] if pessoa else []
-    if nota != atividade.nota:
+    if nota != (atual.get("note") or None):
         mudancas["note"] = nota
     if atividade.pipedrive_id and mudancas:
         client.atualizar_atividade(atividade.pipedrive_id, mudancas)
@@ -426,7 +433,8 @@ def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade,
 def sincronizar_atividades(db: Session, client: PipedriveClient, desde: date) -> int:
     """Atualiza no banco o status (feita/pendente) e o vencimento das atividades criadas pela plataforma
     (quem muda a data direto no Pipedrive vê a mudança na plataforma na rodada seguinte). A atividade excluída
-    no Pipedrive sai também daqui."""
+    no Pipedrive sai também daqui. Quem executa e o assunto mudados lá também voltam."""
+    usuarios = {u.pipedrive_user_id: u for u in db.scalars(select(Usuario).where(Usuario.pipedrive_user_id.is_not(None)))}
     n = 0
     for at in db.scalars(select(Atividade).where(Atividade.pipedrive_id.is_not(None), Atividade.vencimento >= desde)):
         dados = client.atividade(at.pipedrive_id)
@@ -442,6 +450,11 @@ def sincronizar_atividades(db: Session, client: PipedriveClient, desde: date) ->
         venc = parse_data((dados.get("due_date") or "")[:10])
         if venc and venc != at.vencimento:
             at.vencimento, mudou = venc, True
+        dono = usuarios.get(dados.get("owner_id"))
+        if dono is not None and dono.id != at.responsavel_id:
+            at.responsavel_id, mudou = dono.id, True
+        if dados.get("subject") and dados["subject"] != at.assunto:
+            at.assunto, mudou = dados["subject"], True
         n += mudou
     db.commit()
     return n

@@ -169,3 +169,26 @@ def test_excluir_atividade_sai_daqui_e_do_pipedrive(cenario, db):  # noqa: F811
     oid = outra.id
     assert pipedrive.sincronizar_atividades(db, client, date.today() - timedelta(days=7)) == 1
     assert db.get(Atividade, oid) is None
+
+
+def test_quem_executa_mudado_no_pipedrive_volta_e_a_edicao_corrige(cenario, db):  # noqa: F811
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    bruno = db.scalar(select(Usuario).where(Usuario.email.like("bruno%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Ligar", vencimento=date.today(),
+                                   responsavel=victor, criada_por=victor)
+    # Alguém passou a atividade para o Bruno direto no Pipedrive: a plataforma ainda acha que é do Victor
+    fake.atividades[at.pipedrive_id]["owner_id"] = bruno.pipedrive_user_id
+    base = {"assunto": "Ligar", "tipo": "task", "vencimento": date.today().isoformat(), "pessoa_id": None,
+            "responsavel_id": victor.id, "nota": ""}
+    # Salvar com o Victor devolve a atividade a ele no Pipedrive (antes nada era enviado)
+    assert c.post(f"/api/atividades/{at.id}/editar", headers=H, json=base).json() == {"ok": True}
+    assert fake.atualizadas[-1] == (at.pipedrive_id, {"owner_id": victor.pipedrive_user_id})
+    # E a sincronização traz de volta quem executa mudado no Pipedrive
+    fake.atividades[at.pipedrive_id]["owner_id"] = bruno.pipedrive_user_id
+    assert pipedrive.sincronizar_atividades(db, client, date.today() - timedelta(days=7)) == 1
+    db.refresh(at)
+    assert at.responsavel_id == bruno.id

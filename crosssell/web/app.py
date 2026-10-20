@@ -676,6 +676,15 @@ class EditarAtividadeIn(BaseModel):
     vertical: str | None = None
 
 
+def _erro_pipedrive(exc: httpx.HTTPStatusError) -> str:
+    """Motivo que o Pipedrive deu para recusar (campo "error" da resposta), para aparecer na tela."""
+    try:
+        motivo = exc.response.json().get("error")
+    except ValueError:
+        motivo = None
+    return str(motivo or f"erro {exc.response.status_code}")[:200]
+
+
 @app.post("/api/atividades/{atividade_id}/editar")
 def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Session = Depends(get_db),
                          _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
@@ -692,8 +701,11 @@ def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Sessio
                             vertical=dados.vertical if dados.vertical in VERTICAIS else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    except httpx.HTTPStatusError as exc:
+        log.warning("Pipedrive recusou a edição da atividade %s: %s", at.pipedrive_id, exc.response.text[:500])
+        raise HTTPException(502, f"O Pipedrive não aceitou a alteração: {_erro_pipedrive(exc)}")
     except httpx.HTTPError:
-        raise HTTPException(502, "O Pipedrive não aceitou a alteração; tente de novo.")
+        raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
     return {"ok": True}
 
 

@@ -125,3 +125,22 @@ def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
     r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={
         "assunto": "X", "tipo": "task", "vencimento": nova.isoformat(), "pessoa_id": outra.id, "responsavel_id": bruno.id})
     assert r.status_code == 400
+
+
+def test_editar_so_a_oportunidade_nao_escreve_no_pipedrive(cenario, db):  # noqa: F811
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Ligar", vencimento=date.today(),
+                                   responsavel=victor, criada_por=victor)
+    escritas = len(fake.atualizadas)
+    base = {"assunto": "Ligar", "tipo": "task", "vencimento": date.today().isoformat(), "pessoa_id": None,
+            "responsavel_id": victor.id, "nota": ""}
+    r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json=base | {"vertical": "ramos_elementares"})
+    assert r.json() == {"ok": True} and len(fake.atualizadas) == escritas
+    assert c.get(f"/api/atividades/{at.id}").json()["vertical"] == "ramos_elementares"
+    # Mudou só a observação: vai só a nota
+    c.post(f"/api/atividades/{at.id}/editar", headers=H, json=base | {"nota": "Levar a proposta"})
+    assert fake.atualizadas[-1] == (at.pipedrive_id, {"note": "Levar a proposta"})

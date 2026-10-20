@@ -382,14 +382,25 @@ def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade,
     pessoa = db.get(Pessoa, pessoa_id) if pessoa_id else None
     if pessoa_id and (pessoa is None or not pessoa.pipedrive_person_id or pessoa.empresa_id != empresa_id):
         raise ValueError("Escolha uma pessoa da empresa que exista no Pipedrive.")
-    if not responsavel.pipedrive_user_id:
+    if responsavel.id != atividade.responsavel_id and not responsavel.pipedrive_user_id:
         raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
     nota = (nota or "").strip() or None
-    if atividade.pipedrive_id:
-        client.atualizar_atividade(atividade.pipedrive_id, {
-            "subject": assunto, "type": tipo, "due_date": vencimento.isoformat(), "owner_id": responsavel.pipedrive_user_id,
-            "participants": [{"person_id": pessoa.pipedrive_person_id, "primary": True}] if pessoa else [],
-            "note": nota or ""})
+    # Só vai ao Pipedrive o que mudou: trocar só a oportunidade não escreve nada lá
+    mudancas = {}
+    if assunto != atividade.assunto:
+        mudancas["subject"] = assunto
+    if tipo != atividade.tipo:
+        mudancas["type"] = tipo
+    if vencimento != atividade.vencimento:
+        mudancas["due_date"] = vencimento.isoformat()
+    if responsavel.id != atividade.responsavel_id:
+        mudancas["owner_id"] = responsavel.pipedrive_user_id
+    if pessoa_id != atividade.pessoa_id:
+        mudancas["participants"] = [{"person_id": pessoa.pipedrive_person_id, "primary": True}] if pessoa else []
+    if nota != atividade.nota:
+        mudancas["note"] = nota
+    if atividade.pipedrive_id and mudancas:
+        client.atualizar_atividade(atividade.pipedrive_id, mudancas)
     atividade.assunto, atividade.tipo, atividade.vencimento = assunto, tipo, vencimento
     atividade.pessoa_id, atividade.responsavel_id, atividade.nota = pessoa_id, responsavel.id, nota
     if vertical:

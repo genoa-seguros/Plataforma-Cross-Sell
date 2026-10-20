@@ -80,12 +80,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita ou
   mudar a data (escolher no calendário e clicar em Confirmar) atualiza o Pipedrive; clicar no assunto
   (ou em "✎ editar") abre a atividade para mudar pessoa, assunto, tipo, data, quem executa e nota, e grava no
-  Pipedrive; a tela é uma tabela por responsável no modelo do Pipedrive (assunto com o ícone do tipo,
+  Pipedrive (só o que mudou; a oportunidade é só da plataforma), ou para excluí-la daqui e do Pipedrive; a tela é uma tabela por responsável no modelo do Pipedrive (assunto com o ícone do tipo,
   oportunidade (a vertical para a qual a atividade é feita, `Atividade.vertical`, escolhida ao criar ou
   editar; sem ela, a do negócio), organização, pessoa, vencimento e observação), com filtro por tipo. Dois campos
   diferentes: a **Observação** da atividade (lembrete do que fazer; vai para a Anotação da atividade no Pipedrive e
   não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
-  empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente e data) volta
+  empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data e exclusão) volta
   para a plataforma na rotina de hora em hora.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal

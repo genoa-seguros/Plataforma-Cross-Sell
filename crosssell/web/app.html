@@ -137,6 +137,7 @@ table.ativ td.num{white-space:nowrap}table.ativ tr.feita td{color:var(--mute)}ta
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;width:100%;max-width:460px;display:grid;gap:12px;max-height:90vh;overflow:auto}
 .modal label{display:grid;gap:4px;font-size:13px;color:var(--mute)}
 .modal .acoes{display:flex;gap:8px;justify-content:flex-end}
+.modal .acoes .perigo{margin-right:auto}
 .erro{color:var(--bad);font-size:13px;margin:0}
 .aviso{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:30}
 .form-linha{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
@@ -459,6 +460,7 @@ const previa = {
         responsavel: u?.email || a.responsavel, responsavelNome: u?.nome || a.responsavelNome}); return {ok: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/nota$/))) return {id: ++this.seq, texto: b.texto, ajuste: null};
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
+    if ((m = path.match(/^\/api\/atividades\/(\d+)\/excluir$/))) { D.atividades = D.atividades.filter(x => x.id != m[1]); return {ok:true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
       if (b.cliente) D.oportunidades = (D.oportunidades || []).filter(o => !(o.empresa.id == m[1] && o.vertical === "saude"));
@@ -659,11 +661,20 @@ function modalAtividade(ctx) {
     <label>Quem executa<select id="a-resp">${USUARIOS.map(u => `<option value="${u.id}" ${u.id === dono?.id ? "selected" : ""} ${u.pipedrive || PREVIA ? "" : "disabled"}>${esc(u.nome)}${u.pipedrive || PREVIA ? "" : " (sem usuário no Pipedrive)"}</option>`).join("")}</select></label>
     <label>Observação${ctx.edicao ? "" : " (opcional)"} <span class="sub">lembrete da atividade; vai para a Anotação no Pipedrive e não mexe no Score</span><textarea id="a-nota" rows="${ctx.edicao ? 7 : 3}" placeholder="ex.: IDEAL: agenda com a Patrícia e o ponto focal do D&O">${esc(ctx.nota || "")}</textarea></label>
     <p class="erro" id="a-erro" hidden></p>
-    <div class="acoes"><button type="button" class="btn sec" id="a-cancelar">Cancelar</button><button class="btn" id="a-salvar">${ctx.edicao ? "Salvar no Pipedrive" : "Criar atividade"}</button></div>
+    <div class="acoes">${ctx.edicao ? `<button type="button" class="btn perigo" id="a-excluir" title="Exclui a atividade aqui e no Pipedrive">Excluir</button>` : ""}<button type="button" class="btn sec" id="a-cancelar">Cancelar</button><button class="btn" id="a-salvar">${ctx.edicao ? "Salvar no Pipedrive" : "Criar atividade"}</button></div>
   </form></div>`;
   const fechar = () => document.getElementById("modal").innerHTML = "";
   document.getElementById("a-cancelar").onclick = fechar;
   document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  if (ctx.edicao) document.getElementById("a-excluir").onclick = async () => {
+    if (!confirm("Excluir esta atividade? Ela sai da plataforma e do Pipedrive.")) return;
+    const btn = document.getElementById("a-excluir"); btn.disabled = true;
+    try {
+      await api.post(`/api/atividades/${ctx.edicao}/excluir`, {});
+      fechar(); aviso(PREVIA ? "Atividade excluída na prévia (o Pipedrive não foi alterado)" : "Atividade excluída da plataforma e do Pipedrive");
+      render();
+    } catch (err) { const el = document.getElementById("a-erro"); el.textContent = err.message; el.hidden = false; btn.disabled = false; }
+  };
   document.getElementById("f-ativ").onsubmit = async e => {
     e.preventDefault();
     const btn = document.getElementById("a-salvar"); btn.disabled = true;

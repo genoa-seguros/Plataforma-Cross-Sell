@@ -125,6 +125,12 @@ class PipedriveClient:
         r.raise_for_status()
         return r.json()["data"]
 
+    def excluir_atividade(self, atividade_id: int) -> None:
+        """Exclui a atividade no Pipedrive (já excluída lá conta como feito)."""
+        r = self.http.delete(f"/v2/activities/{atividade_id}")
+        if r.status_code != 404:
+            r.raise_for_status()
+
     def atividade(self, atividade_id: int) -> dict | None:
         r = self.http.get(f"/v2/activities/{atividade_id}")
         if r.status_code == 404:
@@ -363,6 +369,14 @@ def concluir_atividade(db: Session, client: PipedriveClient, atividade: Atividad
     db.commit()
 
 
+def excluir_atividade(db: Session, client: PipedriveClient, atividade: Atividade) -> None:
+    """Exclui a atividade no Pipedrive e na plataforma."""
+    if atividade.pipedrive_id:
+        client.excluir_atividade(atividade.pipedrive_id)
+    db.delete(atividade)
+    db.commit()
+
+
 def mudar_data_atividade(db: Session, client: PipedriveClient, atividade: Atividade, vencimento: date) -> None:
     """Muda o vencimento da atividade no Pipedrive e na plataforma."""
     if atividade.pipedrive_id:
@@ -411,11 +425,14 @@ def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade,
 
 def sincronizar_atividades(db: Session, client: PipedriveClient, desde: date) -> int:
     """Atualiza no banco o status (feita/pendente) e o vencimento das atividades criadas pela plataforma
-    (quem muda a data direto no Pipedrive vê a mudança na plataforma na rodada seguinte)."""
+    (quem muda a data direto no Pipedrive vê a mudança na plataforma na rodada seguinte). A atividade excluída
+    no Pipedrive sai também daqui."""
     n = 0
     for at in db.scalars(select(Atividade).where(Atividade.pipedrive_id.is_not(None), Atividade.vencimento >= desde)):
         dados = client.atividade(at.pipedrive_id)
-        if dados is None:
+        if dados is None or dados.get("is_deleted"):
+            db.delete(at)
+            n += 1
             continue
         feita, mudou = bool(dados.get("done")), False
         if feita != at.concluida:

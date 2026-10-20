@@ -36,7 +36,7 @@ EMPRESAS = [
     ("Metalúrgica Aurora", "2511000 - Estruturas metálicas", "DEMAIS", 420, [(1, "D&O", 70), (1, "Cyber", -40)], [(29, "Empresarial"), (23, "Saúde")], "muita"),
     ("Transportadora Rota Sul", "4930202 - Transporte de carga", "DEMAIS", 260, [(29, "Transportes", 95)], [(1, "D&O")], "media"),
     ("Clínica Horizonte", "8610101 - Atendimento hospitalar", "DEMAIS", 180, [(1, "E&O Medmal", 210)], [(34, "Saúde")], "muita"),
-    ("Grupo Vértice Tecnologia", "6201501 - Desenvolvimento de software", "DEMAIS", 350, [(1, "D&O", 300), (1, "Cyber", 120)], [(29, "Equipamentos")], "media"),
+    ("Grupo Vértice Tecnologia", "6201501 - Desenvolvimento de software", "DEMAIS", 350, [(1, "D&O", 358), (1, "Cyber", 120)], [(29, "Equipamentos")], "media"),
     ("Alimentos Serra Azul", "1091101 - Panificação industrial", "DEMAIS", 610, [(29, "Empresarial", 45)], [(1, "D&O"), (23, "Vida")], "pouca"),
     ("Construtora Pedra Alta", "4120400 - Construção de edifícios", "DEMAIS", 140, [(40, "Garantia", 160)], [(29, "Risco de Engenharia")], "media"),
     ("Laboratório Prisma", "2121101 - Medicamentos", "DEMAIS", 230, [], [(1, "D&O"), (34, "Saúde")], "muita"),
@@ -133,7 +133,7 @@ def main():
             fim = HOJE + timedelta(days=dias)
             db.add(Negocio(empresa=e, pessoa=pessoas[0], vertical=VERT[funil], fonte="pipedrive", id_externo=str(seq),
                            pipeline_id=funil, status="ganho", titulo=f"{produto} {fim.year - 1}", produto=produto,
-                           inicio_vigencia=fim - timedelta(days=365), fim_vigencia=fim,
+                           inicio_vigencia=fim - timedelta(days=365), fim_vigencia=fim, ganho_em=fim - timedelta(days=365),
                            valor=round(random.uniform(8e3, 2e5), 2), responsavel_email=DONO[funil]))
         for funil, produto in abertos:
             seq += 1

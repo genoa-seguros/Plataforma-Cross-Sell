@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
@@ -90,10 +91,13 @@ class _Guardada:
             return self.valor
 
 
-def _calcular_oportunidades(db: Session) -> tuple[list[dict], list[str]]:
-    # O Potencial não fica gravado: para ordenar e paginar é preciso calcular todas
-    itens = tabela.oportunidades(db, get_settings())
-    return itens, sorted({u for o in itens for u in o["relacoes"]})
+def _calcular_oportunidades(db: Session) -> tuple[list[dict], list[str], list[dict]]:
+    """(oportunidades de quem tem card aberto, relações, ganhos recentes). O Potencial não fica gravado: para
+    ordenar e paginar é preciso calcular todas. Quem só tem negócio ganho há pouco (sem card aberto) aparece
+    apenas no filtro "Ganhos recentes"."""
+    todas = tabela.oportunidades(db, get_settings())
+    itens = [o for o in todas if not o["soGanho"]]
+    return itens, sorted({u for o in itens for u in o["relacoes"]}), [o for o in todas if o["ganhos"]]
 
 
 OPORTUNIDADES = _Guardada(_calcular_oportunidades)
@@ -374,7 +378,7 @@ def api_fila(pagina: int = 1, vertical: str = "", q: str = "", finais: bool = Fa
              _u: Usuario = Depends(usuario_atual)):
     """Oportunidades ainda não analisadas, com o que falta e as pessoas da empresa (para escolher quem decide e a
     ponte). finais=true: as que nunca entram sozinhas (fora da praça, MEI, sem produto de RE)."""
-    todas, _ = OPORTUNIDADES.obter(db)
+    todas = OPORTUNIDADES.obter(db)[0]
     fila = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["analisada"]]
     final = lambda o: bool(set(o["faltando"]) & set(tabela.FINAIS))  # noqa: E731
     busca = q.strip().lower()
@@ -403,7 +407,7 @@ def api_pendencias(pagina: int = 1, vertical: str = "", dono: str = "", q: str =
                    _u: Usuario = Depends(usuario_atual)):
     """Aba "Completar dados": oportunidades já na tela com algo a completar à mão (cargo, quem decide da área,
     cidade, funcionários, setor), com o resumo por responsável (dono dos cards abertos da empresa)."""
-    todas, _ = OPORTUNIDADES.obter(db)
+    todas = OPORTUNIDADES.obter(db)[0]
     com = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and o["analisada"] and o["pendencias"]]
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
     resumo: dict[str, int] = {}
@@ -635,6 +639,24 @@ def api_concluir(atividade_id: int, dados: ConcluirIn, db: Session = Depends(get
     return {"ok": True}
 
 
+class DataIn(BaseModel):
+    vencimento: date
+
+
+@app.post("/api/atividades/{atividade_id}/data")
+def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(get_db),
+                       _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Muda o vencimento da atividade (To-dos da semana) e sincroniza com o Pipedrive."""
+    at = db.get(Atividade, atividade_id)
+    if at is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+    try:
+        pd.mudar_data_atividade(db, client, at, dados.vencimento)
+    except httpx.HTTPError:
+        raise HTTPException(502, "O Pipedrive não aceitou a nova data; tente de novo.")
+    return {"ok": True, "vencimento": at.vencimento.isoformat()}
+
+
 @app.get("/api/todos")
 def api_todos(ref: date | None = None, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     return tabela.todos(db, ref)
@@ -779,9 +801,9 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
     rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead.
     oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais (mais produtos de LF ou RE para quem
     já tem ou negocia a vertical)."""
-    todas, relacoes = OPORTUNIDADES.obter(db)
+    todas, relacoes, recentes = OPORTUNIDADES.obter(db)
     if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
-        return {"itens": [o for o in todas if o["empresa"]["id"] == empresa]}
+        return {"itens": [o for o in [*todas, *(o for o in recentes if o["soGanho"])] if o["empresa"]["id"] == empresa]}
     # Na tela, só as verticais com fluxo definido e as empresas já analisadas; o resto está na fila de análise
     visiveis = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
     itens = [o for o in visiveis if o["analisada"]]
@@ -796,7 +818,18 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  and (not tipo or (tipo == "cliente") == o["cliente"])
                  and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
     ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
-    filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ofertas else "cross")]
+    # Ganhos recentes: quem fechou negócio nos últimos 14 dias, analisada ou não (mostra o que falta), cross e mais
+    ganhos = [o for o in recentes if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES
+              and not set(o["faltando"]) & set(tabela.FINAIS)
+              and (not vertical or o["vertical"] == vertical)
+              and (not busca or busca in (o["empresa"]["nome"] or "").lower())
+              and (not tipo or (tipo == "cliente") == o["cliente"])
+              and (not rel or (not o["relacoes"] if rel == "-" else rel in o["relacoes"]))]
+    ofertas["ganhos"] = len(ganhos)
+    if oferta == "ganhos":  # quem fechou mais recentemente primeiro; na mesma data, pelo Score
+        filtradas = sorted(ganhos, key=lambda o: (o["ganhos"][0]["em"], o["score"]), reverse=True)
+    else:
+        filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ("cross", "mais") else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
             "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas,
             "pendencias": sum(bool(o["pendencias"]) for o in itens)}

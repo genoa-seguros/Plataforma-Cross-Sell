@@ -92,7 +92,8 @@ def _candidatos_alvo(db: Session, settings: Settings) -> tuple[dict[int, str], d
     empresas: dict[int, str] = {}
     pessoas: dict[int, str] = {}
     verticais: dict[int, list] = {}
-    for op in tabela.oportunidades(db, settings):  # já vem do maior Potencial para o menor
+    # Do maior Potencial para o menor, com quem fechou negócio há pouco (ganhos recentes) na frente
+    for op in sorted(tabela.oportunidades(db, settings), key=lambda o: not o["ganhos"]):
         eid = op["empresa"]["id"]
         empresas.setdefault(eid, f"oportunidade: {op['verticalNome']}")
         if op["vertical"] not in verticais.setdefault(eid, []):

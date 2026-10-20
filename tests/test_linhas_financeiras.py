@@ -132,7 +132,7 @@ def test_lf_analisada_entra_em_oportunidades_por_produto(cenario, db):  # noqa: 
     assert lf[0]["tipo"] == "cross" and lf[0]["analisada"] and lf[0]["etiquetas"] == []
     assert [x["produto"] for x in lf[0]["produtos"]][0] == "E&O"
     assert lf[0]["quemDecide"]["pessoas"][0]["nome"] == "Clara CFO 1"  # Financeiro decide LF
-    assert r["ofertas"] == {"cross": 1, "mais": 1}
+    assert r["ofertas"] == {"cross": 1, "mais": 1, "ganhos": 0}
 
     mais_lf = c.get("/api/oportunidades?oferta=mais").json()["itens"]
     assert [o["empresa"]["nome"] for o in mais_lf] == ["Consultoria Mais SA"]

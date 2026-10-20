@@ -203,7 +203,7 @@ def test_oportunidades_paginadas_e_filtradas_no_servidor(cenario, db):
     # como a Alfa e a Beta do Pipedrive falso; em RE falta o setor (e os funcionários do lead 90)
     assert r["verticais"] == ["saude", "linhas_financeiras", "ramos_elementares"]
     assert r["fila"] == {"saude": 1, "linhas_financeiras": 28, "ramos_elementares": 28}
-    assert r["ofertas"] == {"cross": 25, "mais": 0}
+    assert r["ofertas"] == {"cross": 25, "mais": 0, "ganhos": 0}
     assert len(c.get("/api/oportunidades?pagina=2").json()["itens"]) == 5
     assert c.get("/api/oportunidades?pagina=99").json()["pagina"] == 2
     assert c.get("/api/oportunidades?vertical=saude").json()["total"] == 25

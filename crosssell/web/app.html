@@ -119,6 +119,7 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
 .grupo li:last-child{border-bottom:0}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
+.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit}
 .atrasada{color:var(--bad);font-weight:600}
 .semana{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fila{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 24px color-mix(in srgb,var(--ink) 18%,transparent);z-index:15;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
@@ -331,19 +332,23 @@ const FINAL_TXT = {"fora da praça": "fora da praça: não entra em Oportunidade
 function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
   if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
-  const visiveis = tudo.filter(o => verticais.includes(o.vertical)), todas = visiveis.filter(o => o.analisada);
+  const visiveis = tudo.filter(o => verticais.includes(o.vertical) && !o.soGanho), todas = visiveis.filter(o => o.analisada);
   const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.some(f => FINAIS.includes(f))).map(o => o.empresa.id)).size]));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel"), oferta = p.get("oferta") || "cross";
   const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))));
-  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length};
-  const ls = filtradas.filter(o => (o.tipo || "cross") === oferta);
+  const ganhos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.faltando.some(f => FINAIS.includes(f))
+    && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente)
+    && (!rel || (rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel))))
+    .sort((a, b) => b.ganhos[0].em.localeCompare(a.ganhos[0].em) || b.score - a.score);
+  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length, ganhos: ganhos.length};
+  const ls = oferta === "ganhos" ? ganhos : filtradas.filter(o => (o.tipo || "cross") === oferta);
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas,
     pendencias: todas.filter(o => (o.pendencias || []).length).length};
 }
 function filaPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
-  const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada);
+  const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada && !o.soGanho);
   const final = o => o.faltando.some(f => FINAIS.includes(f)), finais = p.get("finais") === "true";
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical");
   const ls = fila.filter(o => final(o) === finais && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)))
@@ -352,7 +357,7 @@ function filaPrevia(path) {
 }
 function pendenciasPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
-  const com = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && o.analisada && (o.pendencias || []).length);
+  const com = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && o.analisada && !o.soGanho && (o.pendencias || []).length);
   const resumo = {};
   com.forEach(o => (o.donos && o.donos.length ? o.donos : ["-"]).forEach(d => resumo[d] = (resumo[d] || 0) + 1));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), dono = p.get("dono");
@@ -437,6 +442,7 @@ const previa = {
       if (!l.proximaAtividade || b.vencimento < l.proximaAtividade.vencimento) l.proximaAtividade = {assunto: b.assunto, vencimento: b.vencimento, responsavel: resp.email};
       return {id: at.id};
     }
+    if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
       if (b.cliente) D.oportunidades = (D.oportunidades || []).filter(o => !(o.empresa.id == m[1] && o.vertical === "saude"));
@@ -763,6 +769,7 @@ function opHTML(o) {
     <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais" ? ` <span class="sub" title="A empresa já tem ou negocia ${esc(o.verticalNome)}">mais produtos</span>` : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
       ${(o.produtos || []).length ? `<div class="chips" style="margin-top:4px" aria-label="Produtos sugeridos">${o.produtos.map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")} · encaixe ${Math.round(x.valor * 100)}">${esc(x.produto)}</span>`).join("")}</div>` : ""}
       ${(o.etiquetas || []).map(t => `<div><span class="chip" style="--c:var(--warn);margin-top:4px">${esc(t)}</span></div>`).join("")}
+      ${(o.ganhos || []).map(g => `<div><span class="chip" style="--c:var(--good);margin-top:4px" title="Negócio ganho no Pipedrive">Ganho: ${esc(g.produto || "")} em ${dm(g.em)}${g.donoNome ? " · " + esc(g.donoNome) : ""}</span></div>`).join("")}
       ${o.manual ? `<div class="sub" style="margin-top:4px" title="Levada à mão para Oportunidades, mesmo faltando algo">incluída à mão por ${esc(o.manual.por || "?")} em ${dia(o.manual.em)}
         <button type="button" class="lapis" data-desfazer="${o.empresa.id}|${o.vertical}">desfazer</button>${o.faltando.length ? `<br>ainda falta: ${esc(o.faltando.join(", "))}` : ""}</div>` : ""}
       <div style="margin-top:4px">${(o.notas || []).length ? `<span class="sub" title="${esc(o.notas[0].texto)}">nota: ${esc(o.notas[0].texto.length > 60 ? o.notas[0].texto.slice(0, 60) + "…" : o.notas[0].texto)}</span> ` : ""}
@@ -797,8 +804,8 @@ function mostrarOps() {
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
   const of = r.ofertas || {}, sel = document.getElementById("f-oferta-op");
-  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option>`;
-  document.getElementById("contagem-op").innerHTML = `${r.total} de ${r.totalGeral} analisadas`
+  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option><option value="ganhos" ${filtroOp.oferta === "ganhos" ? "selected" : ""}>Ganhos recentes · 14 dias (${of.ganhos ?? 0})</option>`;
+  document.getElementById("contagem-op").innerHTML = (filtroOp.oferta === "ganhos" ? `${r.total} com negócio ganho nos últimos 14 dias` : `${r.total} de ${r.totalGeral} analisadas`)
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
   const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila}) · Completar dados (${r.pendencias ?? 0})`;
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
@@ -850,7 +857,7 @@ function desenharOportunidades() {
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
-      <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF."></select>
+      <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF. Ganhos recentes: quem fechou negócio no Pipedrive nos últimos 14 dias (mesmo sem card aberto), analisada ou não."></select>
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
@@ -862,7 +869,7 @@ function desenharOportunidades() {
       <colgroup><col style="width:7%"><col style="width:12%"><col style="width:8.5%"><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:14.5%"><col style="width:12%"><col style="width:9%"></colgroup>
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
-    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); em RE, com setor e funcionários do LinkedIn (ou informados à mão); em todas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras e RE, uma linha por empresa com os produtos sugeridos (LF: E&O, D&O, Cyber, IMI; RE: Fiança, Patrimonial/Roubo, Transportes); "Mais produtos na mesma vertical" mostra quem já tem ou negocia a vertical, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. Quem não tem nada aberto não aparece aqui. Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Financeiro e Jurídico para Fiança, Compras, Facilities, Logística, Operações e Riscos para Patrimonial e Transportes); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
+    <p class="nota">Cross sell que ninguém está trabalhando: clientes e leads com algum card aberto no Pipedrive que ainda não têm seguro nem negócio aberto em outra vertical. Só aparecem as empresas já analisadas: em Saúde, na praça (fora da praça não entra), com funcionários e setor do LinkedIn (ou informados à mão); em Linhas Financeiras, com Receita, notícias, site (lido pela IA) e cargos-chave do LinkedIn lidos (MEI não entra); em RE, com setor e funcionários do LinkedIn (ou informados à mão); em todas, quem decide mapeado e ponte por e-mail (alguém da empresa que trocou e-mails com a equipe nos últimos 12 meses). As outras estão na fila de análise, que anda de hora em hora pela ordem do Score. Em Linhas Financeiras e RE, uma linha por empresa com os produtos sugeridos (LF: E&O, D&O, Cyber, IMI; RE: Fiança, Patrimonial/Roubo, Transportes); "Mais produtos na mesma vertical" mostra quem já tem ou negocia a vertical, com as etiquetas do que está em negociação e do que já foi ofertado e perdido. Quem não tem nada aberto não aparece aqui, exceto no filtro "Ganhos recentes" (negócio ganho no Pipedrive nos últimos 14 dias: aparece mesmo sem card aberto e ainda em análise, com quem fechou). Negócios já abertos ficam no Pipedrive; quando uma oportunidade vira negócio lá, ela sai daqui. Ordenadas pelo Potencial na vertical da oportunidade, com os mesmos critérios da aba Negócios (a influência é a de quem decide). Quem decide vem da área do cargo (Saúde: RH/Pessoas; Linhas Financeiras: Financeiro, Jurídico, Riscos; RE: Financeiro e Jurídico para Fiança, Compras, Facilities, Logística, Operações e Riscos para Patrimonial e Transportes); quando ninguém dessa área tem relação com a equipe, a ponte é o contato com relação mais forte.</p>
   </section>`;
   mostrarOps();
   document.querySelectorAll("[data-vop]").forEach(b => b.onclick = () => { filtroOp.vertical = b.dataset.vop; filtroOp.pagina = 1;
@@ -1671,9 +1678,10 @@ async function telaTodos() {
       <ul>${itens.map(i => `<li class="${i.concluida ? "feita" : ""}">
         <input type="checkbox" data-concluir="${i.id}" ${i.concluida ? "checked" : ""} aria-label="Marcar como feita">
         <div><div class="ass">${esc(i.assunto)}</div><div class="sub">${TIPOS[i.tipo] || ""}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div></div>
-        <span class="small num ${i.atrasada ? "atrasada" : "mute"}">${i.atrasada ? "atrasada · " : ""}${dm(i.vencimento)}</span></li>`).join("")}</ul></div>`).join("")
+        ${i.concluida ? `<span class="small num mute">${dm(i.vencimento)}</span>`
+          : `<label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)">${i.atrasada ? "atrasada · " : ""}<input type="date" class="data-ativ" data-ativ-data="${i.id}" value="${esc(i.vencimento)}" aria-label="Data da atividade"></label>`}</li>`).join("")}</ul></div>`).join("")
       : `<div class="grupo"><p class="vazio">Nenhuma atividade para esta semana. Crie atividades na aba Negócios.</p></div>`}
-    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive.</p>
+    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita ou mudar a data atualiza o Pipedrive; o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
   document.getElementById("s-ant").onclick = () => mover(-7);
@@ -1907,7 +1915,11 @@ document.addEventListener("change", async ev => {
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       OPS_RESP = null; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
-  } catch (err) { aviso(err.message); ev.target.checked = !ev.target.checked; }
+    if (ev.target.dataset?.ativData) {
+      if (!ev.target.value) return;
+      await api.post(`/api/atividades/${ev.target.dataset.ativData}/data`, {vencimento: ev.target.value});
+      aviso("Data atualizada no Pipedrive"); telaTodos(); }
+  } catch (err) { aviso(err.message); if (ev.target.dataset?.ativData) telaTodos(); else ev.target.checked = !ev.target.checked; }
 });
 
 async function render() {

@@ -126,6 +126,16 @@ def test_atividade_dentro_da_pessoa_e_todos(db, settings):
     assert pipedrive.sincronizar_atividades(db, client, HOJE - timedelta(days=7)) == 1
     assert tabela.todos(db, HOJE)["itens"][0]["concluida"] is False
 
+    # Data mudada na plataforma vai para o Pipedrive; mudada no Pipedrive volta na sincronização
+    nova = venc - timedelta(days=1)
+    pipedrive.mudar_data_atividade(db, client, at, nova)
+    assert fake.atualizadas[-1] == (at.pipedrive_id, {"due_date": nova.isoformat()})
+    assert at.vencimento == nova and not at.concluida  # mudar a data não reabre nem conclui
+    fake.datas[at.pipedrive_id] = (venc + timedelta(days=7)).isoformat()
+    assert pipedrive.sincronizar_atividades(db, client, HOJE - timedelta(days=7)) == 1
+    assert at.vencimento == venc + timedelta(days=7)
+    assert pipedrive.sincronizar_atividades(db, client, HOJE - timedelta(days=7)) == 0
+
 
 def test_atividade_exige_pessoa_no_pipedrive(db, settings):
     client = carregar(db, settings)

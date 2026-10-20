@@ -30,6 +30,8 @@ from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcio
 VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras", "ramos_elementares")
 # Nunca entram em Oportunidades, nem na fila de análise
 FINAIS = ("fora da praça", "MEI", "sem produto de RE")
+# Filtro "Ganhos recentes" em Oportunidades: quem fechou negócio no Pipedrive nestes dias (abordar com a Innoa fresca)
+GANHOS_DIAS = 14
 
 
 def faltando_lf(e: Empresa | None) -> list[str]:
@@ -391,16 +393,18 @@ def produtos_da_empresa(e: Empresa, vigentes: list[Negocio], vertical: str = "li
 def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> list[dict]:
     """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente) e
     leads com algum card aberto no Pipedrive (negócio aberto com vertical, em qualquer funil).
-    Quem não tem nada aberto fica de fora (vai para uma tela própria, ainda a desenhar).
+    Também entram as empresas com negócio ganho nos últimos GANHOS_DIAS dias, mesmo sem nada aberto
+    (`soGanho`: só aparecem no filtro "Ganhos recentes"). As outras ficam de fora.
     Ordenadas pelo Potencial na vertical da oportunidade."""
     hoje = hoje or date.today()
     funis = settings.pipelines()
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
-    # Só empresas com algum card aberto no Pipedrive. Canais Parceria (sem vertical) são parceiros,
-    # não leads de seguro: não contam
+    # Empresas com algum card aberto no Pipedrive ou ganho há pouco. Canais Parceria (sem vertical) são
+    # parceiros, não leads de seguro: não contam
+    desde = hoje - timedelta(days=GANHOS_DIAS)
     ids = select(Negocio.empresa_id).where(
-        Negocio.empresa_id.is_not(None), Negocio.vertical.is_not(None),
-        Negocio.status == "aberto", Negocio.fonte == "pipedrive").distinct()
+        Negocio.empresa_id.is_not(None), Negocio.vertical.is_not(None), Negocio.fonte == "pipedrive",
+        (Negocio.status == "aberto") | ((Negocio.status == "ganho") & (Negocio.ganho_em >= desde))).distinct()
     # Tudo de uma vez (antes eram milhares de consultas, uma por empresa, vertical e pessoa)
     empresas = db.scalars(select(Empresa).where(Empresa.id.in_(ids)).options(
         selectinload(Empresa.negocios), selectinload(Empresa.pessoas), selectinload(Empresa.noticias))).all()
@@ -427,7 +431,9 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         if interna(e, settings):
             continue
         abertos = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive" and n.vertical]
-        if not abertos:
+        ganhos = sorted((n for n in e.negocios if n.status == "ganho" and n.fonte == "pipedrive" and n.vertical
+                         and n.ganho_em and n.ganho_em >= desde), key=lambda n: n.ganho_em, reverse=True)
+        if not abertos and not ganhos:
             continue
         vigentes = seguros_vigentes(e)
         tem = {v.vertical for v in vigentes}
@@ -466,6 +472,11 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "vigentes": [_vig_json(x) for x in vigentes], "saude": estado_saude(e, vigentes),
                 # Responsáveis pelos cards abertos da empresa (resumo de pendências por responsável)
                 "donos": sorted({x.responsavel_email for x in abertos if x.responsavel_email}),
+                # Negócios ganhos nos últimos GANHOS_DIAS dias (filtro "Ganhos recentes"), com quem fechou
+                "ganhos": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "em": x.ganho_em.isoformat(),
+                            "dono": x.responsavel_email, "donoNome": nomes.get(x.responsavel_email, x.responsavel_email)}
+                           for x in ganhos],
+                "soGanho": not abertos,
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
                 "relacoes": relacoes,

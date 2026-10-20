@@ -89,7 +89,7 @@ def test_linhas_financeiras_por_produto():
 
 def test_linhas_financeiras_site_lido_pela_ia_e_portais():
     sem_dado = empresa(nome="Nova Ltda")
-    assert textos(potencial("linhas_financeiras", sem_dado, None))[1:3] == [
+    assert textos(potencial("linhas_financeiras", sem_dado, None))[0:2] == [  # a influência não entra no Score
         "profissionalização: ainda sem Receita, site e LinkedIn", "notícias ainda não buscadas"]
 
     e = empresa(nome="Arquitetura Viva Ltda", site_ia_em=datetime(2026, 9, 1), noticias_em=datetime(2026, 9, 1),
@@ -131,3 +131,20 @@ def test_re_por_produto_fianca_patrimonial_e_transportes():
     # Quem decide cada produto
     assert areas_re(["fianca"]) == ["financeiro", "juridico"]
     assert areas_re(["patrimonial", "transportes"]) == ["compras", "facilities", "logistica", "operacoes", "riscos"]
+
+
+def test_score_nao_depende_da_influencia_e_localizacao_pelas_cidades_com_clientes():
+    def saude(cidade, uf):
+        return empresa(nome="Tech", cidade=cidade, uf=uf, setor="Software", funcionarios=300)
+
+    sp, rio = saude("São Paulo", "SP"), saude("Rio de Janeiro", "RJ")
+    ceo = pessoa(sp, "Ana", "CEO", rel=90)
+    com, sem = potencial("saude", sp, ceo), potencial("saude", sp, None)
+    assert com["score"] == sem["score"]  # a influência é uma métrica à parte
+    assert "influencia" not in {c["nome"] for c in com["criterios"]}
+    loc = {c["nome"]: c for c in potencial("saude", rio, None)["criterios"]}["localizacao"]
+    assert loc["valor"] == 0.5 and "sem clientes da Innoa" in loc["texto"]  # Rio: rede boa, ainda sem clientes
+    assert {c["nome"]: c for c in sem["criterios"]}["localizacao"]["valor"] == 1.0
+    assert potencial("saude", rio, None)["score"] < sem["score"]
+    for v in ("linhas_financeiras", "ramos_elementares"):
+        assert potencial(v, sp, ceo)["score"] == potencial(v, sp, None)["score"]

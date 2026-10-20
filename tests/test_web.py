@@ -635,3 +635,14 @@ def test_rotina_chama_cada_passo_com_valores_de_verdade(monkeypatch, settings):
     monkeypatch.setattr(cli.typer, "echo", lambda msg, err=False: erros.append(msg) if err else None)
     cli._rodar_rotina(1)
     assert erros == [] and {"sites_ia", "linkedin", "qualidade", "notas"} <= set(chamados)
+
+
+def test_filtro_score_alto_influencia_baixa(cenario, db, monkeypatch):  # noqa: F811
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    from crosssell.web import app as webapp
+    itens = [{"score": 80, "influencia": 20, "relacoes": []}, {"score": 80, "influencia": 60, "relacoes": ["x"]},
+             {"score": 50, "influencia": 10, "relacoes": []}]
+    assert [webapp._relacao_ok(o, "baixa") for o in itens] == [True, False, False]
+    assert [webapp._relacao_ok(o, "-") for o in itens] == [True, False, True]
+    assert c.get("/api/oportunidades?rel=baixa").status_code == 200

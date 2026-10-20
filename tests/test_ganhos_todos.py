@@ -36,7 +36,8 @@ def test_ganhos_recentes_mesmo_sem_card_aberto(cenario, db):  # noqa: F811
     r = c.get("/api/oportunidades?oferta=ganhos").json()
     nomes = [o["empresa"]["nome"] for o in r["itens"]]
     assert set(nomes) == {"Recem Fechada SA", "Com Card SA"} and r["ofertas"]["ganhos"] == len(r["itens"])
-    assert nomes.index("Com Card SA") < nomes.index("Recem Fechada SA")  # quem fechou mais recentemente primeiro
+    scores = [(o["score"], o["influencia"]) for o in r["itens"]]
+    assert scores == sorted(scores, reverse=True)  # pelo Score, como a lista padrão
     item = next(o for o in r["itens"] if o["empresa"]["id"] == so_ganho.id)
     assert item["ganhos"][0]["produto"] == "D&O" and item["ganhos"][0]["donoNome"].startswith("Victor")
     # Vários negócios do mesmo produto viram um só, com a quantidade e o ganho mais recente

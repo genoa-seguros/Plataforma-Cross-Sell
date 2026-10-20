@@ -15,7 +15,7 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   renovando, não tem Saúde), ordenados pelo **Potencial** na vertical da oportunidade. Quem não tem
   nada aberto fica de fora, exceto no filtro **Ganhos recentes** (negócio ganho no Pipedrive nos últimos
   14 dias, `tabela.GANHOS_DIAS`): ali aparece mesmo sem card aberto e ainda em análise (com o que falta),
-  com a etiqueta do que foi ganho e de quem fechou, quem fechou mais recentemente primeiro; essas empresas
+  com a etiqueta do que foi ganho e de quem fechou, ordenadas pelo Score; essas empresas
   vão para a frente da fila do LinkedIn. Só aparecem as empresas já
   **analisadas**, para a equipe não precisar buscar nada na mão. Em Saúde: **na praça** (cidade alvo ou
   ≥ 30% dos funcionários em cidades alvo, `saude.praca_fatia_minima`), **funcionários** e **setor** do
@@ -127,11 +127,17 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Potencial** (0–100), pesos e palavras em [`config/criterios.yaml`](config/criterios.yaml)
   (editável. Rodando local, vale na próxima abertura da tela, sem reiniciar. Em produção, o arquivo vai
   dentro da imagem do Docker: faça o commit da mudança e rode `bash deploy/atualizar.sh` no servidor;
-  editar a cópia do servidor não muda nada. Assim o git guarda quem mudou cada critério e quando):
-  - *Saúde*: influência 30, funcionários (ou vidas) 25, qualificação do time 20 (startups,
-    fintechs, fundos, multinacionais, tecnologia, farmacêuticas × indústria, transporte, varejo,
-    restaurantes), localização 15 (interior perde para a Unimed local) e RH estruturado 10.
-  - *Linhas Financeiras*: profissionalização 40, influência 25, encaixe do produto 20 e momento 15.
+  editar a cópia do servidor não muda nada. Assim o git guarda quem mudou cada critério e quando).
+  O Potencial (Score) mede o quanto a empresa vale para a vertical; a **influência não entra**: é uma métrica
+  à parte, mostrada embaixo do Score e usada só para desempatar. O filtro "Score alto, influência baixa"
+  (Score ≥ 70 e influência < 40, `tabela.SCORE_ALTO`/`INFLUENCIA_BAIXA`) lista as boas oportunidades onde
+  falta relação:
+  - *Saúde*: localização 35 (1,0 nas cidades onde a Innoa já tem clientes de Saúde, lista
+    `cidades_com_clientes`: Grande SP, BH, Recife, Curitiba e regiões; 0,5 nas outras cidades alvo e quando só a
+    equipe está na praça; fora da praça não entra), qualificação do time 30 (startups, fintechs, fundos,
+    multinacionais, tecnologia, farmacêuticas × indústria, transporte, varejo, restaurantes), funcionários (ou
+    vidas) 25 e RH estruturado 10.
+  - *Linhas Financeiras*: profissionalização 53, encaixe do produto 27 e momento 20.
     *Profissionalização*: fundos e investidores (venture capital no LinkedIn ou no site), S.A.,
     diretoria e conselho (lista `executivos`: CFO, CTO, conselho, jurídico, riscos, compliance), grandes
     clientes e site profissional (lidos pela IA), porte; capital social alto
@@ -142,8 +148,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
     (advocacia, contabilidade, tecnologia, saúde, consultoria, ou o site lido pela IA). D&O: gestão
     profissional. Cyber: CTO ou DPO na empresa, setor com muitos dados. IMI: fundos e gestoras (no
     lugar de D&O e E&O). Produto com encaixe a partir de 0,5 é sugerido.
-  - *RE*: encaixe do produto 35 (Fiança: escritório com 50+ funcionários, lista `escritorio`; Patrimonial/Roubo:
-    `grandes_ativos`; Transportes: `transportes`), porte 25, influência 25 e momento 15 (nova sede, mudança de
+  - *RE*: encaixe do produto 47 (Fiança: escritório com 50+ funcionários, lista `escritorio`; Patrimonial/Roubo:
+    `grandes_ativos`; Transportes: `transportes`), porte 33 e momento 20 (nova sede, mudança de
     escritório, expansão, nova fábrica ou galpão, lista `momento`).
   - Dados usados: setor e descrição do LinkedIn, CNAE e natureza jurídica da Receita, cidade/UF,
     funcionários, cargos das pessoas e notícias.

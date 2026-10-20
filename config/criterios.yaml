@@ -16,7 +16,9 @@ influencia:
     desconhecido: 0.25
 
 saude:
-  pesos: {influencia: 30, funcionarios: 25, qualificacao: 20, localizacao: 15, rh: 10}
+  # O Score mede o quanto a empresa vale para a vertical; a influência (relação com quem decide) é uma métrica à
+  # parte, mostrada ao lado: Score alto com influência baixa = trabalhar a relação.
+  pesos: {localizacao: 35, qualificacao: 30, funcionarios: 25, rh: 10}
   # Time qualificado: planos melhores, prêmios e comissões maiores
   qualificacao_alta: [startup, fintech, fundo de investimento, fundos de investimento, gestora, asset, private equity,
     venture capital, multinacional, multinational, global, tecnologia, technology, software, saas, internet,
@@ -31,6 +33,11 @@ saude:
   # Cidade alvo: boa rede hospitalar (4 a 5 hospitais ou mais) e sem depender da Unimed local.
   # Matriz fora da lista: vale se pelo menos esta fatia dos funcionários (LinkedIn) estiver em cidades alvo.
   praca_fatia_minima: 0.3
+  # Cidades onde a Innoa já tem clientes de Saúde (localização 1,0); as outras cidades alvo valem 0,5.
+  # Ganhou cliente numa cidade nova (ex.: Rio)? Acrescente aqui.
+  cidades_com_clientes: [sao paulo, barueri, osasco, santana de parnaiba, santo andre, sao bernardo do campo,
+    sao caetano do sul, guarulhos, diadema, cotia, taboao da serra, carapicuiba, embu das artes, alphaville,
+    belo horizonte, contagem, betim, nova lima, recife, jaboatao dos guararapes, curitiba, sao jose dos pinhais]
   # Cidades alvo (capitais e regiões metropolitanas). Fora delas, a Unimed local costuma ser forte.
   metropoles: [sao paulo, barueri, osasco, santana de parnaiba, santo andre, sao bernardo do campo, sao caetano do sul,
     guarulhos, diadema, cotia, taboao da serra, carapicuiba, embu das artes, alphaville, rio de janeiro, niteroi,
@@ -52,7 +59,7 @@ linhas_financeiras:
   # Profissionalização: fundos e investidores, S.A., conselho e diretoria, grandes clientes, site profissional, porte.
   # Momento: notícias de M&A, aporte ou investimento (mais peso nos portais: NeoFeed, Brazil Journal, Valor, Exame).
   # Encaixe do produto: o melhor entre E&O, D&O, Cyber e IMI que a empresa ainda não tem nem negocia.
-  pesos: {profissionalizacao: 40, momento: 15, produto: 20, influencia: 25}
+  pesos: {profissionalizacao: 53, produto: 27, momento: 20}
   # Capital social a partir do qual soma um pouco na profissionalização (capital baixo não tira ponto)
   capital_social_alto: 1000000
   # E&O: serviços intelectuais
@@ -84,7 +91,7 @@ linhas_financeiras:
 ramos_elementares:
   # Encaixe do produto: o melhor entre Fiança, Patrimonial/Roubo e Transportes que a empresa ainda não tem nem negocia.
   # Porte: funcionários (Fiança maior; mais ativos). Momento: nova sede, mudança de escritório, expansão, nova fábrica.
-  pesos: {produto: 35, porte: 25, influencia: 25, momento: 15}
+  pesos: {produto: 47, porte: 33, momento: 20}
   # Fiança/capitalização: empresa de escritório (setor abaixo) a partir de N funcionários (LinkedIn ou à mão)
   fianca_funcionarios_minimo: 50
   escritorio: [tecnologia, technology, software, saas, internet, fintech, financeir, banco, pagamento, seguros, corretora,

@@ -32,6 +32,8 @@ VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras", "ramos_elementares")
 FINAIS = ("fora da praça", "MEI", "sem produto de RE")
 # Filtro "Ganhos recentes" em Oportunidades: quem fechou negócio no Pipedrive nestes dias (abordar com a Innoa fresca)
 GANHOS_DIAS = 14
+# Filtro "Score alto, influência baixa": boas oportunidades onde falta relação com quem decide
+SCORE_ALTO, INFLUENCIA_BAIXA = 70, 40
 
 
 def faltando_lf(e: Empresa | None) -> list[str]:

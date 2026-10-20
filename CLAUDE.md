@@ -46,8 +46,10 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   the UI "unchecks" a Saúde client.
 - **Scoring:** `potencial.py` computes Potencial per vertical from weights/keyword lists in
   `config/criterios.yaml` (reloaded by file mtime, no restart needed locally; in production the file is
-  baked into the Docker image, so a change needs a commit plus `deploy/atualizar.sh`) plus `influencia()` (50% e-mail
-  relationship from `scoring/relacionamento.py`, 50% job-title hierarchy). `temperatura.py` uses the Claude
+  baked into the Docker image, so a change needs a commit plus `deploy/atualizar.sh`). Influência is NOT part of the
+  vertical scores (criteria without weight are dropped in `potencial()`); `influencia()` (50% e-mail relationship from
+  `scoring/relacionamento.py`, 50% job-title hierarchy) is shown apart, breaks ties, and feeds the "Score alto,
+  influência baixa" filter (`rel=baixa`). Saúde localização: 1.0 in `saude.cidades_com_clientes`, 0.5 elsewhere in praça. `temperatura.py` uses the Claude
   API to classify contact openness from e-mail replies. E-mail text is never stored. The model is the one a master
   picked on the Equipe screen (`configuracoes` table, `temperatura.modelo_em_uso`), else `ANTHROPIC_MODEL`; only
   models in `temperatura.MODELOS` are offered (they must accept effort, structured output and the server fallback).

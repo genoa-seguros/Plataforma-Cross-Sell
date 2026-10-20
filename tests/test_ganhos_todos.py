@@ -66,7 +66,7 @@ def test_mudar_data_da_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F81
     assert c.post("/api/atividades/9999/data", headers=H, json={"vencimento": nova.isoformat()}).status_code == 404
 
 
-def test_nota_na_atividade_vira_nota_da_oportunidade_e_vai_para_o_pipedrive(cenario, db, settings, monkeypatch):  # noqa: F811
+def test_atualizacao_na_atividade_vai_para_a_oportunidade_e_nao_mexe_na_observacao(cenario, db, settings, monkeypatch):  # noqa: F811
     import json
 
     from crosssell import nota_ia
@@ -83,15 +83,14 @@ def test_nota_na_atividade_vira_nota_da_oportunidade_e_vai_para_o_pipedrive(cena
     client = pipedrive.PipedriveClient("x", transport=fake.transport())
     at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Apresentar Saúde",
                                    vencimento=date.today(), responsavel=victor, criada_por=victor, nota="Levar a proposta")
+    escritas = len(fake.atualizadas)
     r = c.post(f"/api/atividades/{at.id}/nota", headers=H, json={"vertical": "saude", "texto": "Apresentou ao RH, pediu proposta"})
-    assert r.json()["ajuste"] == 10 and r.json()["pipedrive"] is True
+    assert r.json()["ajuste"] == 10
     nota = db.scalar(select(NotaOportunidade).where(NotaOportunidade.empresa_id == alfa.id))
     assert nota.vertical == "saude" and nota.texto == "Apresentou ao RH, pediu proposta"
-    pid, corpo = fake.atualizadas[-1]
-    assert pid == at.pipedrive_id and corpo["note"].startswith("Levar a proposta\n\n[")  # acrescenta, não apaga
-    assert corpo["note"].endswith("Rodrigo] Apresentou ao RH, pediu proposta")
+    assert len(fake.atualizadas) == escritas  # a observação da atividade no Pipedrive fica como estava
     item = next(i for i in c.get("/api/todos").json()["itens"] if i["id"] == at.id)
-    assert item["nota"] == corpo["note"]
+    assert item["nota"] == "Levar a proposta"
     assert c.post(f"/api/atividades/{at.id}/nota", headers=H, json={"vertical": "saude", "texto": "ok"}).status_code == 400
 
 
@@ -112,7 +111,7 @@ def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
     nova = date.today() + timedelta(days=2)
     r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={
         "assunto": "Apresentar D&O", "tipo": "meeting", "vencimento": nova.isoformat(), "pessoa_id": ana.id,
-        "responsavel_id": bruno.id, "nota": "Levar a proposta"})
+        "responsavel_id": bruno.id, "nota": "Levar a proposta", "vertical": "linhas_financeiras"})
     assert r.json() == {"ok": True}
     pid, corpo = fake.atualizadas[-1]
     assert pid == at.pipedrive_id and corpo["subject"] == "Apresentar D&O" and corpo["type"] == "meeting"
@@ -120,6 +119,7 @@ def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
     assert corpo["participants"] == [{"person_id": ana.pipedrive_person_id, "primary": True}]
     item = c.get(f"/api/atividades/{at.id}").json()
     assert item["pessoaId"] == ana.id and item["responsavelId"] == bruno.id and item["assunto"] == "Apresentar D&O"
+    assert item["vertical"] == "linhas_financeiras" and item["verticalNome"] == "Linhas Financeiras"
     # Pessoa de outra empresa não vale
     outra = db.scalar(select(Pessoa).where(Pessoa.empresa_id != alfa.id, Pessoa.pipedrive_person_id.is_not(None)))
     r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={

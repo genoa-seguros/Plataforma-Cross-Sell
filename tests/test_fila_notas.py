@@ -60,7 +60,7 @@ def test_nota_da_equipe_ajusta_o_score_pela_ia(cenario, db, settings, monkeypatc
     assert "corretor da família" in falso.chamadas[0]["messages"][0]["content"]
     depois = {o["vertical"]: o for o in c.get(f"/api/oportunidades?empresa={e.id}").json()["itens"]}
     assert depois["saude"]["score"] == max(0, round(antes["saude"] - 50, 1))
-    assert depois["saude"]["motivos"][0] == {"texto": "nota da equipe (-50): Corretor da família: entrada muito difícil.",
+    assert depois["saude"]["motivos"][0] == {"texto": "atualização da equipe (-50): Corretor da família: entrada muito difícil.",
                                             "sinal": "-"}
     assert depois["saude"]["notas"][0]["autor"] == "Rodrigo"
     assert depois["ramos_elementares"]["score"] == antes["ramos_elementares"]  # vale só para a vertical da nota

@@ -314,7 +314,7 @@ def marcar_saude(db: Session, empresa_id: int, cliente: bool, origem: str = "man
 
 def criar_atividade(db: Session, client: PipedriveClient, *, negocio: Negocio | None = None, pessoa_id: int | None,
                     assunto: str, vencimento: date, responsavel: Usuario, criada_por: Usuario, tipo: str = "task",
-                    nota: str | None = None, empresa=None) -> Atividade:
+                    nota: str | None = None, empresa=None, vertical: str | None = None) -> Atividade:
     """Atividade no Pipedrive dentro da pessoa (e do negócio/organização, quando houver).
     Sem negócio (aba Oportunidades) basta a organização; a pessoa é opcional nesse caso."""
     from crosssell.models import Pessoa
@@ -348,7 +348,8 @@ def criar_atividade(db: Session, client: PipedriveClient, *, negocio: Negocio | 
     at = Atividade(pipedrive_id=criada["id"], negocio_id=negocio.id if negocio else None,
                    pessoa_id=pessoa.id if pessoa else None, empresa_id=empresa.id if empresa else None,
                    assunto=assunto, tipo=tipo, vencimento=vencimento,
-                   responsavel_id=responsavel.id, criada_por_id=criada_por.id, nota=nota)
+                   responsavel_id=responsavel.id, criada_por_id=criada_por.id, nota=nota,
+                   vertical=vertical or (negocio.vertical if negocio else None))
     db.add(at)
     db.commit()
     return at
@@ -371,8 +372,10 @@ def mudar_data_atividade(db: Session, client: PipedriveClient, atividade: Ativid
 
 
 def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade, *, assunto: str, tipo: str,
-                     vencimento: date, pessoa_id: int | None, responsavel: Usuario, nota: str | None) -> Atividade:
-    """Edita a atividade (assunto, tipo, data, pessoa, quem executa e nota) aqui e no Pipedrive."""
+                     vencimento: date, pessoa_id: int | None, responsavel: Usuario, nota: str | None,
+                     vertical: str | None = None) -> Atividade:
+    """Edita a atividade (assunto, tipo, data, pessoa, quem executa, observação e oportunidade) aqui e no Pipedrive.
+    A oportunidade (vertical) é só da plataforma."""
     from crosssell.models import Pessoa
 
     empresa_id = atividade.empresa_id or (atividade.negocio.empresa_id if atividade.negocio else None)
@@ -389,6 +392,8 @@ def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade,
             "note": nota or ""})
     atividade.assunto, atividade.tipo, atividade.vencimento = assunto, tipo, vencimento
     atividade.pessoa_id, atividade.responsavel_id, atividade.nota = pessoa_id, responsavel.id, nota
+    if vertical:
+        atividade.vertical = vertical
     db.commit()
     return atividade
 

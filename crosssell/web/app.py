@@ -618,6 +618,7 @@ class AtividadeIn(BaseModel):
     vencimento: date
     responsavel_id: int
     nota: str | None = None
+    vertical: str | None = None  # oportunidade para a qual a atividade é feita
 
 
 @app.post("/api/atividades")
@@ -631,7 +632,8 @@ def api_criar_atividade(dados: AtividadeIn, db: Session = Depends(get_db), u: Us
     try:
         at = pd.criar_atividade(db, client, negocio=neg, empresa=emp, pessoa_id=dados.pessoa_id,
                                 assunto=dados.assunto.strip(), vencimento=dados.vencimento, responsavel=resp,
-                                criada_por=u, tipo=dados.tipo, nota=dados.nota)
+                                criada_por=u, tipo=dados.tipo, nota=dados.nota,
+                                vertical=dados.vertical if dados.vertical in VERTICAIS else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"id": at.id, "pipedriveId": at.pipedrive_id}
@@ -671,6 +673,7 @@ class EditarAtividadeIn(BaseModel):
     pessoa_id: int | None = None
     responsavel_id: int
     nota: str | None = None
+    vertical: str | None = None
 
 
 @app.post("/api/atividades/{atividade_id}/editar")
@@ -685,7 +688,8 @@ def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Sessio
         raise HTTPException(400, "Escreva o assunto.")
     try:
         pd.editar_atividade(db, client, at, assunto=dados.assunto.strip(), tipo=dados.tipo, vencimento=dados.vencimento,
-                            pessoa_id=dados.pessoa_id, responsavel=resp, nota=dados.nota)
+                            pessoa_id=dados.pessoa_id, responsavel=resp, nota=dados.nota,
+                            vertical=dados.vertical if dados.vertical in VERTICAIS else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except httpx.HTTPError:

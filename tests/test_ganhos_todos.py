@@ -111,7 +111,7 @@ def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
     nova = date.today() + timedelta(days=2)
     r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={
         "assunto": "Apresentar D&O", "tipo": "meeting", "vencimento": nova.isoformat(), "pessoa_id": ana.id,
-        "responsavel_id": bruno.id, "nota": "Levar a proposta"})
+        "responsavel_id": bruno.id, "nota": "Levar a proposta", "vertical": "linhas_financeiras"})
     assert r.json() == {"ok": True}
     pid, corpo = fake.atualizadas[-1]
     assert pid == at.pipedrive_id and corpo["subject"] == "Apresentar D&O" and corpo["type"] == "meeting"
@@ -119,6 +119,7 @@ def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
     assert corpo["participants"] == [{"person_id": ana.pipedrive_person_id, "primary": True}]
     item = c.get(f"/api/atividades/{at.id}").json()
     assert item["pessoaId"] == ana.id and item["responsavelId"] == bruno.id and item["assunto"] == "Apresentar D&O"
+    assert item["vertical"] == "linhas_financeiras" and item["verticalNome"] == "Linhas Financeiras"
     # Pessoa de outra empresa não vale
     outra = db.scalar(select(Pessoa).where(Pessoa.empresa_id != alfa.id, Pessoa.pipedrive_person_id.is_not(None)))
     r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={

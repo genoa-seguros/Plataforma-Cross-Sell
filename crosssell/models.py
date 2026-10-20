@@ -264,7 +264,8 @@ class Atividade(Base):
     vencimento: Mapped[date] = mapped_column(Date, index=True)
     responsavel_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
     criada_por_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
-    nota: Mapped[str | None]
+    nota: Mapped[str | None]  # observação da atividade (vai para a Anotação no Pipedrive; a IA não lê)
+    vertical: Mapped[str | None]  # oportunidade para a qual a atividade é feita (sem ela, a do negócio)
     concluida: Mapped[bool] = mapped_column(default=False)
     concluida_em: Mapped[datetime | None]
     criada_em: Mapped[datetime] = mapped_column(default=_now)

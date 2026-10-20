@@ -455,7 +455,7 @@ const previa = {
     }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/editar$/))) { const a = D.atividades.find(x => x.id == m[1]); const u = D.equipe.find(x => x.id === b.responsavel_id);
       const c = contatosPrevia(a.empresaId).find(x => x.id === b.pessoa_id);
-      Object.assign(a, {assunto: b.assunto, tipo: b.tipo, vencimento: b.vencimento, nota: b.nota, pessoa: c?.nome || null, pessoaId: b.pessoa_id,
+      Object.assign(a, {assunto: b.assunto, tipo: b.tipo, vencimento: b.vencimento, nota: b.nota, vertical: b.vertical || a.vertical, verticalNome: V[b.vertical || a.vertical], pessoa: c?.nome || null, pessoaId: b.pessoa_id,
         responsavel: u?.email || a.responsavel, responsavelNome: u?.nome || a.responsavelNome}); return {ok: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/nota$/))) return {id: ++this.seq, texto: b.texto, ajuste: null};
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
@@ -639,7 +639,7 @@ function abrirAtividadeOp(id) {
   const quem = alvo ? ` (${alvo.nome})` : "";
   modalAtividade({titulo: `${o.empresa.nome} · oportunidade de ${o.verticalNome}`, contatos: o.contatos, pessoaId: pref?.id,
     donoEmail: EU.email, assunto: ponte && alvo ? `Pedir a ${ponte.nome.split(" ")[0]} apresentação a quem decide ${o.verticalNome}${quem}` : `${o.verticalNome}: abrir conversa${quem}`,
-    corpo: {empresa_id: o.empresa.id}, semPessoa: true});
+    corpo: {empresa_id: o.empresa.id}, vertical: o.vertical, semPessoa: true});
 }
 function modalAtividade(ctx) {
   const l = {contatos: ctx.contatos};
@@ -650,6 +650,7 @@ function modalAtividade(ctx) {
     <h2 id="t-ativ" style="margin:0">${ctx.edicao ? "Editar atividade" : "Nova atividade no Pipedrive"}</h2>
     <div class="sub">${esc(ctx.titulo)}</div>
     <label>Contato (a atividade fica dentro da pessoa)<select id="a-pessoa">${ctx.semPessoa ? `<option value="">Só na organização</option>` : ""}${l.contatos.map(c => `<option value="${c.id}" ${c.id === pessoaPadrao?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
+    <label>Oportunidade <span class="sub">para qual vertical a atividade é feita</span><select id="a-vert"><option value="">—</option>${(D?.verticaisOportunidades || OPS_RESP?.verticais || ["saude", "linhas_financeiras", "ramos_elementares"]).map(v => `<option value="${v}" ${v === ctx.vertical ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
     <label>Assunto<input id="a-assunto" required value="${esc(ctx.assunto)}"></label>
     <div class="form-linha">
       <label>Tipo<select id="a-tipo">${Object.entries(tipos).map(([k, t]) => `<option value="${k}" ${k === ctx.tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
@@ -670,7 +671,7 @@ function modalAtividade(ctx) {
       const campos = {pessoa_id: +document.getElementById("a-pessoa").value || null,
         assunto: document.getElementById("a-assunto").value, tipo: document.getElementById("a-tipo").value,
         vencimento: document.getElementById("a-venc").value, responsavel_id: +document.getElementById("a-resp").value,
-        nota: document.getElementById("a-nota").value || null};
+        nota: document.getElementById("a-nota").value || null, vertical: document.getElementById("a-vert").value || null};
       if (ctx.edicao) {
         await api.post(`/api/atividades/${ctx.edicao}/editar`, campos);
         fechar(); aviso(PREVIA ? "Atividade alterada na prévia (não foi enviada ao Pipedrive)" : "Atividade atualizada no Pipedrive");
@@ -687,7 +688,7 @@ function modalAtividade(ctx) {
 async function editarAtividade(id) {
   let a; try { a = await api.get(`/api/atividades/${id}`); } catch (err) { aviso(err.message); return; }
   modalAtividade({edicao: id, titulo: [a.empresa, a.negocio].filter(Boolean).join(" · "), contatos: a.contatos, pessoaId: a.pessoaId,
-    donoEmail: a.responsavel, assunto: a.assunto, tipo: a.tipo, vencimento: a.vencimento, nota: a.nota, semPessoa: true});
+    donoEmail: a.responsavel, assunto: a.assunto, tipo: a.tipo, vencimento: a.vencimento, nota: a.nota, vertical: a.vertical, semPessoa: true});
 }
 
 /* ---------- Oportunidades ---------- */
@@ -1744,14 +1745,12 @@ function linhaAtividade(i) {
   return `<tr class="${i.concluida ? "feita" : ""}">
     <td><input type="checkbox" data-concluir="${i.id}" ${i.concluida ? "checked" : ""} aria-label="Marcar como feita"></td>
     <td><button type="button" class="ass-link" data-editar-ativ="${i.id}" title="Editar a atividade (pessoa, data, tipo, quem executa, nota)"><span class="ico-tipo" title="${esc(TIPOS[i.tipo] || i.tipo || "")}">${ICONE_TIPO[i.tipo] || "•"}</span>${esc(i.assunto)}</button></td>
+    <td>${i.vertical ? vchip(i.vertical, i.verticalNome) : `<button type="button" class="lapis" data-editar-ativ="${i.id}" title="Escolher a oportunidade">+ oportunidade</button>`}</td>
     <td>${i.empresa ? `<a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : '<span class="mute">—</span>'}</td>
     <td>${i.pessoa ? esc(i.pessoa) : '<span class="mute">—</span>'}</td>
     <td>${i.concluida ? `<span class="small num mute">${dm(i.vencimento)}</span>`
       : `<span style="white-space:nowrap"><label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)"><input type="date" class="data-ativ" data-ativ-data="${i.id}" data-ativ-antes="${esc(i.vencimento)}" value="${esc(i.vencimento)}" aria-label="Data da atividade" title="Clique para escolher a data no calendário"></label>
         <button type="button" class="btn ok-data" data-ativ-ok="${i.id}" hidden title="Gravar a nova data no Pipedrive">Confirmar</button></span>${i.atrasada ? '<div class="small atrasada">atrasada</div>' : ""}`}</td>
-    <td>${i.negocio ? esc(i.negocio) : '<span class="mute">—</span>'}</td>
-    <td>${i.etapa ? esc(i.etapa) : '<span class="mute">—</span>'}</td>
-    <td class="num">${i.valor ? brl(i.valor) : '<span class="mute">—</span>'}</td>
     <td><div class="nota-cel" title="${esc(nota)}">${primeira ? esc(primeira) : ""}</div>${i.empresaId ? `<button type="button" class="lapis" data-nota-ativ="${i.id}" title="Atualização do negócio: o que aconteceu (a IA lê e ajusta o Score)">+ atualização</button>` : ""}</td>
   </tr>`;
 }
@@ -1786,11 +1785,11 @@ async function telaTodos() {
     ${Object.keys(grupos).length ? Object.entries(grupos).sort((a, b) => nomeDe(a[0]).localeCompare(nomeDe(b[0]))).map(([resp, itens]) => `
       <div class="grupo"><h3>${esc(itens[0].responsavelNome || nomeDe(resp))}<span class="sub">${itens.filter(i => !i.concluida).length} pendentes · ${itens.filter(i => i.concluida).length} feitas</span></h3>
       <div class="tabela-ativ"><table class="ativ">
-        <colgroup><col style="width:34px"><col style="width:20%"><col style="width:13%"><col style="width:10%"><col style="width:190px"><col style="width:11%"><col style="width:9%"><col style="width:95px"><col></colgroup>
-        <thead><tr><th></th><th>Assunto</th><th>Organização</th><th>Pessoa</th><th>Vencimento</th><th>Negócio</th><th>Etapa</th><th>Valor</th><th>Observação</th></tr></thead>
+        <colgroup><col style="width:34px"><col style="width:24%"><col style="width:150px"><col style="width:17%"><col style="width:13%"><col style="width:190px"><col></colgroup>
+        <thead><tr><th></th><th>Assunto</th><th>Oportunidade</th><th>Organização</th><th>Pessoa</th><th>Vencimento</th><th>Observação</th></tr></thead>
         <tbody>${itens.map(linhaAtividade).join("")}</tbody></table></div></div>`).join("")
       : `<div class="grupo"><p class="vazio">${TODOS_TIPO ? "Nenhuma atividade desse tipo nesta semana." : "Nenhuma atividade para esta semana. Crie atividades na aba Negócios."}</p></div>`}
-    <p class="nota">Lista as atividades criadas pela plataforma, por responsável: pendentes com vencimento até sexta (inclusive atrasadas) e, no fim de cada bloco, as feitas na semana. Marcar como feita atualiza o Pipedrive; clicar no assunto abre a atividade para mudar pessoa, data, tipo, quem executa e a <b>Observação</b> (lembrete da atividade, vai para a Anotação no Pipedrive e não mexe no Score); para mudar só a data, escolha o dia no calendário e clique em Confirmar. "+ atualização" registra a <b>atualização do negócio</b> (o que aconteceu), que fica na oportunidade e a IA lê para ajustar o Score. O que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
+    <p class="nota">Lista as atividades criadas pela plataforma, por responsável: pendentes com vencimento até sexta (inclusive atrasadas) e, no fim de cada bloco, as feitas na semana. Marcar como feita atualiza o Pipedrive; clicar no assunto abre a atividade para mudar a oportunidade, pessoa, data, tipo, quem executa e a <b>Observação</b> (lembrete da atividade, vai para a Anotação no Pipedrive e não mexe no Score); para mudar só a data, escolha o dia no calendário e clique em Confirmar. "+ atualização" registra a <b>atualização do negócio</b> (o que aconteceu), que fica na oportunidade e a IA lê para ajustar o Score. O que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
   document.getElementById("s-ant").onclick = () => mover(-7);

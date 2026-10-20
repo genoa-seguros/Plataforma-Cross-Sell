@@ -74,6 +74,9 @@ table.ops .btn,table.ops .chip,table.ops .comp{white-space:normal}table.ops .vig
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);font-weight:600;background:var(--soft);white-space:nowrap}
+/* Cabeçalho congelado (Oportunidades e Negócios em aberto): fica logo abaixo da barra do topo ao rolar a página.
+   O sticky não passa por um contêiner com overflow, então a tabela deixa de rolar de lado onde ela cabe na tela. */
+@media (min-width:1100px){.tabela.fixa{overflow:visible}.tabela.fixa thead th{position:sticky;top:var(--topo,56px);z-index:3;box-shadow:0 1px 0 var(--line)}}
 tbody tr:hover{background:color-mix(in srgb,var(--soft) 55%,transparent)}
 .score{display:grid;gap:4px;min-width:96px}
 .score b{font:600 16px/1 var(--f-data)}
@@ -932,7 +935,7 @@ function desenharOportunidades() {
       <button type="button" class="btn sec" id="abrir-fila" title="Completar à mão o que falta e levar para Oportunidades">Fila de análise</button>
     </div>
     ${painelCriterios()}
-    <div class="tabela"><table class="ops">
+    <div class="tabela fixa"><table class="ops">
       <colgroup><col style="width:7%"><col style="width:12%"><col style="width:8.5%"><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:14.5%"><col style="width:12%"><col style="width:9%"></colgroup>
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
@@ -1728,7 +1731,7 @@ async function telaNegocios() {
   document.getElementById("neg-funil").innerHTML = `<option value="">Funil: todos</option>${r.funis.map(f => `<option ${f === filtroNeg.funil ? "selected" : ""}>${esc(f)}</option>`).join("")}`;
   document.getElementById("neg-dono").innerHTML = `<option value="">Responsável: todos</option>${r.donos.map(d => `<option value="${esc(d)}" ${d === filtroNeg.dono ? "selected" : ""}>${esc(nomeDe(d))}</option>`).join("")}`;
   document.getElementById("neg-contagem").textContent = `${r.total} de ${r.totalGeral} negócios`;
-  document.getElementById("neg-lista").innerHTML = `<div class="tabela"><table>
+  document.getElementById("neg-lista").innerHTML = `<div class="tabela fixa"><table>
     <thead><tr><th>Empresa</th><th>Funcionários · cidade · setor</th><th>Negócio</th><th>Funil · etapa</th><th>Valor</th><th>Responsável</th><th>Próxima atividade</th></tr></thead>
     <tbody>${r.itens.map(n => `<tr>
       <td>${n.empresa ? `<a href="#empresa-${n.empresa.id}"><b>${esc(n.empresa.nome)}</b></a>${n.empresa.cliente ? ' <span class="chip" style="--c:var(--good)">cliente</span>' : ""}
@@ -2075,6 +2078,10 @@ async function render() {
     else await telaOportunidades();
   } catch (err) { if (err.message !== "login" && err.message !== OBSOLETA) document.getElementById("app").innerHTML = `<p class="vazio">${esc(err.message)}</p>`; }
 }
+
+// Altura da barra do topo (muda com a largura da tela): o cabeçalho congelado das tabelas fica logo abaixo dela
+const medirTopo = () => document.documentElement.style.setProperty("--topo", document.querySelector(".top").offsetHeight + "px");
+new ResizeObserver(medirTopo).observe(document.querySelector(".top"));
 
 (async () => {
   document.getElementById("demo").hidden = !PREVIA;

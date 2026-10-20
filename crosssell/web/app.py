@@ -553,6 +553,13 @@ def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), _u
     return {"cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte, "local": tabela.local(e)}
 
 
+@app.get("/api/cidades/conferir")
+def api_conferir_cidade(cidade: str = "", _u: Usuario = Depends(usuario_atual)):
+    """Antes de gravar a cidade à mão: cidade alvo de grafia quase igual ("Salavador" → "Salvador"), ou null."""
+    from crosssell.potencial import cidade_parecida
+    return {"sugestao": cidade_parecida(cidade)}
+
+
 @app.get("/api/empresas/{empresa_id}")
 def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     e = db.get(Empresa, empresa_id)

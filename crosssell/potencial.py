@@ -16,6 +16,7 @@ Cada critério devolve um valor de 0 a 1 e uma frase para a coluna "Por quê", c
 "+" (a favor), "-" (contra) ou "?" (ainda sem dado).
 """
 
+import difflib
 import math
 import re
 from functools import lru_cache
@@ -173,6 +174,16 @@ def cidade_alvo(cidade: str | None) -> bool:
     """Cidade com boa rede hospitalar e sem depender da Unimed local (lista saude.metropoles)."""
     nome = _norm((cidade or "").split(",")[0]).strip()
     return bool(nome) and nome in {_norm(x) for x in criterios()["saude"]["metropoles"]}
+
+
+def cidade_parecida(cidade: str | None) -> str | None:
+    """Cidade alvo de grafia quase igual à digitada (ex.: "Salavador" → "Salvador"), para a tela perguntar
+    "Você quis dizer...?" antes de gravar. None se a cidade já é alvo ou se nenhuma é parecida o bastante."""
+    nome = _norm((cidade or "").split(",")[0]).strip()
+    if not nome or cidade_alvo(nome):
+        return None
+    alvo = difflib.get_close_matches(nome, [_norm(x) for x in criterios()["saude"]["metropoles"]], n=1, cutoff=0.88)
+    return alvo[0].title() if alvo else None
 
 
 def cidade_com_clientes(cidade: str | None) -> bool:

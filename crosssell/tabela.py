@@ -21,7 +21,7 @@ from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
 from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeManual, Pessoa,
                                Usuario)
-from crosssell.normalize import AREA_LABEL, classificar_area
+from crosssell.normalize import AREA_LABEL, classificar_area, sem_acento
 from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei,
                                  melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
                                  produtos_lf, produtos_re, setor_valido)
@@ -473,9 +473,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 # Responsáveis pelos cards abertos da empresa (resumo de pendências por responsável)
                 "donos": sorted({x.responsavel_email for x in abertos if x.responsavel_email}),
                 # Negócios ganhos nos últimos GANHOS_DIAS dias (filtro "Ganhos recentes"), com quem fechou
-                "ganhos": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "em": x.ganho_em.isoformat(),
-                            "dono": x.responsavel_email, "donoNome": nomes.get(x.responsavel_email, x.responsavel_email)}
-                           for x in ganhos],
+                "ganhos": ganhos_por_produto(ganhos, nomes),
                 "soGanho": not abertos,
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
@@ -506,6 +504,19 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     for item in saida:
         item["pendencias"] = pendencias(item)
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
+
+
+def ganhos_por_produto(ganhos: list[Negocio], nomes: dict[str, str]) -> list[dict]:
+    """Um item por produto ganho (vários negócios do mesmo produto, ex.: três Garantias, viram um só, com `qtd`),
+    com o ganho mais recente: data e quem fechou. `ganhos` já vem do mais recente para o mais antigo."""
+    por_produto: dict[str, dict] = {}
+    for x in ganhos:
+        produto = x.produto or x.titulo or ""
+        item = por_produto.setdefault(" ".join(sem_acento(produto).lower().split()), {
+            "vertical": x.vertical, "produto": produto, "em": x.ganho_em.isoformat(), "qtd": 0,
+            "dono": x.responsavel_email, "donoNome": nomes.get(x.responsavel_email, x.responsavel_email)})
+        item["qtd"] += 1
+    return list(por_produto.values())
 
 
 def _e_ponte(p: dict | None) -> bool:

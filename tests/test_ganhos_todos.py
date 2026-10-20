@@ -28,7 +28,8 @@ def test_ganhos_recentes_mesmo_sem_card_aberto(cenario, db):  # noqa: F811
     entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
     so_ganho = _empresa(db, "Recem Fechada SA", ("ganho", "D&O", 3))
     _empresa(db, "Antiga SA", ("ganho", "D&O", 20))  # ganho há mais de 14 dias: fora
-    _empresa(db, "Com Card SA", ("ganho", "Cyber", 1), ("aberto", "E&O", None))
+    _empresa(db, "Com Card SA", ("ganho", "Cyber", 1), ("aberto", "E&O", None), ("ganho", "Garantia", 2),
+             ("ganho", "Garantia", 5), ("ganho", "garantia ", 9))
 
     padrao = c.get("/api/oportunidades").json()
     assert "Recem Fechada SA" not in {o["empresa"]["nome"] for o in padrao["itens"]}  # sem card aberto: só no filtro
@@ -38,6 +39,11 @@ def test_ganhos_recentes_mesmo_sem_card_aberto(cenario, db):  # noqa: F811
     assert nomes.index("Com Card SA") < nomes.index("Recem Fechada SA")  # quem fechou mais recentemente primeiro
     item = next(o for o in r["itens"] if o["empresa"]["id"] == so_ganho.id)
     assert item["ganhos"][0]["produto"] == "D&O" and item["ganhos"][0]["donoNome"].startswith("Victor")
+    # Vários negócios do mesmo produto viram um só, com a quantidade e o ganho mais recente
+    com_card = next(o for o in r["itens"] if o["empresa"]["nome"] == "Com Card SA")
+    garantia = next(g for g in com_card["ganhos"] if g["produto"] == "Garantia")
+    assert len(com_card["ganhos"]) == 2 and garantia["qtd"] == 3
+    assert garantia["em"] == (date.today() - timedelta(days=2)).isoformat()
     assert item["vertical"] != "linhas_financeiras" or item["tipo"] == "mais"  # LF recém-ganha não é cross
     assert any(not o["analisada"] for o in r["itens"])  # mostra também as ainda não analisadas, com o que falta
     # A ficha da empresa mostra as oportunidades de quem só tem o ganho recente

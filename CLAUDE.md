@@ -94,7 +94,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   card (`soGanho` items appear only there; `_calcular_oportunidades` keeps them out of the default list, fila and
   pendências); `linkedin._candidatos_alvo` puts them first.
   `/api/fila` feeds the "Fila de análise" drawer (not analyzed, with company people); `/api/pendencias` feeds its
-  "Completar dados" tab (analyzed items with `tabela.pendencias`, summary by `donos` = open-deal owners). `OportunidadeManual` forces an
+  "Completar dados" tab (analyzed items with `tabela.pendencias`, summary by `donos` = open-deal owners). `tabela.pesquisa` feeds the
+  per-opportunity research bar (vertical data, quem decide da área, ponte + cargo; manual fills count as done; estado
+  completo / pesquisando = the platform still fetches something / equipe = only manual work left). `OportunidadeManual` forces an
   opportunity in ("incluída à mão"); `Pessoa.ponte_manual` counts as ponte (`tabela.tem_relacao`); `NotaOportunidade`
   ("atualização do negócio" in the UI; per company and vertical; not the activity's `Atividade.nota`, which is the
   "observação" sent to Pipedrive and never read by the AI) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of

@@ -47,7 +47,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   estão na tela com campos vazios para preencher à mão, e só eles (o que já foi capturado não aparece): a ponte (quando
   alguém já troca e-mails com a equipe, só o cargo dele, se faltar; quando ninguém troca, marcar quem é a ponte), quem
   decide da área quando só há executivo, cidade, funcionários e setor. Tem resumo por responsável (dono dos cards
-  abertos da empresa no Pipedrive). **Atualizações do negócio**: em cada oportunidade, "+ atualização" registra
+  abertos da empresa no Pipedrive). **Barrinha de pesquisa**: abaixo da vertical, quanto da pesquisa da oportunidade
+  está feito (`tabela.pesquisa`): os dados da vertical (Saúde: cidade e praça, funcionários, setor; LF: Receita,
+  notícias, site lido pela IA, cargos-chave; RE: setor, funcionários), quem decide da área e a ponte por e-mail com
+  cargo. Preenchido à mão conta como feito. Verde = completa; azul = a plataforma ainda está buscando algo (ex.: a
+  lista de quem decide no Sales Navigator); amarelo = o que falta só se resolve à mão. Ao passar o mouse, a lista de
+  etapas com ✓/○ e quem resolve cada uma. **Atualizações do negócio**: em cada oportunidade, "+ atualização" registra
   o que aconteceu (ex.: "corretor da família, muito difícil entrar"), por vertical. A IA (mesmo modelo da temperatura)
   lê as notas e ajusta o Score de −50 a +20, com o motivo no "Por quê"; se ela não responder na hora, a rotina avalia
   depois (`crosssell notas`). Qualquer pessoa da equipe pode mover e escrever notas; fica o nome de quem fez.

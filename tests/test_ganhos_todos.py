@@ -93,3 +93,35 @@ def test_nota_na_atividade_vira_nota_da_oportunidade_e_vai_para_o_pipedrive(cena
     item = next(i for i in c.get("/api/todos").json()["itens"] if i["id"] == at.id)
     assert item["nota"] == corpo["note"]
     assert c.post(f"/api/atividades/{at.id}/nota", headers=H, json={"vertical": "saude", "texto": "ok"}).status_code == 400
+
+
+def test_editar_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F811
+    from crosssell.models import Pessoa
+
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    bruno = db.scalar(select(Usuario).where(Usuario.email.like("bruno%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Ligar", vencimento=date.today(),
+                                   responsavel=victor, criada_por=victor)
+    detalhe = c.get(f"/api/atividades/{at.id}").json()
+    assert ana.id in {x["id"] for x in detalhe["contatos"]} and detalhe["pessoaId"] is None
+    nova = date.today() + timedelta(days=2)
+    r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={
+        "assunto": "Apresentar D&O", "tipo": "meeting", "vencimento": nova.isoformat(), "pessoa_id": ana.id,
+        "responsavel_id": bruno.id, "nota": "Levar a proposta"})
+    assert r.json() == {"ok": True}
+    pid, corpo = fake.atualizadas[-1]
+    assert pid == at.pipedrive_id and corpo["subject"] == "Apresentar D&O" and corpo["type"] == "meeting"
+    assert corpo["due_date"] == nova.isoformat() and corpo["owner_id"] == 2 and corpo["note"] == "Levar a proposta"
+    assert corpo["participants"] == [{"person_id": ana.pipedrive_person_id, "primary": True}]
+    item = c.get(f"/api/atividades/{at.id}").json()
+    assert item["pessoaId"] == ana.id and item["responsavelId"] == bruno.id and item["assunto"] == "Apresentar D&O"
+    # Pessoa de outra empresa não vale
+    outra = db.scalar(select(Pessoa).where(Pessoa.empresa_id != alfa.id, Pessoa.pipedrive_person_id.is_not(None)))
+    r = c.post(f"/api/atividades/{at.id}/editar", headers=H, json={
+        "assunto": "X", "tipo": "task", "vencimento": nova.isoformat(), "pessoa_id": outra.id, "responsavel_id": bruno.id})
+    assert r.status_code == 400

@@ -370,6 +370,29 @@ def mudar_data_atividade(db: Session, client: PipedriveClient, atividade: Ativid
     db.commit()
 
 
+def editar_atividade(db: Session, client: PipedriveClient, atividade: Atividade, *, assunto: str, tipo: str,
+                     vencimento: date, pessoa_id: int | None, responsavel: Usuario, nota: str | None) -> Atividade:
+    """Edita a atividade (assunto, tipo, data, pessoa, quem executa e nota) aqui e no Pipedrive."""
+    from crosssell.models import Pessoa
+
+    empresa_id = atividade.empresa_id or (atividade.negocio.empresa_id if atividade.negocio else None)
+    pessoa = db.get(Pessoa, pessoa_id) if pessoa_id else None
+    if pessoa_id and (pessoa is None or not pessoa.pipedrive_person_id or pessoa.empresa_id != empresa_id):
+        raise ValueError("Escolha uma pessoa da empresa que exista no Pipedrive.")
+    if not responsavel.pipedrive_user_id:
+        raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
+    nota = (nota or "").strip() or None
+    if atividade.pipedrive_id:
+        client.atualizar_atividade(atividade.pipedrive_id, {
+            "subject": assunto, "type": tipo, "due_date": vencimento.isoformat(), "owner_id": responsavel.pipedrive_user_id,
+            "participants": [{"person_id": pessoa.pipedrive_person_id, "primary": True}] if pessoa else [],
+            "note": nota or ""})
+    atividade.assunto, atividade.tipo, atividade.vencimento = assunto, tipo, vencimento
+    atividade.pessoa_id, atividade.responsavel_id, atividade.nota = pessoa_id, responsavel.id, nota
+    db.commit()
+    return atividade
+
+
 def anotar_atividade(db: Session, client: PipedriveClient, atividade: Atividade, texto: str) -> None:
     """Acrescenta uma linha à nota da atividade (aqui e no Pipedrive), sem apagar o que já havia."""
     nova = f"{atividade.nota}\n\n{texto}" if atividade.nota else texto

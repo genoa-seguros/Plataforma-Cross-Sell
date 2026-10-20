@@ -651,6 +651,48 @@ def api_concluir(atividade_id: int, dados: ConcluirIn, db: Session = Depends(get
     return {"ok": True}
 
 
+@app.get("/api/atividades/{atividade_id}")
+def api_atividade(atividade_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Atividade para editar, com as pessoas da empresa que existem no Pipedrive."""
+    at = db.get(Atividade, atividade_id)
+    if at is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+    empresa = at.empresa or (at.negocio.empresa if at.negocio else None)
+    contatos = [{"id": p.id, "nome": p.nome, "cargo": p.cargo} for p in (empresa.pessoas if empresa else [])
+                if p.pipedrive_person_id]
+    return {**tabela.item_atividade(at, date.today()), "pessoaId": at.pessoa_id, "responsavelId": at.responsavel_id,
+            "contatos": sorted(contatos, key=lambda c: c["nome"] or "")}
+
+
+class EditarAtividadeIn(BaseModel):
+    assunto: str
+    tipo: str = "task"
+    vencimento: date
+    pessoa_id: int | None = None
+    responsavel_id: int
+    nota: str | None = None
+
+
+@app.post("/api/atividades/{atividade_id}/editar")
+def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Session = Depends(get_db),
+                         _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Edita a atividade (To-dos) e sincroniza com o Pipedrive."""
+    at = db.get(Atividade, atividade_id)
+    resp = db.get(Usuario, dados.responsavel_id)
+    if at is None or resp is None or not resp.ativo:
+        raise HTTPException(404, "Atividade ou responsável não encontrado.")
+    if not dados.assunto.strip():
+        raise HTTPException(400, "Escreva o assunto.")
+    try:
+        pd.editar_atividade(db, client, at, assunto=dados.assunto.strip(), tipo=dados.tipo, vencimento=dados.vencimento,
+                            pessoa_id=dados.pessoa_id, responsavel=resp, nota=dados.nota)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except httpx.HTTPError:
+        raise HTTPException(502, "O Pipedrive não aceitou a alteração; tente de novo.")
+    return {"ok": True}
+
+
 class DataIn(BaseModel):
     vencimento: date
 

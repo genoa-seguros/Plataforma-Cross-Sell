@@ -144,3 +144,28 @@ def test_editar_so_a_oportunidade_nao_escreve_no_pipedrive(cenario, db):  # noqa
     # Mudou só a observação: vai só a nota
     c.post(f"/api/atividades/{at.id}/editar", headers=H, json=base | {"nota": "Levar a proposta"})
     assert fake.atualizadas[-1] == (at.pipedrive_id, {"note": "Levar a proposta"})
+
+
+def test_excluir_atividade_sai_daqui_e_do_pipedrive(cenario, db):  # noqa: F811
+    from crosssell.models import Atividade
+
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Ligar", vencimento=date.today(),
+                                   responsavel=victor, criada_por=victor)
+    aid, pid = at.id, at.pipedrive_id
+    assert c.post(f"/api/atividades/{aid}/excluir", headers=H).json() == {"ok": True}
+    db.expire_all()  # a API usa outra sessão
+    assert pid in fake.excluidas and db.scalar(select(Atividade).where(Atividade.id == aid)) is None
+    assert aid not in {i["id"] for i in c.get("/api/todos").json()["itens"]}
+    assert c.post(f"/api/atividades/{aid}/excluir", headers=H).status_code == 404
+    # Excluída direto no Pipedrive: some daqui na sincronização
+    outra = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Reunião",
+                                      vencimento=date.today(), responsavel=victor, criada_por=victor)
+    fake.excluidas.add(outra.pipedrive_id)
+    oid = outra.id
+    assert pipedrive.sincronizar_atividades(db, client, date.today() - timedelta(days=7)) == 1
+    assert db.get(Atividade, oid) is None

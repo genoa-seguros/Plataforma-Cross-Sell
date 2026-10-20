@@ -65,6 +65,7 @@ class FakePipedrive:
         self.atualizadas: list[tuple[int, dict]] = []
         self.pessoas_atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
+        self.excluidas: set[int] = set()
         self.datas: dict[int, str] = {}  # vencimento mudado (due_date)
         self.falhar_usuarios = False  # /v1/users fora do ar
         self.requisicoes: list[httpx.Request] = []
@@ -89,6 +90,10 @@ class FakePipedrive:
             if "due_date" in corpo:
                 self.datas[aid] = corpo["due_date"]
             return httpx.Response(200, json={"data": {"id": aid, **corpo}})
+        if req.method == "DELETE" and "/v2/activities/" in caminho:
+            aid = int(caminho.rsplit("/", 1)[1])
+            self.excluidas.add(aid)
+            return httpx.Response(200, json={"data": {"id": aid}})
         if req.method == "PATCH" and "/v2/persons/" in caminho:
             pid = int(caminho.rsplit("/", 1)[1])
             corpo = json.loads(req.content)
@@ -96,7 +101,7 @@ class FakePipedrive:
             return httpx.Response(200, json={"data": {"id": pid, **corpo}})
         if req.method == "GET" and "/v2/activities/" in caminho:
             aid = int(caminho.rsplit("/", 1)[1])
-            dados = {"id": aid, "done": aid in self.feitas}
+            dados = {"id": aid, "done": aid in self.feitas, "is_deleted": aid in self.excluidas}
             if aid in self.datas:
                 dados["due_date"] = self.datas[aid]
             return httpx.Response(200, json={"data": dados})

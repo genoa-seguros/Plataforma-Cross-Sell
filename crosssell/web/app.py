@@ -727,6 +727,22 @@ def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(g
     return {"ok": True, "vencimento": at.vencimento.isoformat()}
 
 
+@app.post("/api/atividades/{atividade_id}/excluir")
+def api_excluir_atividade(atividade_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual),
+                          client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Exclui a atividade (To-dos) aqui e no Pipedrive."""
+    at = db.get(Atividade, atividade_id)
+    if at is None:
+        raise HTTPException(404, "Atividade não encontrada.")
+    try:
+        pd.excluir_atividade(db, client, at)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"O Pipedrive não excluiu a atividade: {_erro_pipedrive(exc)}")
+    except httpx.HTTPError:
+        raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
+    return {"ok": True}
+
+
 @app.post("/api/atividades/{atividade_id}/nota")
 def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(get_db),
                        u: Usuario = Depends(usuario_atual)):

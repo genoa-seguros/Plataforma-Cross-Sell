@@ -66,12 +66,19 @@ class FakePipedrive:
         self.pessoas_atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
         self.excluidas: set[int] = set()
+        self.atividades: dict[int, dict] = {}  # como cada atividade está agora "no Pipedrive"
         self.datas: dict[int, str] = {}  # vencimento mudado (due_date)
         self.falhar_usuarios = False  # /v1/users fora do ar
         self.requisicoes: list[httpx.Request] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handler)
+
+    def _guardar(self, aid: int, corpo: dict) -> None:
+        at = self.atividades.setdefault(aid, {})
+        at.update({k: v for k, v in corpo.items() if k != "participants"})
+        if "participants" in corpo:  # o Pipedrive devolve a pessoa principal em person_id
+            at["person_id"] = next((p["person_id"] for p in corpo["participants"] or [] if p.get("primary")), None)
 
     def _handler(self, req: httpx.Request) -> httpx.Response:
         self.requisicoes.append(req)
@@ -80,11 +87,13 @@ class FakePipedrive:
             corpo = json.loads(req.content)
             corpo["id"] = 900 + len(self.criadas)
             self.criadas.append(corpo)
+            self._guardar(corpo["id"], corpo)
             return httpx.Response(201, json={"data": corpo})
         if req.method == "PATCH" and "/v2/activities/" in caminho:
             aid = int(caminho.rsplit("/", 1)[1])
             corpo = json.loads(req.content)
             self.atualizadas.append((aid, corpo))
+            self._guardar(aid, corpo)
             if "done" in corpo:
                 (self.feitas.add if corpo["done"] else self.feitas.discard)(aid)
             if "due_date" in corpo:
@@ -101,7 +110,8 @@ class FakePipedrive:
             return httpx.Response(200, json={"data": {"id": pid, **corpo}})
         if req.method == "GET" and "/v2/activities/" in caminho:
             aid = int(caminho.rsplit("/", 1)[1])
-            dados = {"id": aid, "done": aid in self.feitas, "is_deleted": aid in self.excluidas}
+            dados = {**self.atividades.get(aid, {}), "id": aid, "done": aid in self.feitas,
+                     "is_deleted": aid in self.excluidas}
             if aid in self.datas:
                 dados["due_date"] = self.datas[aid]
             return httpx.Response(200, json={"data": dados})

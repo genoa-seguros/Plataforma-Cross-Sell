@@ -91,7 +91,7 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   editar; sem ela, a do negócio), organização, pessoa, vencimento e observação), com filtro por tipo. Dois campos
   diferentes: a **Observação** da atividade (lembrete do que fazer; vai para a Anotação da atividade no Pipedrive e
   não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
-  empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data e exclusão) volta
+  empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data, quem executa, assunto e exclusão) volta
   para a plataforma na rotina de hora em hora.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal

@@ -119,7 +119,7 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
 .grupo li:last-child{border-bottom:0}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
-.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}.nota-ativ{white-space:pre-wrap;margin-top:3px;padding-left:8px;border-left:3px solid var(--line)}.ok-data{font-size:12px;padding:1px 8px;margin-left:6px}
+.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}.seta{border:0;background:none;color:var(--mute);cursor:pointer;padding:0 4px 0 0;font-size:12px}.ass-link{border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}.ass-link:hover{color:var(--accent);text-decoration:underline}.nota-ativ{white-space:pre-wrap;margin-top:3px;padding-left:8px;border-left:3px solid var(--line)}.ok-data{font-size:12px;padding:1px 8px;margin-left:6px}
 .atrasada{color:var(--bad);font-weight:600}
 .semana{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fila{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 24px color-mix(in srgb,var(--ink) 18%,transparent);z-index:15;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
@@ -331,6 +331,7 @@ const FINAL_TXT = {"fora da praça": "fora da praça: não entra em Oportunidade
 // Prévia (exportar_preview.py, sem servidor): os mesmos filtros e a paginação de /api/oportunidades
 // Filtro "Relação" na prévia (o mesmo de /api/oportunidades): e-mail, "-" (sem relação) ou "baixa" (Score alto, influência baixa)
 const relOk = (o, rel) => rel === "baixa" ? o.score >= 70 && (o.influencia ?? 0) < 40 : rel === "-" ? !o.relacoes.length : o.relacoes.includes(rel);
+const contatosPrevia = id => ([...(D.oportunidades || []), ...(D.linhas || [])].find(l => l.empresa?.id == id) || {}).contatos || [];
 function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
   if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
@@ -412,6 +413,9 @@ const previa = {
     if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
+    const ma = path.match(/^\/api\/atividades\/(\d+)$/);
+    if (ma) { const a = D.atividades.find(x => x.id == ma[1]); const cs = contatosPrevia(a.empresaId);
+      return {...a, pessoaId: a.pessoaId ?? cs.find(c => c.nome === a.pessoa)?.id ?? null, contatos: cs}; }
     if (path.startsWith("/api/cidades/conferir")) return {sugestao: /salavador/i.test(path) ? "Salvador" : null};
     if (path.startsWith("/api/fila")) return filaPrevia(path);
     if (path.startsWith("/api/pendencias")) return pendenciasPrevia(path);
@@ -445,6 +449,10 @@ const previa = {
       if (!l.proximaAtividade || b.vencimento < l.proximaAtividade.vencimento) l.proximaAtividade = {assunto: b.assunto, vencimento: b.vencimento, responsavel: resp.email};
       return {id: at.id};
     }
+    if ((m = path.match(/^\/api\/atividades\/(\d+)\/editar$/))) { const a = D.atividades.find(x => x.id == m[1]); const u = D.equipe.find(x => x.id === b.responsavel_id);
+      const c = contatosPrevia(a.empresaId).find(x => x.id === b.pessoa_id);
+      Object.assign(a, {assunto: b.assunto, tipo: b.tipo, vencimento: b.vencimento, nota: b.nota, pessoa: c?.nome || null, pessoaId: b.pessoa_id,
+        responsavel: u?.email || a.responsavel, responsavelNome: u?.nome || a.responsavelNome}); return {ok: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/nota$/))) { const a = D.atividades.find(x => x.id == m[1]);
       a.nota = (a.nota ? a.nota + "\n\n" : "") + `[${new Date().toLocaleDateString("pt-BR").slice(0, 5)} · ${D.eu.nome}] ${b.texto}`; return {id: ++this.seq, texto: b.texto, ajuste: null, pipedrive: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
@@ -633,20 +641,21 @@ function abrirAtividadeOp(id) {
 function modalAtividade(ctx) {
   const l = {contatos: ctx.contatos};
   const dono = USUARIOS.find(u => u.email === ctx.donoEmail) || USUARIOS.find(u => u.email === EU.email) || USUARIOS[0];
-  const pessoaPadrao = l.contatos.find(c => c.id === ctx.pessoaId) || l.contatos[0];
+  const pessoaPadrao = l.contatos.find(c => c.id === ctx.pessoaId) || (ctx.edicao ? null : l.contatos[0]);
+  const tipos = {...TIPOS, ...(ctx.tipo && !TIPOS[ctx.tipo] ? {[ctx.tipo]: ctx.tipo} : {})};  // tipo criado no Pipedrive
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-ativ" aria-labelledby="t-ativ">
-    <h2 id="t-ativ" style="margin:0">Nova atividade no Pipedrive</h2>
+    <h2 id="t-ativ" style="margin:0">${ctx.edicao ? "Editar atividade" : "Nova atividade no Pipedrive"}</h2>
     <div class="sub">${esc(ctx.titulo)}</div>
     <label>Contato (a atividade fica dentro da pessoa)<select id="a-pessoa">${ctx.semPessoa ? `<option value="">Só na organização</option>` : ""}${l.contatos.map(c => `<option value="${c.id}" ${c.id === pessoaPadrao?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
     <label>Assunto<input id="a-assunto" required value="${esc(ctx.assunto)}"></label>
     <div class="form-linha">
-      <label>Tipo<select id="a-tipo">${Object.entries(TIPOS).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
-      <label>Vencimento<input type="date" id="a-venc" required value="${proximaSexta()}"></label>
+      <label>Tipo<select id="a-tipo">${Object.entries(tipos).map(([k, t]) => `<option value="${k}" ${k === ctx.tipo ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      <label>Vencimento<input type="date" id="a-venc" class="data-ativ" required value="${esc(ctx.vencimento || proximaSexta())}"></label>
     </div>
     <label>Quem executa<select id="a-resp">${USUARIOS.map(u => `<option value="${u.id}" ${u.id === dono?.id ? "selected" : ""} ${u.pipedrive || PREVIA ? "" : "disabled"}>${esc(u.nome)}${u.pipedrive || PREVIA ? "" : " (sem usuário no Pipedrive)"}</option>`).join("")}</select></label>
-    <label>Nota (opcional)<textarea id="a-nota" rows="3"></textarea></label>
+    <label>Nota${ctx.edicao ? "" : " (opcional)"}<textarea id="a-nota" rows="${ctx.edicao ? 7 : 3}">${esc(ctx.nota || "")}</textarea></label>
     <p class="erro" id="a-erro" hidden></p>
-    <div class="acoes"><button type="button" class="btn sec" id="a-cancelar">Cancelar</button><button class="btn" id="a-salvar">Criar atividade</button></div>
+    <div class="acoes"><button type="button" class="btn sec" id="a-cancelar">Cancelar</button><button class="btn" id="a-salvar">${ctx.edicao ? "Salvar no Pipedrive" : "Criar atividade"}</button></div>
   </form></div>`;
   const fechar = () => document.getElementById("modal").innerHTML = "";
   document.getElementById("a-cancelar").onclick = fechar;
@@ -655,14 +664,27 @@ function modalAtividade(ctx) {
     e.preventDefault();
     const btn = document.getElementById("a-salvar"); btn.disabled = true;
     try {
-      await api.post("/api/atividades", {...ctx.corpo, pessoa_id: +document.getElementById("a-pessoa").value || null,
+      const campos = {pessoa_id: +document.getElementById("a-pessoa").value || null,
         assunto: document.getElementById("a-assunto").value, tipo: document.getElementById("a-tipo").value,
         vencimento: document.getElementById("a-venc").value, responsavel_id: +document.getElementById("a-resp").value,
-        nota: document.getElementById("a-nota").value || null});
+        nota: document.getElementById("a-nota").value || null};
+      if (ctx.edicao) {
+        await api.post(`/api/atividades/${ctx.edicao}/editar`, campos);
+        fechar(); aviso(PREVIA ? "Atividade alterada na prévia (não foi enviada ao Pipedrive)" : "Atividade atualizada no Pipedrive");
+        render(); return;
+      }
+      await api.post("/api/atividades", {...ctx.corpo, ...campos});
       fechar(); aviso(PREVIA ? "Atividade criada na prévia (não foi enviada ao Pipedrive)" : "Atividade criada no Pipedrive");
       render();
     } catch (err) { const el = document.getElementById("a-erro"); el.textContent = err.message; el.hidden = false; btn.disabled = false; }
   };
+}
+
+// Editar a atividade (To-dos): pessoa, assunto, tipo, data, quem executa e nota, sincronizados com o Pipedrive
+async function editarAtividade(id) {
+  let a; try { a = await api.get(`/api/atividades/${id}`); } catch (err) { aviso(err.message); return; }
+  modalAtividade({edicao: id, titulo: [a.empresa, a.negocio].filter(Boolean).join(" · "), contatos: a.contatos, pessoaId: a.pessoaId,
+    donoEmail: a.responsavel, assunto: a.assunto, tipo: a.tipo, vencimento: a.vencimento, nota: a.nota, semPessoa: true});
 }
 
 /* ---------- Oportunidades ---------- */
@@ -1714,6 +1736,8 @@ async function telaNegocios() {
 }
 
 let TODOS_ITENS = [];
+// Atividades com os detalhes escondidos (seta), lembradas neste navegador
+const DOBRADAS = new Set((() => { try { return JSON.parse(localStorage.getItem("todos-dobradas") || "[]"); } catch { return []; } })());
 async function telaTodos() {
   await carregarBase();
   const r = await api.get("/api/todos?ref=" + iso(refSemana));
@@ -1739,14 +1763,17 @@ async function telaTodos() {
       <div class="grupo"><h3>${esc(itens[0].responsavelNome || nomeDe(resp))}<span class="sub">${itens.filter(i => !i.concluida).length} pendentes · ${itens.filter(i => i.concluida).length} feitas</span></h3>
       <ul>${itens.map(i => `<li class="${i.concluida ? "feita" : ""}">
         <input type="checkbox" data-concluir="${i.id}" ${i.concluida ? "checked" : ""} aria-label="Marcar como feita">
-        <div><div class="ass">${esc(i.assunto)}</div><div class="sub">${TIPOS[i.tipo] || ""}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div>
+        <div><div class="ass"><button type="button" class="seta" data-dobrar-ativ="${i.id}" aria-expanded="${!DOBRADAS.has(i.id)}" title="${DOBRADAS.has(i.id) ? "Mostrar" : "Esconder"} os detalhes">${DOBRADAS.has(i.id) ? "▸" : "▾"}</button>
+            <button type="button" class="ass-link" data-editar-ativ="${i.id}" title="Editar a atividade (pessoa, data, tipo, quem executa, nota)">${esc(i.assunto)}</button></div>
+          ${DOBRADAS.has(i.id) ? "" : `<div class="sub">${TIPOS[i.tipo] || esc(i.tipo || "")}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div>
           ${i.nota ? `<div class="sub nota-ativ">${esc(i.nota)}</div>` : ""}
-          ${i.empresaId ? `<button type="button" class="lapis" data-nota-ativ="${i.id}" title="Observação da reunião: vira nota da oportunidade (a IA ajusta o Score) e vai para a atividade no Pipedrive">+ nota</button>` : ""}</div>
+          <div><button type="button" class="lapis" data-editar-ativ="${i.id}">✎ editar</button>
+          ${i.empresaId ? `<button type="button" class="lapis" data-nota-ativ="${i.id}" title="Observação da reunião: vira nota da oportunidade (a IA ajusta o Score) e vai para a atividade no Pipedrive">+ nota</button>` : ""}</div>`}</div>
         ${i.concluida ? `<span class="small num mute">${dm(i.vencimento)}</span>`
           : `<span style="white-space:nowrap"><label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)">${i.atrasada ? "atrasada · " : ""}<input type="date" class="data-ativ" data-ativ-data="${i.id}" data-ativ-antes="${esc(i.vencimento)}" value="${esc(i.vencimento)}" aria-label="Data da atividade" title="Clique para escolher a data no calendário"></label>
             <button type="button" class="btn ok-data" data-ativ-ok="${i.id}" hidden title="Gravar a nova data no Pipedrive">Confirmar</button></span>`}</li>`).join("")}</ul></div>`).join("")
       : `<div class="grupo"><p class="vazio">Nenhuma atividade para esta semana. Crie atividades na aba Negócios.</p></div>`}
-    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive; para mudar a data, escolha o dia no calendário e clique em Confirmar; "+ nota" registra a observação da reunião (vira nota da oportunidade e vai para a atividade no Pipedrive); o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
+    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive; clicar no assunto (ou em ✎ editar) abre a atividade para mudar pessoa, data, tipo, quem executa e nota; a seta esconde os detalhes; para mudar a data, escolha o dia no calendário e clique em Confirmar; "+ nota" registra a observação da reunião (vira nota da oportunidade e vai para a atividade no Pipedrive); o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
   document.getElementById("s-ant").onclick = () => mover(-7);
@@ -1971,6 +1998,11 @@ document.addEventListener("click", ev => {
   const cg = ev.target.closest("[data-cargo]"); if (cg) editarCargo(cg.dataset.cargo, cg.dataset.cargoAtual, cg.dataset.cargoNome);
   const pn = ev.target.closest("[data-pessoa-nova]"); if (pn) novaPessoa(pn.dataset.pessoaNova, pn.dataset.pessoaEmpresa);
   const na = ev.target.closest("[data-nota-ativ]"); if (na) notaAtividade(na.dataset.notaAtiv);
+  const ed = ev.target.closest("[data-editar-ativ]"); if (ed) editarAtividade(+ed.dataset.editarAtiv);
+  const db = ev.target.closest("[data-dobrar-ativ]");
+  if (db) { const id = +db.dataset.dobrarAtiv; DOBRADAS.has(id) ? DOBRADAS.delete(id) : DOBRADAS.add(id);
+    try { localStorage.setItem("todos-dobradas", JSON.stringify([...DOBRADAS])); } catch { /* sem armazenamento: vale até recarregar */ }
+    telaTodos(); }
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
   const mv = ev.target.closest("[data-mover], [data-desfazer]");
   if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;

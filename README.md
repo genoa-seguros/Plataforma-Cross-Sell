@@ -80,7 +80,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   pendentes até sexta (incluindo as atrasadas) e as feitas na semana. Marcar como feita ou
   mudar a data (escolher no calendário e clicar em Confirmar) atualiza o Pipedrive; clicar no assunto
   (ou em "✎ editar") abre a atividade para mudar pessoa, assunto, tipo, data, quem executa e nota, e grava no
-  Pipedrive; a seta ao lado esconde os detalhes (lembrado no navegador); "+ nota" em
+  Pipedrive; a tela é uma tabela por responsável no modelo do Pipedrive (assunto com o ícone do tipo,
+  organização, pessoa, vencimento, negócio, etapa, valor e nota), com filtro por tipo; "+ nota" em
   cada atividade (reunião de sexta) grava uma nota da oportunidade da empresa na vertical escolhida (a IA
   ajusta o Score) e a acrescenta à nota da atividade no Pipedrive; o que for mudado direto no Pipedrive (feita/pendente e data) volta
   para a plataforma na rotina de hora em hora.

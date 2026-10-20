@@ -576,4 +576,5 @@ def item_atividade(a: Atividade, ref: date) -> dict:
             "empresa": a.empresa.razao_social if a.empresa else None, "empresaId": a.empresa_id,
             "pessoa": a.pessoa.nome if a.pessoa else None, "negocio": a.negocio.titulo if a.negocio else None,
             "negocioId": a.negocio_id, "vertical": a.negocio.vertical if a.negocio else None,
+            "etapa": a.negocio.etapa if a.negocio else None, "valor": a.negocio.valor if a.negocio else None,
             "nota": a.nota}

@@ -119,7 +119,7 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
 .grupo li:last-child{border-bottom:0}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
-.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}.ok-data{font-size:12px;padding:1px 8px;margin-left:6px}
+.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}.nota-ativ{white-space:pre-wrap;margin-top:3px;padding-left:8px;border-left:3px solid var(--line)}.ok-data{font-size:12px;padding:1px 8px;margin-left:6px}
 .atrasada{color:var(--bad);font-weight:600}
 .semana{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fila{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 24px color-mix(in srgb,var(--ink) 18%,transparent);z-index:15;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
@@ -442,6 +442,8 @@ const previa = {
       if (!l.proximaAtividade || b.vencimento < l.proximaAtividade.vencimento) l.proximaAtividade = {assunto: b.assunto, vencimento: b.vencimento, responsavel: resp.email};
       return {id: at.id};
     }
+    if ((m = path.match(/^\/api\/atividades\/(\d+)\/nota$/))) { const a = D.atividades.find(x => x.id == m[1]);
+      a.nota = (a.nota ? a.nota + "\n\n" : "") + `[${new Date().toLocaleDateString("pt-BR").slice(0, 5)} · ${D.eu.nome}] ${b.texto}`; return {id: ++this.seq, texto: b.texto, ajuste: null, pipedrive: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
@@ -1025,6 +1027,36 @@ function editarNota(empresaId, vertical) {
       fechar(); aviso(r.ajuste === null || r.ajuste === undefined ? "Nota salva (a IA avalia na próxima rodada)" : `Nota salva: ${r.ajuste > 0 ? "+" : ""}${r.ajuste} no Score`);
       OPS_RESP = null; render();
     } catch (err) { b.disabled = false; b.textContent = "Salvar nota"; const el = document.getElementById("nota-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
+
+// Nota na atividade (To-dos, reunião de sexta): vira nota da oportunidade na vertical escolhida e vai para o Pipedrive
+function notaAtividade(id) {
+  const i = (TODOS_ITENS || []).find(x => x.id == id); if (!i) return;
+  const verts = D?.verticaisOportunidades || ["saude", "linhas_financeiras", "ramos_elementares"];
+  const padrao = verts.includes(i.vertical) ? i.vertical : verts[0];
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-nota-at" aria-labelledby="t-nota-at" style="max-width:560px">
+    <h2 id="t-nota-at">Nota da atividade</h2><div class="sub">${esc(i.assunto)} · ${esc(i.empresa || "")} · ${esc(i.responsavelNome || "")}</div>
+    ${i.nota ? `<div class="nota-hist"><div class="nota-ativ">${esc(i.nota)}</div></div>` : ""}
+    <label>Vertical<select id="nota-at-vert">${verts.map(v => `<option value="${v}" ${v === padrao ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
+    <label>Nova nota<textarea id="nota-at-texto" rows="4" maxlength="2000" placeholder="ex.: apresentou para o RH, pediu proposta até o fim do mês"></textarea></label>
+    <p class="nota">Vira nota da oportunidade da empresa nesta vertical (a IA ajusta o Score) e é acrescentada à atividade no Pipedrive.</p>
+    <p class="erro" id="nota-at-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="nota-at-cancelar">Fechar</button><button class="btn" id="nota-at-salvar">Salvar nota</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("nota-at-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("nota-at-texto").focus();
+  document.getElementById("f-nota-at").onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById("nota-at-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
+    try {
+      const r = await api.post(`/api/atividades/${id}/nota`, {vertical: document.getElementById("nota-at-vert").value, texto: document.getElementById("nota-at-texto").value});
+      fechar(); OPS_RESP = null;
+      aviso(!r.pipedrive ? "Nota salva, mas não chegou à atividade no Pipedrive" : r.ajuste === null || r.ajuste === undefined ? "Nota salva (a IA avalia na próxima rodada)" : `Nota salva: ${r.ajuste > 0 ? "+" : ""}${r.ajuste} no Score`);
+      telaTodos();
+    } catch (err) { b.disabled = false; b.textContent = "Salvar nota"; const el = document.getElementById("nota-at-erro"); el.textContent = err.message; el.hidden = false; }
   };
 }
 
@@ -1668,9 +1700,11 @@ async function telaNegocios() {
   ligarPaginacao("neg", n => { filtroNeg.pagina = n; telaNegocios(); });
 }
 
+let TODOS_ITENS = [];
 async function telaTodos() {
   await carregarBase();
   const r = await api.get("/api/todos?ref=" + iso(refSemana));
+  TODOS_ITENS = r.itens;
   const grupos = {};
   r.itens.forEach(i => (grupos[i.responsavel] ||= []).push(i));
   const total = r.itens.length, feitas = r.itens.filter(i => i.concluida).length, atras = r.itens.filter(i => i.atrasada).length;
@@ -1692,12 +1726,14 @@ async function telaTodos() {
       <div class="grupo"><h3>${esc(itens[0].responsavelNome || nomeDe(resp))}<span class="sub">${itens.filter(i => !i.concluida).length} pendentes · ${itens.filter(i => i.concluida).length} feitas</span></h3>
       <ul>${itens.map(i => `<li class="${i.concluida ? "feita" : ""}">
         <input type="checkbox" data-concluir="${i.id}" ${i.concluida ? "checked" : ""} aria-label="Marcar como feita">
-        <div><div class="ass">${esc(i.assunto)}</div><div class="sub">${TIPOS[i.tipo] || ""}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div></div>
+        <div><div class="ass">${esc(i.assunto)}</div><div class="sub">${TIPOS[i.tipo] || ""}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div>
+          ${i.nota ? `<div class="sub nota-ativ">${esc(i.nota)}</div>` : ""}
+          ${i.empresaId ? `<button type="button" class="lapis" data-nota-ativ="${i.id}" title="Observação da reunião: vira nota da oportunidade (a IA ajusta o Score) e vai para a atividade no Pipedrive">+ nota</button>` : ""}</div>
         ${i.concluida ? `<span class="small num mute">${dm(i.vencimento)}</span>`
           : `<span style="white-space:nowrap"><label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)">${i.atrasada ? "atrasada · " : ""}<input type="date" class="data-ativ" data-ativ-data="${i.id}" data-ativ-antes="${esc(i.vencimento)}" value="${esc(i.vencimento)}" aria-label="Data da atividade" title="Clique para escolher a data no calendário"></label>
             <button type="button" class="btn ok-data" data-ativ-ok="${i.id}" hidden title="Gravar a nova data no Pipedrive">Confirmar</button></span>`}</li>`).join("")}</ul></div>`).join("")
       : `<div class="grupo"><p class="vazio">Nenhuma atividade para esta semana. Crie atividades na aba Negócios.</p></div>`}
-    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive; para mudar a data, escolha o dia no calendário e clique em Confirmar; o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
+    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive; para mudar a data, escolha o dia no calendário e clique em Confirmar; "+ nota" registra a observação da reunião (vira nota da oportunidade e vai para a atividade no Pipedrive); o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
   document.getElementById("s-ant").onclick = () => mover(-7);
@@ -1921,6 +1957,7 @@ document.addEventListener("click", ev => {
   const st = ev.target.closest("[data-setor]"); if (st) editarSetor(st.dataset.setor, st.dataset.setorAtual, st.dataset.setorNome);
   const cg = ev.target.closest("[data-cargo]"); if (cg) editarCargo(cg.dataset.cargo, cg.dataset.cargoAtual, cg.dataset.cargoNome);
   const pn = ev.target.closest("[data-pessoa-nova]"); if (pn) novaPessoa(pn.dataset.pessoaNova, pn.dataset.pessoaEmpresa);
+  const na = ev.target.closest("[data-nota-ativ]"); if (na) notaAtividade(na.dataset.notaAtiv);
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
   const mv = ev.target.closest("[data-mover], [data-desfazer]");
   if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;

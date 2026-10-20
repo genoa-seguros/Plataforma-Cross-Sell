@@ -63,3 +63,32 @@ def test_mudar_data_da_atividade_vai_para_o_pipedrive(cenario, db):  # noqa: F81
     assert r.json() == {"ok": True, "vencimento": nova.isoformat()}
     assert fake.atualizadas[-1] == (at.pipedrive_id, {"due_date": nova.isoformat()})
     assert c.post("/api/atividades/9999/data", headers=H, json={"vencimento": nova.isoformat()}).status_code == 404
+
+
+def test_nota_na_atividade_vira_nota_da_oportunidade_e_vai_para_o_pipedrive(cenario, db, settings, monkeypatch):  # noqa: F811
+    import json
+
+    from crosssell import nota_ia
+    from crosssell.models import NotaOportunidade
+    from crosssell.web import app as webapp
+    from tests.test_fluxo import _ClaudeFalso
+
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    falso = _ClaudeFalso(json.dumps({"ajuste": 10, "motivo": "Pediu proposta."}))
+    monkeypatch.setattr(webapp, "leitor_notas", lambda db: nota_ia.LeitorNotas(settings, client=falso, modelo="m"))
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    at = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Apresentar Saúde",
+                                   vencimento=date.today(), responsavel=victor, criada_por=victor, nota="Levar a proposta")
+    r = c.post(f"/api/atividades/{at.id}/nota", headers=H, json={"vertical": "saude", "texto": "Apresentou ao RH, pediu proposta"})
+    assert r.json()["ajuste"] == 10 and r.json()["pipedrive"] is True
+    nota = db.scalar(select(NotaOportunidade).where(NotaOportunidade.empresa_id == alfa.id))
+    assert nota.vertical == "saude" and nota.texto == "Apresentou ao RH, pediu proposta"
+    pid, corpo = fake.atualizadas[-1]
+    assert pid == at.pipedrive_id and corpo["note"].startswith("Levar a proposta\n\n[")  # acrescenta, não apaga
+    assert corpo["note"].endswith("Rodrigo] Apresentou ao RH, pediu proposta")
+    item = next(i for i in c.get("/api/todos").json()["itens"] if i["id"] == at.id)
+    assert item["nota"] == corpo["note"]
+    assert c.post(f"/api/atividades/{at.id}/nota", headers=H, json={"vertical": "saude", "texto": "ok"}).status_code == 400

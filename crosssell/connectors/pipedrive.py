@@ -370,6 +370,15 @@ def mudar_data_atividade(db: Session, client: PipedriveClient, atividade: Ativid
     db.commit()
 
 
+def anotar_atividade(db: Session, client: PipedriveClient, atividade: Atividade, texto: str) -> None:
+    """Acrescenta uma linha à nota da atividade (aqui e no Pipedrive), sem apagar o que já havia."""
+    nova = f"{atividade.nota}\n\n{texto}" if atividade.nota else texto
+    if atividade.pipedrive_id:
+        client.atualizar_atividade(atividade.pipedrive_id, {"note": nova})
+    atividade.nota = nova
+    db.commit()
+
+
 def sincronizar_atividades(db: Session, client: PipedriveClient, desde: date) -> int:
     """Atualiza no banco o status (feita/pendente) e o vencimento das atividades criadas pela plataforma
     (quem muda a data direto no Pipedrive vê a mudança na plataforma na rodada seguinte)."""

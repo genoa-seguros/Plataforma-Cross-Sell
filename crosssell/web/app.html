@@ -554,11 +554,26 @@ function abas(ativa) {
 }
 
 /* ---------- Negócios ---------- */
+// Vários negócios do mesmo produto (ex.: 15 Garantias) viram um chip só, com a quantidade
+function porProduto(lista) {
+  const grupos = new Map();
+  for (const v of lista) {
+    const k = `${v.vertical}|${(v.produto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()}`;
+    (grupos.get(k) || grupos.set(k, []).get(k)).push(v);
+  }
+  return [...grupos.values()];
+}
 function celulaVigentes(l) {
-  const chips = l.vigentes.length
-    ? `<div class="chips">${l.vigentes.map(v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}`
+  const um = v => vchip(v.vertical, v.produto + (v.fim ? ` · até ${mesAno(v.fim)}`
         : v.vitalicio ? (v.ganhoEm ? ` · desde ${mesAno(v.ganhoEm)}` : "") + (l.saude.manual ? "" : " · a confirmar")
-        : v.fonte === "manual" ? " · marcado" : ""))).join("")}</div>`
+        : v.fonte === "manual" ? " · marcado" : ""));
+  const grupo = g => {
+    if (g.length === 1 || !g.every(v => v.fim)) return g.map(um).join("");
+    const fins = g.map(v => v.fim).sort();
+    return `<span title="${g.length} apólices de ${esc(g[0].produto)} · vencimentos: ${fins.map(mesAno).join(", ")}">${vchip(g[0].vertical, `${g[0].produto} (${g.length}) · próx. até ${mesAno(fins[0])}`)}</span>`;
+  };
+  const chips = l.vigentes.length
+    ? `<div class="chips">${porProduto(l.vigentes).map(grupo).join("")}</div>`
     : `<span class="sub">Nenhum seguro vigente</span>`;
   const s = l.saude;
   // Na oportunidade, a caixa só aparece onde decide algo: Saúde ganho no Pipedrive ou oportunidade de Saúde
@@ -765,7 +780,7 @@ function opHTML(o) {
       <button type="button" class="lapis" data-func="${o.empresa.id}" data-func-atual="${o.empresa.funcionarios || ""}" data-func-nome="${esc(o.empresa.nome)}" title="Informar o número de funcionários">${o.empresa.funcionarios ? "✎" : "+ funcionários"}</button></div>
       <div class="sub">${o.empresa.local ? esc(o.empresa.local) : '<span title="Sem cidade na Receita, no Pipedrive e no LinkedIn">local não informado</span>'}
         <button type="button" class="lapis" data-local="${o.empresa.id}" data-local-cidade="${esc(o.empresa.cidadeFonte === "manual" ? o.empresa.cidade || "" : "")}" data-local-uf="${esc(o.empresa.uf || "")}" data-local-nome="${esc(o.empresa.nome)}" title="Informar cidade e UF">${o.empresa.local ? "✎" : "+ cidade"}</button></div></td>
-    <td class="negociando"><div class="chips">${o.negociando.map(v => `<span title="${esc(v.produto)}${v.etapa ? " · " + esc(v.etapa) : ""}">${vchip(v.vertical, v.produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
+    <td class="negociando"><div class="chips">${porProduto(o.negociando).map(g => `<span title="${g.map(v => esc(v.produto) + (v.etapa ? " · " + esc(v.etapa) : "")).join("\n")}">${vchip(g[0].vertical, g.length > 1 ? `${g[0].produto} (${g.length})` : g[0].produto, "off")}</span>`).join("") || '<span class="sub">—</span>'}</div></td>
     <td>${vchip(o.vertical, o.verticalNome)}${o.tipo === "mais" ? ` <span class="sub" title="A empresa já tem ou negocia ${esc(o.verticalNome)}">mais produtos</span>` : ""}${o.praca === "fora" ? '<div><span class="chip" style="--c:var(--warn);margin-top:4px" title="Cidade fora das cidades alvo e menos de 30% dos funcionários nelas">fora da praça</span></div>' : ""}
       ${(o.produtos || []).length ? `<div class="chips" style="margin-top:4px" aria-label="Produtos sugeridos">${o.produtos.map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")} · encaixe ${Math.round(x.valor * 100)}">${esc(x.produto)}</span>`).join("")}</div>` : ""}
       ${(o.etiquetas || []).map(t => `<div><span class="chip" style="--c:var(--warn);margin-top:4px">${esc(t)}</span></div>`).join("")}

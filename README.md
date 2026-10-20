@@ -47,7 +47,7 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   estão na tela com campos vazios para preencher à mão, e só eles (o que já foi capturado não aparece): a ponte (quando
   alguém já troca e-mails com a equipe, só o cargo dele, se faltar; quando ninguém troca, marcar quem é a ponte), quem
   decide da área quando só há executivo, cidade, funcionários e setor. Tem resumo por responsável (dono dos cards
-  abertos da empresa no Pipedrive). **Notas da equipe**: em cada oportunidade, "+ nota" registra
+  abertos da empresa no Pipedrive). **Atualizações do negócio**: em cada oportunidade, "+ atualização" registra
   o que aconteceu (ex.: "corretor da família, muito difícil entrar"), por vertical. A IA (mesmo modelo da temperatura)
   lê as notas e ajusta o Score de −50 a +20, com o motivo no "Por quê"; se ela não responder na hora, a rotina avalia
   depois (`crosssell notas`). Qualquer pessoa da equipe pode mover e escrever notas; fica o nome de quem fez.
@@ -81,9 +81,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   mudar a data (escolher no calendário e clicar em Confirmar) atualiza o Pipedrive; clicar no assunto
   (ou em "✎ editar") abre a atividade para mudar pessoa, assunto, tipo, data, quem executa e nota, e grava no
   Pipedrive; a tela é uma tabela por responsável no modelo do Pipedrive (assunto com o ícone do tipo,
-  organização, pessoa, vencimento, negócio, etapa, valor e nota), com filtro por tipo; "+ nota" em
-  cada atividade (reunião de sexta) grava uma nota da oportunidade da empresa na vertical escolhida (a IA
-  ajusta o Score) e a acrescenta à nota da atividade no Pipedrive; o que for mudado direto no Pipedrive (feita/pendente e data) volta
+  organização, pessoa, vencimento, negócio, etapa, valor e observação), com filtro por tipo. Dois campos
+  diferentes: a **Observação** da atividade (lembrete do que fazer; vai para a Anotação da atividade no Pipedrive e
+  não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
+  empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente e data) volta
   para a plataforma na rotina de hora em hora.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal

@@ -483,7 +483,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "negociando": [{"vertical": x.vertical, "produto": x.produto or x.titulo, "etapa": x.etapa,
                                 "funil": funis.get(x.pipeline_id, {}).get("nome")} for x in abertos],
                 "quemDecide": decide,
-                "motivos": ([{"texto": f"nota da equipe ({nota.ajuste:+d}): {nota.motivo}", "sinal": "+" if nota.ajuste > 0 else "-"}]
+                "motivos": ([{"texto": f"atualização da equipe ({nota.ajuste:+d}): {nota.motivo}", "sinal": "+" if nota.ajuste > 0 else "-"}]
                             if nota is not None and nota.ajuste else []) + _extras(e, None, v, vigentes) + motivos_potencial(pot),
                 "notas": [{"id": n.id, "texto": n.texto, "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes"),
                            "ajuste": n.ajuste, "motivo": n.motivo} for n in notas],

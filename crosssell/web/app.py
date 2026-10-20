@@ -713,9 +713,9 @@ def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(g
 
 @app.post("/api/atividades/{atividade_id}/nota")
 def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(get_db),
-                       u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
-    """Nota escrita na atividade (To-dos, reunião de sexta): vira Nota da oportunidade da empresa na vertical
-    (a IA ajusta o Score) e é acrescentada à nota da atividade no Pipedrive."""
+                       u: Usuario = Depends(usuario_atual)):
+    """Atualização do negócio escrita a partir da atividade (To-dos, reunião de sexta): fica na oportunidade da
+    empresa na vertical e a IA lê para ajustar o Score. Não mexe na observação (nota) da atividade no Pipedrive."""
     at = db.get(Atividade, atividade_id)
     if at is None:
         raise HTTPException(404, "Atividade não encontrada.")
@@ -723,12 +723,7 @@ def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(g
     if empresa_id is None:
         raise HTTPException(400, "A atividade não tem empresa.")
     nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
-    try:
-        pd.anotar_atividade(db, client, at, f"[{date.today():%d/%m} · {u.nome}] {nota.texto}")
-        no_pipedrive = True
-    except httpx.HTTPError:
-        no_pipedrive = False  # a nota da oportunidade fica salva; a da atividade não chegou ao Pipedrive
-    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo, "pipedrive": no_pipedrive}
+    return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
 
 
 @app.get("/api/todos")

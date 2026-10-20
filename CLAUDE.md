@@ -96,7 +96,8 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   `/api/fila` feeds the "Fila de análise" drawer (not analyzed, with company people); `/api/pendencias` feeds its
   "Completar dados" tab (analyzed items with `tabela.pendencias`, summary by `donos` = open-deal owners). `OportunidadeManual` forces an
   opportunity in ("incluída à mão"); `Pessoa.ponte_manual` counts as ponte (`tabela.tem_relacao`); `NotaOportunidade`
-  (per company and vertical) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of
+  ("atualização do negócio" in the UI; per company and vertical; not the activity's `Atividade.nota`, which is the
+  "observação" sent to Pipedrive and never read by the AI) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of
   -50..+20 on the latest note; `tabela.oportunidades` adds it to the score and to "Por quê". Pending notes: `crosssell notas`.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group

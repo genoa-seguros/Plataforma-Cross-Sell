@@ -837,7 +837,7 @@ function barraPesquisa(o) {
   const p = o.pesquisa; if (!p) return "";
   const [cor, resumo] = PESQ[p.estado] || PESQ.pesquisando;
   const dica = `<b>Pesquisa ${p.pct}%</b>: ${resumo}<br>` + p.etapas.map(x => x.ok ? `✓ ${esc(x.texto)}`
-    : `○ ${esc(x.texto)} <i>(${x.quem === "plataforma" ? "a plataforma ainda vai buscar" : "só à mão: Completar dados ou ✎"})</i>`).join("<br>")
+    : `○ ${esc(x.texto)} <i>(${esc(x.dica || (x.quem === "plataforma" ? "a plataforma ainda vai buscar" : "à mão: Completar dados ou ✎"))})</i>`).join("<br>")
     + `<br><span style="opacity:.75">Preenchido à mão conta como feito.</span>`;
   return `<div class="pesq" tabindex="0" data-dica="${esc(dica)}" aria-label="Pesquisa ${p.pct}%: ${esc(resumo)}">
     <div class="pesq-barra"><i style="width:${p.pct}%;background:${cor}"></i></div><span>pesquisa ${p.pct}%</span></div>`;

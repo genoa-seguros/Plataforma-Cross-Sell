@@ -119,7 +119,7 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
 .grupo li:last-child{border-bottom:0}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
-.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}
+.data-ativ{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:1px 4px;background:var(--surface);color:inherit;cursor:pointer}.data-ativ:hover{border-color:var(--accent)}.ok-data{font-size:12px;padding:1px 8px;margin-left:6px}
 .atrasada{color:var(--bad);font-weight:600}
 .semana{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fila{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--surface);border-left:1px solid var(--line);box-shadow:-8px 0 24px color-mix(in srgb,var(--ink) 18%,transparent);z-index:15;display:grid;grid-template-rows:auto 1fr;overflow:hidden}
@@ -1679,9 +1679,10 @@ async function telaTodos() {
         <input type="checkbox" data-concluir="${i.id}" ${i.concluida ? "checked" : ""} aria-label="Marcar como feita">
         <div><div class="ass">${esc(i.assunto)}</div><div class="sub">${TIPOS[i.tipo] || ""}${i.empresa ? ` · <a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.pessoa ? " · " + esc(i.pessoa) : ""}${i.negocio ? " · " + esc(i.negocio) : ""}</div></div>
         ${i.concluida ? `<span class="small num mute">${dm(i.vencimento)}</span>`
-          : `<label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)">${i.atrasada ? "atrasada · " : ""}<input type="date" class="data-ativ" data-ativ-data="${i.id}" value="${esc(i.vencimento)}" aria-label="Data da atividade" title="Clique para escolher a data no calendário"></label>`}</li>`).join("")}</ul></div>`).join("")
+          : `<span style="white-space:nowrap"><label class="small num ${i.atrasada ? "atrasada" : "mute"}" title="Mudar a data (atualiza o Pipedrive)">${i.atrasada ? "atrasada · " : ""}<input type="date" class="data-ativ" data-ativ-data="${i.id}" data-ativ-antes="${esc(i.vencimento)}" value="${esc(i.vencimento)}" aria-label="Data da atividade" title="Clique para escolher a data no calendário"></label>
+            <button type="button" class="btn ok-data" data-ativ-ok="${i.id}" hidden title="Gravar a nova data no Pipedrive">Confirmar</button></span>`}</li>`).join("")}</ul></div>`).join("")
       : `<div class="grupo"><p class="vazio">Nenhuma atividade para esta semana. Crie atividades na aba Negócios.</p></div>`}
-    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita ou mudar a data atualiza o Pipedrive; o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
+    <p class="nota">Lista as atividades criadas pela plataforma: pendentes com vencimento até sexta (inclusive atrasadas) e as feitas na semana. Marcar como feita atualiza o Pipedrive; para mudar a data, escolha o dia no calendário e clique em Confirmar; o que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
   document.getElementById("s-ant").onclick = () => mover(-7);
@@ -1889,6 +1890,15 @@ async function telaEmpresa(id) {
 document.addEventListener("click", ev => {
   // Data da atividade (To-dos): o clique em qualquer parte do campo abre o calendário, sem digitar
   if (ev.target.matches?.("input.data-ativ")) { try { ev.target.showPicker(); } catch { /* navegador sem showPicker: usa o ícone */ } return; }
+  const okd = ev.target.closest("[data-ativ-ok]");
+  if (okd) {
+    const campo = document.querySelector(`[data-ativ-data="${okd.dataset.ativOk}"]`);
+    okd.disabled = true;
+    api.post(`/api/atividades/${okd.dataset.ativOk}/data`, {vencimento: campo.value})
+      .then(() => { aviso("Data atualizada no Pipedrive"); telaTodos(); })
+      .catch(err => { aviso(err.message); telaTodos(); });
+    return;
+  }
   const o = ev.target.closest("[data-ativ-op]"); if (o && !o.disabled) abrirAtividadeOp(o.dataset.ativOp);
   const f = ev.target.closest("[data-func]"); if (f) editarFuncionarios(f.dataset.func, f.dataset.funcAtual, f.dataset.funcNome);
   const rl = ev.target.closest("[data-rolar]"); if (rl) { ev.preventDefault(); document.getElementById(rl.dataset.rolar)?.scrollIntoView({behavior: "smooth", block: "start"}); }
@@ -1917,11 +1927,11 @@ document.addEventListener("change", async ev => {
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       OPS_RESP = null; render(); }
     if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
-    if (ev.target.dataset?.ativData) {
-      if (!ev.target.value) return;
-      await api.post(`/api/atividades/${ev.target.dataset.ativData}/data`, {vencimento: ev.target.value});
-      aviso("Data atualizada no Pipedrive"); telaTodos(); }
-  } catch (err) { aviso(err.message); if (ev.target.dataset?.ativData) telaTodos(); else ev.target.checked = !ev.target.checked; }
+    if (ev.target.dataset?.ativData) {  // a data só vai para o Pipedrive no botão Confirmar
+      const ok = document.querySelector(`[data-ativ-ok="${ev.target.dataset.ativData}"]`);
+      if (ok) ok.hidden = !ev.target.value || ev.target.value === ev.target.dataset.ativAntes;
+    }
+  } catch (err) { aviso(err.message); ev.target.checked = !ev.target.checked; }
 });
 
 async function render() {

@@ -31,8 +31,8 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .top{position:fixed;inset:0 auto 0 0;width:var(--menu-w);z-index:6;color:#fff;
   background:linear-gradient(180deg,#3a2a7a 0%,#271a5c 45%,#160f3a 100%)}
 .top-in{height:100%;display:flex;flex-direction:column;align-items:center;gap:14px;padding:12px 0}
-.brand{display:block;border-radius:10px;overflow:hidden;width:36px;height:36px;flex:none}
-.brand img{width:36px;height:36px;display:block}
+.brand{position:relative;display:grid;place-items:center;width:44px;height:36px;flex:none;margin-bottom:4px}
+.brand img{width:36px;height:auto;display:block}
 .brand span{display:none}
 nav.abas{display:flex;flex-direction:column;align-items:center;gap:6px}
 nav.abas a,.top .dir .ico-btn{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;
@@ -270,7 +270,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <a class="brand" href="#oportunidades" title="Innoa Cross Sell"><img src="/static/favicon.png" alt="Innoa Cross Sell"></a>
+  <a class="brand" href="#oportunidades" data-nome="Innoa Cross Sell"><img src="/static/icone-innoa-branco.png" alt="Innoa Cross Sell"></a>
   <nav class="abas" id="abas" aria-label="Seções"></nav>
   <div class="dir"><span class="pill-demo" id="demo" data-nome="Prévia com dados de exemplo: empresas fictícias, nada é enviado ao Pipedrive" tabindex="0" hidden>!</span>
     <span class="eu" id="eu" tabindex="0"></span>

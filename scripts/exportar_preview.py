@@ -79,7 +79,7 @@ def main():
     dados = exportar(como)
     html = APP.read_text(encoding="utf-8")
     # Sem servidor: logo e favicon vão embutidos na página
-    for nome in ("logo-innoa-branco.png", "logo-innoa.png", "favicon.png"):
+    for nome in ("logo-innoa-branco.png", "logo-innoa.png", "favicon.png", "icone-innoa-branco.png"):
         dados_img = base64.b64encode((APP.parent / "static" / nome).read_bytes()).decode()
         html = html.replace(f"/static/{nome}", f"data:image/png;base64,{dados_img}")
     html = html.replace("/*__DADOS__*/null", json.dumps(dados, ensure_ascii=False, default=str).replace("</", "<\\/"))

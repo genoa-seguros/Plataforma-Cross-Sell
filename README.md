@@ -100,10 +100,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   pop-up com a ponte por e-mail ou marcada à mão, com cargo, e as outras pessoas da empresa; dá para marcar a ponte
   ali) e atualizações (todas as do negócio da
   empresa, de todas as verticais, com a opção de escrever outra). Filtros: nome, produto contratado e tier (inclusive
-  "sem tier"). Também os **critérios do Score de Saúde** (Localização, Qualificação, Funcionários, RH), com o valor de
+  "sem tier"). Produtos que não cabem na célula viram "+N"; clicar nos produtos abre um pop-up com todos (vigência) e
+  o botão de desmarcar Saúde. Também os **critérios do Score de Saúde** (Localização, Qualificação, Funcionários, RH), com o valor de
   cada um (0 a 1) e o Score Saúde, para o time completar à mão (cidade, setor, funcionários, alguém de RH; o Score é
-  recalculado). Todas as linhas têm a mesma altura (o resto fica na dica ou no pop-up). O ✕ no chip de Saúde desmarca
-  Saúde (menos o da planilha do Zeca). A classificação entra no log da semana.
+  recalculado). Todas as linhas têm a mesma altura (o resto fica na dica ou no pop-up). Desmarcar Saúde fica no pop-up dos produtos (menos o da planilha do Zeca). A classificação entra no log da semana.
 - **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
   Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
   à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade

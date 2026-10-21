@@ -142,8 +142,10 @@ table.clientes{font-size:13px;table-layout:fixed;min-width:980px}table.clientes 
 .crit-v.medio{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
 .crit-v.fraco{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
 table.clientes td{vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:44px;padding-top:6px;padding-bottom:6px}
-.cli-chips{flex-wrap:nowrap;overflow:hidden}.cli-prod{display:inline-flex;align-items:center;gap:2px;flex:none}
-.desmarcar{border:0;background:none;color:var(--mute);cursor:pointer;font-size:11px;padding:0 2px}.desmarcar:hover{color:var(--bad)}
+.cli-prods{display:flex;align-items:center;gap:4px;min-width:0}
+.cli-chips{flex-wrap:nowrap;overflow:hidden;flex:1;min-width:0;cursor:pointer}.cli-prod{display:inline-flex;align-items:center;gap:2px;flex:none}.cli-prod[hidden]{display:none}
+.cli-mais{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--mute);border-radius:99px;font:600 11px/1 var(--f-body);padding:3px 7px;cursor:pointer}
+.cli-mais.conta{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}.cli-mais:hover{color:var(--accent)}
 .cli-pessoas{border:0;background:none;padding:0;cursor:pointer;color:var(--ink);font:inherit;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
 .cli-pessoas .ico{margin-right:6px}.cli-pessoas:hover{color:var(--accent)}
 .cli-lista-pes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
@@ -1992,7 +1994,7 @@ async function telaClientes() {
         <select id="cli-tier" aria-label="Tier de Saúde"></select>
       </div>
       <div id="cli-lista"></div>
-      <p class="nota">Empresas com seguro vigente: negócio ganho no Pipedrive com fim de vigência depois de hoje (Saúde, que não tem fim, vale até ser desmarcado). O <b>tier de Saúde</b> (A+, A, B, C) é dado à mão pelo time: o potencial do cliente para Saúde. Funcionários vêm do que houver (à mão, LinkedIn ou Pipedrive; ✎ para informar). "Com quem falamos" (👥) abre as pessoas: quem troca e-mails com a equipe ou foi marcado como ponte, e as outras da empresa. O ✕ no chip de Saúde desmarca Saúde (deixa de contar como cliente Saúde). <b>Critérios de Saúde</b> (Localização, Qualificação, Funcionários, RH): o número em cor é o valor do critério (0 a 1) no Score Saúde; ✎ ou "+" preenche à mão (cidade, setor, funcionários, alguém de RH) e o Score é recalculado. Funcionários do Pipedrive aparecem, mas só contam no Score os do LinkedIn ou informados à mão. "Atualizações" mostra todas as atualizações do negócio da empresa, de todas as verticais.</p>
+      <p class="nota">Empresas com seguro vigente: negócio ganho no Pipedrive com fim de vigência depois de hoje (Saúde, que não tem fim, vale até ser desmarcado). O <b>tier de Saúde</b> (A+, A, B, C) é dado à mão pelo time: o potencial do cliente para Saúde. Funcionários vêm do que houver (à mão, LinkedIn ou Pipedrive; ✎ para informar). "Com quem falamos" (👥) abre as pessoas: quem troca e-mails com a equipe ou foi marcado como ponte, e as outras da empresa. Os produtos que não cabem viram "+N"; clicar nos produtos (ou no ▤) abre todos, com a vigência, e o botão para desmarcar Saúde (deixa de contar como cliente Saúde). <b>Critérios de Saúde</b> (Localização, Qualificação, Funcionários, RH): o número em cor é o valor do critério (0 a 1) no Score Saúde; ✎ ou "+" preenche à mão (cidade, setor, funcionários, alguém de RH) e o Score é recalculado. Funcionários do Pipedrive aparecem, mas só contam no Score os do LinkedIn ou informados à mão. "Atualizações" mostra todas as atualizações do negócio da empresa, de todas as verticais.</p>
     </section>`;
     const q = document.getElementById("cli-q");
     q.oninput = () => { clearTimeout(CLI_BUSCA); CLI_BUSCA = setTimeout(() => { filtroCli.q = q.value.trim(); listaClientes(); }, 200); };
@@ -2020,7 +2022,8 @@ function listaClientes() {
     <thead><tr><th>Empresa</th><th title="Produtos contratados">Produtos</th><th title="Score de Saúde pelos critérios ao lado">Score</th><th title="Critério de Saúde: cidade (com clientes da Innoa, praça ou fora)">Localização</th><th title="Critério de Saúde: setor (qualificação do time)">Qualificação</th><th title="Critério de Saúde: nº de funcionários">Func.</th><th title="Critério de Saúde: alguém de RH mapeado e o nível do cargo">RH</th><th title="Tier de Saúde dado pelo time">Tier</th><th>Com quem falamos</th><th>Atualizações</th></tr></thead>
     <tbody>${itens.map(c => `<tr>
       <td title="${esc(c.nome)}${c.local ? " · " + esc(c.local) : ""}"><a href="#empresa-${c.id}">${esc(c.nome)}</a>${c.local ? ` <span class="sub">· ${esc(c.local)}</span>` : ""}</td>
-      <td><div class="chips cli-chips">${c.produtos.map(p => `<span class="cli-prod" title="${p.fim ? "vigente até " + dt(p.fim) : "sem fim de vigência"}${p.qtd > 1 ? ` · ${p.qtd} negócios` : ""}">${vchip(p.vertical, p.produto)}${p.desmarcavel ? `<button type="button" class="desmarcar" data-saude-off="${c.id}" data-saude-nome="${esc(c.nome)}" title="Desmarcar Saúde: a empresa não é mais cliente Saúde" aria-label="Desmarcar Saúde de ${esc(c.nome)}">✕</button>` : ""}</span>`).join("")}</div></td>
+      <td><div class="cli-prods"><div class="chips cli-chips" data-cli-produtos="${c.id}" title="Ver os produtos">${c.produtos.map(p => `<span class="cli-prod">${vchip(p.vertical, p.produto)}</span>`).join("")}</div>
+        <button type="button" class="cli-mais" data-cli-produtos="${c.id}" title="Ver os produtos${c.produtos.some(p => p.desmarcavel) ? " e desmarcar Saúde" : ""}" aria-label="Produtos de ${esc(c.nome)}"${c.produtos.some(p => p.desmarcavel) ? "" : " hidden"}>▤</button></div></td>
       <td title="${esc(Object.entries(c.saude.criterios).map(([k, x]) => `${CRIT_SAUDE[k] || k}: ${nota(x.valor)} × ${x.peso}`).join(" · "))}"><b>${Math.round(c.saude.score)}</b></td>
       ${critCelula(c, "localizacao", c.cidade ? `${esc((c.cidade || "").split(",")[0])}${c.uf ? "/" + esc(c.uf) : ""}` : '<span class="sub">—</span>',
         `<button type="button" class="lapis" data-local="${c.id}" data-local-cidade="${esc(c.cidadeFonte === "manual" ? c.cidade || "" : "")}" data-local-uf="${esc(c.uf || "")}" data-local-nome="${esc(c.nome)}" title="Informar cidade e UF">${c.cidade ? "✎" : "+"}</button>`)}
@@ -2038,6 +2041,7 @@ function listaClientes() {
           <span class="ico" aria-hidden="true">👥</span>${c.contatos.length ? `${primeiro(c.contatos[0].nome)}${c.contatos.length > 1 ? ` <span class="sub">+${c.contatos.length - 1}</span>` : ""}` : '<span class="sub">ninguém ainda</span>'}</button></td>
       <td title="${c.notas[0] ? `última: ${esc(dt(c.notas[0].em))} · ${esc(c.notas[0].texto)}` : ""}"><button type="button" class="lapis" data-cli-notas="${c.id}">${c.notas.length ? `ver ${c.notas.length}` : "+ nova"}</button>${c.notas[0] ? ` <span class="sub">${dm(c.notas[0].em)}</span>` : ""}</td>
     </tr>`).join("")}</tbody></table></div>` : `<div class="grupo"><p class="vazio">Nenhum cliente com esses filtros.</p></div>`;
+  ajustarProdutos();
 }
 
 // Critérios do Score de Saúde na aba Clientes: valor (0 a 1, em cor) e o dado, com o botão para preencher à mão
@@ -2050,6 +2054,34 @@ function critCelula(c, chave, dado, botao, dica) {
 }
 
 // Com quem falamos: pop-up com a ponte (cargo, quem da equipe fala com ela) e as outras pessoas da empresa
+// Produtos que não cabem na célula viram "+N"; o botão abre o pop-up com todos (e o desmarcar Saúde)
+function ajustarProdutos() {
+  document.querySelectorAll(".cli-prods").forEach(cel => {
+    const caixa = cel.querySelector(".cli-chips"), botao = cel.querySelector(".cli-mais");
+    const chips = [...caixa.children]; chips.forEach(x => x.hidden = false);
+    const limite = caixa.getBoundingClientRect().right;
+    const fora = chips.filter(x => x.getBoundingClientRect().right > limite + 1);
+    fora.forEach(x => x.hidden = true);
+    if (fora.length) { botao.hidden = false; botao.textContent = `+${fora.length}`; botao.classList.add("conta"); }
+    else { botao.textContent = "▤"; botao.classList.remove("conta"); }
+  });
+}
+addEventListener("resize", () => { if (document.querySelector(".cli-prods")) ajustarProdutos(); });
+
+function produtosCliente(id) {
+  const c = (CLIENTES || []).find(x => x.id == id); if (!c) return;
+  const saude = c.produtos.some(p => p.desmarcavel);
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><div class="modal" role="dialog" aria-labelledby="t-cli-prod" style="max-width:520px">
+    <h2 id="t-cli-prod" style="margin:0">Produtos contratados</h2><div class="sub">${esc(c.nome)}</div>
+    <ul class="cli-lista-pes">${c.produtos.map(p => `<li>${vchip(p.vertical, p.produto)} <span class="sub">${p.fim ? "vigente até " + dt(p.fim) : "sem fim de vigência"}${p.qtd > 1 ? ` · ${p.qtd} negócios` : ""}</span></li>`).join("")}</ul>
+    ${saude ? `<p class="nota" style="margin:0">Saúde não tem fim de vigência: vale até alguém desmarcar. Desmarque se a empresa cancelou.</p>` : ""}
+    <div class="acoes">${saude ? `<button type="button" class="btn perigo" data-saude-off="${c.id}" data-saude-nome="${esc(c.nome)}" style="margin-right:auto">Desmarcar Saúde</button>` : ""}<button type="button" class="btn sec" id="cli-prod-fechar">Fechar</button></div>
+  </div></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("cli-prod-fechar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+}
+
 function pessoasCliente(id) {
   const c = (CLIENTES || []).find(x => x.id == id); if (!c) return;
   const falam = new Set(c.contatos.map(p => p.id)), outras = c.pessoas.filter(p => !falam.has(p.id));
@@ -2314,10 +2346,11 @@ document.addEventListener("click", ev => {
 
   const cn = ev.target.closest("[data-cli-notas]"); if (cn) notasCliente(+cn.dataset.cliNotas);
   const cp = ev.target.closest("[data-cli-pessoas]"); if (cp) pessoasCliente(+cp.dataset.cliPessoas);
+  const cpr = ev.target.closest("[data-cli-produtos]"); if (cpr) produtosCliente(+cpr.dataset.cliProdutos);
   const so = ev.target.closest("[data-saude-off]");
   if (so && confirm(`Desmarcar Saúde de ${so.dataset.saudeNome}? A empresa deixa de contar como cliente Saúde.`)) {
     api.post(`/api/empresas/${so.dataset.saudeOff}/saude`, {cliente: false})
-      .then(() => { aviso("Saúde desmarcado: não é mais cliente Saúde"); OPS_RESP = null; render(); })
+      .then(() => { aviso("Saúde desmarcado: não é mais cliente Saúde"); document.getElementById("modal").innerHTML = ""; OPS_RESP = null; render(); })
       .catch(err => aviso(err.message));
   }
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }

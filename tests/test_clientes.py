@@ -64,3 +64,22 @@ def test_saude_pode_ser_desmarcado_na_aba_clientes(cenario, db):  # noqa: F811
     c.post(f"/api/empresas/{e.id}/saude", headers=H, json={"cliente": False})
     item = next(x for x in c.get("/api/clientes").json()["itens"] if x["nome"] == "Com Saude SA")
     assert [p["produto"] for p in item["produtos"]] == ["D&O"]
+
+
+def test_clientes_mostra_os_criterios_de_saude_e_o_preenchimento_a_mao_muda_o_score(cenario, db):  # noqa: F811
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = _cliente(db, "Criterios SA", ("ganho", "D&O", 100))
+    item = lambda: next(x for x in c.get("/api/clientes").json()["itens"] if x["nome"] == "Criterios SA")  # noqa: E731
+    antes = item()
+    assert set(antes["saude"]["criterios"]) == {"localizacao", "qualificacao", "funcionarios", "rh"}
+    assert antes["rh"] == [] and antes["setor"] is None
+    c.post(f"/api/empresas/{e.id}/local", headers=H, json={"cidade": "São Paulo", "uf": "SP"})
+    c.post(f"/api/empresas/{e.id}/setor", headers=H, json={"setor": "Software"})
+    c.post(f"/api/empresas/{e.id}/funcionarios", headers=H, json={"funcionarios": 800})
+    c.post(f"/api/empresas/{e.id}/pessoas", headers=H, json={"nome": "Paula RH", "cargo": "Diretora de RH"})
+    depois = item()
+    crit = depois["saude"]["criterios"]
+    assert crit["localizacao"]["valor"] == 1.0 and crit["qualificacao"]["valor"] == 1.0 and crit["rh"]["valor"] == 1.0
+    assert depois["setor"] == "Software" and depois["rh"][0]["nome"] == "Paula RH"
+    assert depois["saude"]["score"] > antes["saude"]["score"]

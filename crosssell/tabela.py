@@ -667,10 +667,19 @@ def clientes(db: Session, settings: Settings) -> list[dict]:
                     atual["fim"] = fim
         contatos = sorted((p for p in e.pessoas if tem_relacao(p, relacao)),
                           key=lambda p: (-(p.score_relacionamento or 0), p.nome))
+        # Critérios do Score de Saúde (localização, qualificação, funcionários, RH), para o time completar à mão
+        pot = potencial("saude", e, None)
+        rh = [p for p in e.pessoas if area_pessoa(p) == "rh"]
         saida.append({
             "id": e.id, "nome": e.razao_social, "local": local(e),
             "produtos": sorted(produtos.values(), key=lambda x: (x["vertical"], x["produto"])),
             "funcionarios": e.funcionarios, "funcionariosOrigem": FONTE_FUNC.get(e.funcionarios_fonte or "", ""),
+            "cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte,
+            "setor": setor_valido(e), "setorFonte": e.setor_fonte,
+            "rh": [{"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline} for p in rh],
+            "saude": {"score": pot["score"],
+                      "criterios": {c["nome"]: {"valor": c["valor"], "texto": c["texto"], "peso": c["peso"]}
+                                    for c in pot["criterios"]}},
             "tier": e.tier_saude, "tierPor": nomes_id.get(e.tier_saude_por_id),
             "tierEm": e.tier_saude_em.isoformat(timespec="minutes") if e.tier_saude_em else None,
             "contatos": [{"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline,

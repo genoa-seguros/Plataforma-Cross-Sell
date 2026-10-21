@@ -658,7 +658,9 @@ def clientes(db: Session, settings: Settings) -> list[dict]:
             atual = produtos.get(chave)
             fim = v.fim_vigencia.isoformat() if v.fim_vigencia else None
             if atual is None:
-                produtos[chave] = {"vertical": v.vertical, "produto": produto, "fim": fim, "qtd": 1}
+                # Saúde (sem fim de vigência) pode ser desmarcado na tela, menos o da planilha do Zeca
+                produtos[chave] = {"vertical": v.vertical, "produto": produto, "fim": fim, "qtd": 1,
+                                   "desmarcavel": v.vertical == "saude" and v.fonte != "zeca"}
             else:  # o mesmo produto em dois negócios vira um só (com o fim mais distante)
                 atual["qtd"] += 1
                 if fim and (atual["fim"] is None or fim > atual["fim"]):

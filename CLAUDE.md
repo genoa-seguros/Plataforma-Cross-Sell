@@ -101,6 +101,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   ("atualização do negócio" in the UI; per company and vertical; not the activity's `Atividade.nota`, which is the
   "observação" sent to Pipedrive and never read by the AI) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of
   -50..+20 on the latest note; `tabela.oportunidades` adds it to the score and to "Por quê". Pending notes: `crosssell notas`.
+- **Clientes tab** (`/api/clientes`, `tabela.clientes`): companies with `seguros_vigentes`, products deduplicated, any
+  employee count, pontes with cargo, all `NotaOportunidade` of the company. The team sets `Empresa.tier_saude`
+  (`tabela.TIERS_SAUDE`: A+, A, B, C) via `POST /api/empresas/{id}/tier`, logged as `Registro` tipo "tier".
 - **To-dos "Feito na semana"** (`/api/todos/log`, `tabela.log_semana`): per-person weekly timeline (Mon–Sun,
   Brasília time) built from `Atividade` (criada_por / concluida_em), `NotaOportunidade`, `OportunidadeManual` and
   `Registro` (manual actions logged by `app._registrar` in the edit endpoints: cidade, funcionários, setor, cargo,

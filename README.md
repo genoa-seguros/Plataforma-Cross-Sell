@@ -93,6 +93,13 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
   empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data, quem executa, assunto e exclusão) volta
   para a plataforma na rotina de hora em hora.
+- **Clientes**: todas as empresas com seguro vigente (negócio ganho no Pipedrive com fim de vigência depois de hoje;
+  Saúde, sem fim, vale até ser desmarcado), para o time dar o **tier de Saúde** à mão (A+, A, B, C; `Empresa.tier_saude`,
+  com quem e quando). Colunas: empresa, produtos contratados (um chip por produto, mesmo com vários negócios),
+  funcionários (de onde houver: à mão, LinkedIn ou Pipedrive; ✎ para informar), tier, com quem falamos (ponte por
+  e-mail ou marcada à mão, com cargo; sem ninguém, dá para marcar a ponte ali) e atualizações (todas as do negócio da
+  empresa, de todas as verticais, com a opção de escrever outra). Filtros: nome, produto contratado e tier (inclusive
+  "sem tier"). A classificação entra no log da semana.
 - **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
   Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
   à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade

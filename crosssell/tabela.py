@@ -626,6 +626,62 @@ def todos(db: Session, ref: date | None = None) -> dict:
             "itens": [item_atividade(a, ref) for a in [*pend, *feitas]]}
 
 
+TIERS_SAUDE = ("A+", "A", "B", "C")
+
+
+def clientes(db: Session, settings: Settings) -> list[dict]:
+    """Aba Clientes: empresas com seguro vigente (negócio ganho com fim de vigência depois de hoje; Saúde, que não tem
+    fim, vale até ser desmarcado), para o time dar o tier de Saúde à mão. Produtos sem repetir, funcionários de onde
+    houver (à mão, LinkedIn ou Pipedrive), com quem a equipe fala (ponte por e-mail ou marcada à mão, com o cargo) e
+    todas as atualizações do negócio da empresa, de todas as verticais."""
+    ids = select(Negocio.empresa_id).where(Negocio.empresa_id.is_not(None),
+                                           (Negocio.status == "ganho") | Negocio.fonte.in_(("manual", "zeca"))).distinct()
+    empresas = db.scalars(select(Empresa).where(Empresa.id.in_(ids)).options(
+        selectinload(Empresa.negocios), selectinload(Empresa.pessoas))).all()
+    empresas = [e for e in empresas if not interna(e, settings) and seguros_vigentes(e)]
+    if not empresas:
+        return []
+    alvo = [e.id for e in empresas]
+    nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
+    nomes_id = {u.id: u.nome for u in db.scalars(select(Usuario))}
+    pontes, relacao = _pontes(db, alvo), com_relacao(db, alvo)
+    notas_de: dict[int, list] = defaultdict(list)
+    for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.empresa_id.in_(alvo))
+                        .order_by(NotaOportunidade.criada_em.desc(), NotaOportunidade.id.desc())):
+        notas_de[n.empresa_id].append(n)
+    saida = []
+    for e in empresas:
+        produtos: dict[str, dict] = {}
+        for v in seguros_vigentes(e):
+            produto = (v.produto or v.titulo or VERTICAL_LABEL.get(v.vertical, "")).strip()
+            chave = " ".join(sem_acento(produto).lower().split())
+            atual = produtos.get(chave)
+            fim = v.fim_vigencia.isoformat() if v.fim_vigencia else None
+            if atual is None:
+                produtos[chave] = {"vertical": v.vertical, "produto": produto, "fim": fim, "qtd": 1}
+            else:  # o mesmo produto em dois negócios vira um só (com o fim mais distante)
+                atual["qtd"] += 1
+                if fim and (atual["fim"] is None or fim > atual["fim"]):
+                    atual["fim"] = fim
+        contatos = sorted((p for p in e.pessoas if tem_relacao(p, relacao)),
+                          key=lambda p: (-(p.score_relacionamento or 0), p.nome))
+        saida.append({
+            "id": e.id, "nome": e.razao_social, "local": local(e),
+            "produtos": sorted(produtos.values(), key=lambda x: (x["vertical"], x["produto"])),
+            "funcionarios": e.funcionarios, "funcionariosOrigem": FONTE_FUNC.get(e.funcionarios_fonte or "", ""),
+            "tier": e.tier_saude, "tierPor": nomes_id.get(e.tier_saude_por_id),
+            "tierEm": e.tier_saude_em.isoformat(timespec="minutes") if e.tier_saude_em else None,
+            "contatos": [{"id": p.id, "nome": p.nome, "cargo": p.cargo or p.linkedin_headline,
+                          "quemFala": nomes.get(pontes.get(p.id), pontes.get(p.id)), "ponteManual": p.ponte_manual}
+                         for p in contatos],
+            "pessoas": [{"id": p.id, "nome": p.nome, "cargo": p.cargo} for p in sorted(e.pessoas, key=lambda p: p.nome)],
+            "notas": [{"id": n.id, "vertical": n.vertical, "verticalNome": VERTICAL_LABEL.get(n.vertical, n.vertical),
+                       "texto": n.texto, "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes"),
+                       "ajuste": n.ajuste, "motivo": n.motivo} for n in notas_de[e.id]],
+        })
+    return sorted(saida, key=lambda x: sem_acento(x["nome"]).lower())
+
+
 # Horário de Brasília (sem horário de verão desde 2019): as datas no banco são UTC
 FUSO_BRASILIA = timedelta(hours=-3)
 

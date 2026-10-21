@@ -70,6 +70,10 @@ class Empresa(Base):
     linkedin_busca_em: Mapped[datetime | None]  # última busca do perfil na Linked API
     linkedin_nao_encontrado: Mapped[bool] = mapped_column(default=False)
     linkedin_areas: Mapped[dict] = mapped_column(JSON, default=dict)  # área -> data da última busca de funcionários
+    # Tier de Saúde dado à mão pelo time na aba Clientes (A+, A, B, C): potencial do cliente para Saúde
+    tier_saude: Mapped[str | None]
+    tier_saude_por_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    tier_saude_em: Mapped[datetime | None]
 
     pessoas: Mapped[list["Pessoa"]] = relationship(back_populates="empresa")
     negocios: Mapped[list["Negocio"]] = relationship(back_populates="empresa")

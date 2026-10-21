@@ -121,6 +121,10 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo{background:var(--surface);border:1px solid var(--line);border-radius:8px}
 .grupo h3{font:700 14px/1.2 var(--f-display);margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .grupo ul{list-style:none;margin:0;padding:0}
+table.clientes{font-size:13px}table.clientes td{vertical-align:top}
+.tier-sel{font-weight:700;min-width:64px}
+.tier-ap{color:#fff;background:var(--good);border-color:var(--good)}.tier-a{color:var(--good);border-color:var(--good)}
+.tier-b{color:var(--accent);border-color:var(--accent)}.tier-c{color:var(--mute)}
 ol.log{list-style:none;margin:0;padding:0}
 ol.log li{display:grid;grid-template-columns:48px 22px 1fr;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);align-items:start;font-size:13px}
 ol.log li:last-child{border-bottom:0}
@@ -458,6 +462,7 @@ const previa = {
     }
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
     if (path.startsWith("/api/todos/log")) return logLocal(path);
+    if (path === "/api/clientes") return {itens: D.clientes || [], tiers: ["A+", "A", "B", "C"]};
     throw new Error("rota desconhecida");
   },
   post(path, b) {
@@ -479,6 +484,7 @@ const previa = {
         responsavel: u?.email || a.responsavel, responsavelNome: u?.nome || a.responsavelNome}); return {ok: true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/nota$/))) return {id: ++this.seq, texto: b.texto, ajuste: null};
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/data$/))) { const a = D.atividades.find(x => x.id == m[1]); a.vencimento = b.vencimento; return {ok:true, vencimento: b.vencimento}; }
+    if ((m = path.match(/^\/api\/empresas\/(\d+)\/tier$/))) { const c = (D.clientes || []).find(x => x.id == m[1]); if (c) Object.assign(c, {tier: b.tier || null, tierPor: EU.nome, tierEm: new Date().toISOString().slice(0, 16)}); return {tier: b.tier || null}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/excluir$/))) { D.atividades = D.atividades.filter(x => x.id != m[1]); return {ok:true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
@@ -606,7 +612,7 @@ function logLocal(path) {
 
 /* ---------- Abas ---------- */
 function abas(ativa) {
-  const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
+  const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["clientes","Clientes"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
   if (["master", "head"].includes(EU?.papel)) itens.push(["qualidade","Qualidade"]);
   if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}>${t}</a>`).join("");
@@ -1823,11 +1829,11 @@ const visoesTodos = () => `<div class="filtros" role="group" aria-label="Visão"
   <button class="chip off" data-visao="fazer" aria-pressed="${TODOS_VISAO === "fazer"}">A fazer</button>
   <button class="chip off" data-visao="log" aria-pressed="${TODOS_VISAO === "log"}">Feito na semana</button></div>`;
 const LOG_ICONE = {criou: "＋", concluiu: "✓", atualizacao: "✎", incluiu: "⇥", cidade: "⌖", funcionarios: "👥", setor: "🏷",
-  cargo: "🪪", pessoa: "👤", ponte: "🤝", saude: "♥", reagendou: "↻", editou: "✎", excluiu: "✕"};
+  cargo: "🪪", pessoa: "👤", tier: "★", ponte: "🤝", saude: "♥", reagendou: "↻", editou: "✎", excluiu: "✕"};
 // Filtro por tipo de log (vários ao mesmo tempo). Começa no que importa na reunião: concluídas e atualizações
 const LOG_GRUPOS = [["concluiu", "Atividades concluídas", ["concluiu"]], ["atualizacao", "Atualizações do negócio", ["atualizacao"]],
   ["criou", "Próximos passos criados", ["criou"]], ["ajustes", "Atividades reagendadas, editadas ou excluídas", ["reagendou", "editou", "excluiu"]],
-  ["dados", "Dados completados à mão", ["incluiu", "cidade", "funcionarios", "setor", "cargo", "pessoa", "ponte", "saude"]]];
+  ["dados", "Dados completados à mão", ["incluiu", "cidade", "funcionarios", "setor", "cargo", "pessoa", "ponte", "saude", "tier"]]];
 let LOG_FILTRO = (() => { try { const v = JSON.parse(localStorage.getItem("logFiltro")); if (Array.isArray(v)) return new Set(v); } catch (e) {} return new Set(["concluiu", "atualizacao"]); })();
 const grupoLog = tipo => (LOG_GRUPOS.find(g => g[2].includes(tipo)) || LOG_GRUPOS[4])[0];
 const DIA_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -1926,6 +1932,92 @@ async function telaTodos() {
   document.getElementById("s-hoje").onclick = () => { refSemana = new Date(); telaTodos(); };
   document.querySelectorAll("[data-tipo-ativ]").forEach(b => b.onclick = () => { TODOS_TIPO = b.dataset.tipoAtiv; telaTodos(); });
   document.querySelectorAll("[data-visao]").forEach(b => b.onclick = () => { TODOS_VISAO = b.dataset.visao; telaTodos(); });
+}
+
+/* ---------- Clientes ---------- */
+// Clientes ativos (seguro vigente) para o time dar o tier de Saúde à mão. Filtros na tela: nome, produto e tier
+let CLIENTES = null, CLI_BUSCA = null;
+const filtroCli = {q: "", produto: "", tier: ""};
+const chaveProduto = p => (p || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+async function telaClientes() {
+  await carregarBase();
+  const r = await api.get("/api/clientes");
+  CLIENTES = r.itens;
+  if (!document.getElementById("cli-lista")) {
+    document.getElementById("app").innerHTML = `
+    <section style="display:grid;gap:14px">
+      <div class="semana"><h1>Clientes</h1><span class="sub" id="cli-contagem"></span></div>
+      <div class="filtros">
+        <input id="cli-q" type="search" placeholder="Buscar empresa" value="${esc(filtroCli.q)}" aria-label="Buscar empresa">
+        <select id="cli-produto" aria-label="Produto contratado"></select>
+        <select id="cli-tier" aria-label="Tier de Saúde"></select>
+      </div>
+      <div id="cli-lista"></div>
+      <p class="nota">Empresas com seguro vigente: negócio ganho no Pipedrive com fim de vigência depois de hoje (Saúde, que não tem fim, vale até ser desmarcado). O <b>tier de Saúde</b> (A+, A, B, C) é dado à mão pelo time: o potencial do cliente para Saúde. Funcionários vêm do que houver (à mão, LinkedIn ou Pipedrive; ✎ para informar). "Com quem falamos" lista quem troca e-mails com a equipe ou foi marcado como ponte. "Atualizações" mostra todas as atualizações do negócio da empresa, de todas as verticais.</p>
+    </section>`;
+    const q = document.getElementById("cli-q");
+    q.oninput = () => { clearTimeout(CLI_BUSCA); CLI_BUSCA = setTimeout(() => { filtroCli.q = q.value.trim(); listaClientes(); }, 200); };
+    document.getElementById("cli-produto").onchange = e => { filtroCli.produto = e.target.value; listaClientes(); };
+    document.getElementById("cli-tier").onchange = e => { filtroCli.tier = e.target.value; listaClientes(); };
+  }
+  const produtos = new Map();
+  CLIENTES.forEach(c => c.produtos.forEach(p => produtos.has(chaveProduto(p.produto)) || produtos.set(chaveProduto(p.produto), p.produto)));
+  document.getElementById("cli-produto").innerHTML = `<option value="">Produto: todos</option>${[...produtos].sort((a, b) => a[1].localeCompare(b[1])).map(([k, t]) => `<option value="${esc(k)}" ${k === filtroCli.produto ? "selected" : ""}>${esc(t)}</option>`).join("")}`;
+  const cont = t => CLIENTES.filter(c => t === "sem" ? !c.tier : c.tier === t).length;
+  document.getElementById("cli-tier").innerHTML = `<option value="">Tier: todos</option>${r.tiers.map(t => `<option ${t === filtroCli.tier ? "selected" : ""}>${t}</option>`).join("")}<option value="sem" ${filtroCli.tier === "sem" ? "selected" : ""}>Sem tier (${cont("sem")})</option>`;
+  listaClientes();
+}
+
+function listaClientes() {
+  const q = chaveProduto(filtroCli.q);
+  const itens = CLIENTES.filter(c => (!q || chaveProduto(c.nome).includes(q))
+    && (!filtroCli.produto || c.produtos.some(p => chaveProduto(p.produto) === filtroCli.produto))
+    && (!filtroCli.tier || (filtroCli.tier === "sem" ? !c.tier : c.tier === filtroCli.tier)));
+  const classificados = CLIENTES.filter(c => c.tier).length;
+  document.getElementById("cli-contagem").textContent = `${itens.length} de ${CLIENTES.length} clientes · ${classificados} com tier`;
+  document.getElementById("cli-lista").innerHTML = itens.length ? `<div class="tabela fixa"><table class="clientes">
+    <thead><tr><th>Empresa</th><th>Produtos contratados</th><th>Funcionários</th><th>Tier Saúde</th><th>Com quem falamos</th><th>Atualizações</th></tr></thead>
+    <tbody>${itens.map(c => `<tr>
+      <td><a href="#empresa-${c.id}">${esc(c.nome)}</a>${c.local ? `<div class="sub">${esc(c.local)}</div>` : ""}</td>
+      <td><div class="chips">${c.produtos.map(p => `<span title="${p.fim ? "vigente até " + dt(p.fim) : "sem fim de vigência"}${p.qtd > 1 ? ` · ${p.qtd} negócios` : ""}">${vchip(p.vertical, p.produto)}</span>`).join("")}</div></td>
+      <td style="white-space:nowrap">${c.funcionarios ? `<span title="${esc(c.funcionariosOrigem || "")}">${c.funcionarios.toLocaleString("pt-BR")}</span>` : '<span class="sub">—</span>'}
+        <button type="button" class="lapis" data-func="${c.id}" data-func-atual="${c.funcionarios || ""}" data-func-nome="${esc(c.nome)}" title="Informar o número de funcionários">${c.funcionarios ? "✎" : "+ funcionários"}</button>
+        ${c.funcionariosOrigem ? `<div class="sub">${esc(c.funcionariosOrigem)}</div>` : ""}</td>
+      <td><select class="tier-sel${c.tier ? " tier-" + (c.tier === "A+" ? "ap" : c.tier.toLowerCase()) : ""}" data-tier="${c.id}" aria-label="Tier de Saúde de ${esc(c.nome)}">
+          <option value="">—</option>${["A+", "A", "B", "C"].map(t => `<option ${t === c.tier ? "selected" : ""}>${t}</option>`).join("")}</select>
+        ${c.tierPor ? `<div class="sub" title="${esc(hora(c.tierEm))}">${esc(c.tierPor.split(" ")[0])} · ${dia(c.tierEm)}</div>` : ""}</td>
+      <td>${c.contatos.length ? c.contatos.map(p => `<div>${esc(p.nome)}${p.cargo ? ` <span class="sub">· ${esc(p.cargo)}</span>` : ""} ${btnCargo(p)}${p.quemFala ? `<div class="sub">fala com ${esc(p.quemFala)}</div>` : p.ponteManual ? '<div class="sub">ponte marcada à mão</div>' : ""}</div>`).join("")
+        : `<span class="sub">ninguém troca e-mails com a equipe</span>${c.pessoas.length ? `<div><select data-ponte-sel aria-label="Quem é nossa ponte"><option value="">Marcar quem é nossa ponte…</option>${c.pessoas.map(p => `<option value="${p.id}">${esc(p.nome)}${p.cargo ? " · " + esc(p.cargo.slice(0, 50)) : ""}</option>`).join("")}</select></div>` : ""}`}</td>
+      <td><button type="button" class="lapis" data-cli-notas="${c.id}">${c.notas.length ? `ver ${c.notas.length} ${c.notas.length === 1 ? "atualização" : "atualizações"}` : "+ atualização"}</button>
+        ${c.notas[0] ? `<div class="sub">${dia(c.notas[0].em)} · ${esc(c.notas[0].texto.length > 50 ? c.notas[0].texto.slice(0, 50) + "…" : c.notas[0].texto)}</div>` : ""}</td>
+    </tr>`).join("")}</tbody></table></div>` : `<div class="grupo"><p class="vazio">Nenhum cliente com esses filtros.</p></div>`;
+}
+
+// Todas as atualizações do negócio do cliente (todas as verticais), com a opção de escrever uma nova
+function notasCliente(id) {
+  const c = (CLIENTES || []).find(x => x.id == id); if (!c) return;
+  const verts = D?.verticaisOportunidades || ["saude", "linhas_financeiras", "ramos_elementares"];
+  const ajuste = n => n.ajuste === null || n.ajuste === undefined ? (n.motivo || "a IA ainda vai avaliar") : `${n.ajuste > 0 ? "+" : ""}${n.ajuste} no Score: ${n.motivo || ""}`;
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-cli-nota" aria-labelledby="t-cli-nota" style="max-width:600px">
+    <h2 id="t-cli-nota">Atualizações</h2><div class="sub">${esc(c.nome)}</div>
+    ${c.notas.length ? `<div class="nota-hist" style="max-height:340px">${c.notas.map(n => `<div>${vchip(n.vertical, n.verticalNome)} ${esc(n.texto)}<div class="sub">${esc(n.autor || "")} · ${dia(n.em)} · ${esc(ajuste(n))}</div></div>`).join("")}</div>` : '<p class="sub">Nenhuma atualização ainda.</p>'}
+    <label>Vertical<select id="cli-nota-vert">${verts.map(v => `<option value="${v}" ${v === "saude" ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
+    <label>Nova atualização<textarea id="cli-nota-texto" rows="3" maxlength="2000" placeholder="ex.: plano renova em março; corretor atual é da família do sócio"></textarea></label>
+    <p class="erro" id="cli-nota-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="cli-nota-fechar">Fechar</button><button class="btn" id="cli-nota-salvar">Salvar atualização</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("cli-nota-fechar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("f-cli-nota").onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById("cli-nota-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
+    try {
+      await api.post(`/api/empresas/${id}/notas`, {vertical: document.getElementById("cli-nota-vert").value, texto: document.getElementById("cli-nota-texto").value});
+      fechar(); aviso("Atualização salva"); OPS_RESP = null; render();
+    } catch (err) { b.disabled = false; b.textContent = "Salvar atualização"; const el = document.getElementById("cli-nota-erro"); el.textContent = err.message; el.hidden = false; }
+  };
 }
 
 /* ---------- Equipe ---------- */
@@ -2147,6 +2239,7 @@ document.addEventListener("click", ev => {
   const na = ev.target.closest("[data-nota-ativ]"); if (na) notaAtividade(na.dataset.notaAtiv);
   const ed = ev.target.closest("[data-editar-ativ]"); if (ed) editarAtividade(+ed.dataset.editarAtiv);
 
+  const cn = ev.target.closest("[data-cli-notas]"); if (cn) notasCliente(+cn.dataset.cliNotas);
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
   const mv = ev.target.closest("[data-mover], [data-desfazer]");
   if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;
@@ -2156,6 +2249,16 @@ document.addEventListener("click", ev => {
 });
 document.addEventListener("change", async ev => {
   const s = ev.target.dataset?.saude, c = ev.target.dataset?.concluir, pt = ev.target.dataset?.ponte;
+  if (ev.target.matches?.("[data-tier]")) {
+    const sel = ev.target, id = +sel.dataset.tier;
+    try {
+      const r = await api.post(`/api/empresas/${id}/tier`, {tier: sel.value || null});
+      const c = (CLIENTES || []).find(x => x.id === id);
+      if (c) Object.assign(c, {tier: r.tier, tierPor: EU.nome, tierEm: new Date().toISOString().slice(0, 16)});
+      aviso(r.tier ? `Tier ${r.tier} salvo` : "Tier retirado"); listaClientes();
+    } catch (err) { aviso(err.message); render(); }
+    return;
+  }
   if (ev.target.matches?.("[data-ponte-sel]")) {
     if (!ev.target.value) return;
     try { await api.post(`/api/pessoas/${ev.target.value}/ponte`, {ponte: true}); aviso("Marcada como nossa ponte"); OPS_RESP = null; render(); }
@@ -2182,11 +2285,12 @@ async function render() {
   abas(m ? "oportunidades" : h.slice(1));
   if (h !== "#oportunidades") document.getElementById("fila")?.remove();  // o painel da fila é só da tela Oportunidades
   document.getElementById("app").innerHTML = '<p class="vazio">Carregando…</p>';  // a aba muda já no clique
-  document.getElementById("app").classList.toggle("largo", h === "#oportunidades" || h === "#todos" || !!m);
+  document.getElementById("app").classList.toggle("largo", h === "#oportunidades" || h === "#todos" || h === "#clientes" || !!m);
   try {
     if (m) await telaEmpresa(m[1]);
     else if (h === "#todos") await telaTodos();
     else if (h === "#negocios") await telaNegocios();
+    else if (h === "#clientes") await telaClientes();
     else if (h === "#qualidade") await telaQualidade();
     else if (h === "#melhorias") await telaMelhorias();
     else if (h === "#rotina") await telaRotina();

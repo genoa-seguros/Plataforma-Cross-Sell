@@ -781,6 +781,32 @@ def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(g
     return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
 
 
+@app.get("/api/clientes")
+def api_clientes(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Aba Clientes: clientes ativos para o time dar o tier de Saúde."""
+    return {"itens": tabela.clientes(db, get_settings()), "tiers": list(tabela.TIERS_SAUDE)}
+
+
+class TierIn(BaseModel):
+    tier: str | None = None
+
+
+@app.post("/api/empresas/{empresa_id}/tier")
+def api_tier(empresa_id: int, dados: TierIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Tier de Saúde dado à mão (A+, A, B, C); vazio tira a classificação."""
+    e = db.get(Empresa, empresa_id)
+    if e is None:
+        raise HTTPException(404, "Empresa não encontrada.")
+    tier = dados.tier or None
+    if tier is not None and tier not in tabela.TIERS_SAUDE:
+        raise HTTPException(400, "Escolha A+, A, B ou C.")
+    if tier != e.tier_saude:
+        e.tier_saude, e.tier_saude_por_id, e.tier_saude_em = tier, u.id, datetime.utcnow()
+        _registrar(db, u, "tier", f"classificou o tier de Saúde: {tier}" if tier else "tirou o tier de Saúde", e.id)
+        db.commit()
+    return {"tier": e.tier_saude}
+
+
 @app.get("/api/todos/log")
 def api_log(usuario: int | None = None, ref: date | None = None, db: Session = Depends(get_db),
             u: Usuario = Depends(usuario_atual)):

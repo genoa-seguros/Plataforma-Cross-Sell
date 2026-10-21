@@ -389,3 +389,20 @@ class NotaOportunidade(Base):
     avaliada_em: Mapped[datetime | None]
 
     usuario: Mapped[Usuario] = relationship()
+
+
+class Registro(Base):
+    """O que a pessoa fez à mão na plataforma (dados completados, ponte, atividade excluída...), para o log da
+    semana em To-dos. Atividades criadas e concluídas, atualizações do negócio e oportunidades incluídas à mão já
+    ficam nas próprias tabelas e não se repetem aqui."""
+
+    __tablename__ = "registros"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    em: Mapped[datetime] = mapped_column(default=_now, index=True)
+    tipo: Mapped[str]  # cidade | funcionarios | setor | cargo | pessoa | ponte | saude | excluiu
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
+    texto: Mapped[str]
+
+    empresa: Mapped[Empresa | None] = relationship()

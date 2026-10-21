@@ -121,6 +121,15 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo{background:var(--surface);border:1px solid var(--line);border-radius:8px}
 .grupo h3{font:700 14px/1.2 var(--f-display);margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .grupo ul{list-style:none;margin:0;padding:0}
+ol.log{list-style:none;margin:0;padding:0}
+ol.log li{display:grid;grid-template-columns:48px 22px 1fr;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);align-items:start;font-size:13px}
+ol.log li:last-child{border-bottom:0}
+.log-hora{font-variant-numeric:tabular-nums;color:var(--mute);font-size:12px;padding-top:1px}
+.log-ico{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--soft);font-size:11px;color:var(--mute)}
+.log-concluiu .log-ico{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.log-atualizacao .log-ico{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+.log-excluiu .log-ico{color:var(--bad)}
+.log-pessoa{display:flex;gap:8px;align-items:center;max-width:360px}
 .grupo li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:start}
 .grupo li:last-child{border-bottom:0}
 .grupo li.feita .ass{text-decoration:line-through;color:var(--mute)}
@@ -445,6 +454,7 @@ const previa = {
       return {...(m[1] ? {} : {...dup(1), suspeitas: q.suspeitas || []}), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
     }
     m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
+    if (path.startsWith("/api/todos/log")) return logLocal(path);
     throw new Error("rota desconhecida");
   },
   post(path, b) {
@@ -567,6 +577,28 @@ function todosLocal(refIso) {
   const itens = D.atividades.filter(a => (!a.concluida && a.vencimento <= fim) || (a.concluida && a.vencimento >= ini && a.vencimento <= fim))
     .map(a => ({...a, atrasada: !a.concluida && a.vencimento < hoje})).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
   return {inicio: ini, fim, itens};
+}
+
+// Prévia do log da semana: monta a linha do tempo com as atividades de exemplo da pessoa
+function logLocal(path) {
+  const p = new URLSearchParams(path.split("?")[1] || "");
+  const u = D.equipe.find(x => x.id == p.get("usuario")) || D.equipe.find(x => x.email === EU.email) || D.equipe[0];
+  const [seg, sex] = semanaDe(new Date((p.get("ref") || iso(new Date())) + "T12:00:00")), ini = iso(seg), fim = iso(sex);
+  const doDia = (d, h) => `${d}T${h}`;
+  const itens = [], minhas = D.atividades.filter(a => a.responsavel === u.email);
+  minhas.forEach((a, i) => {
+    const d = a.vencimento < ini ? ini : a.vencimento > fim ? fim : a.vencimento;
+    itens.push({em: doDia(d, `0${8 + i % 2}:${String(10 + i * 7 % 50).padStart(2, "0")}`), dia: d, tipo: "criou", texto: `criou a atividade «${a.assunto}»`,
+      detalhe: `vence ${dm(a.vencimento)}`, empresa: a.empresa, empresaId: a.empresaId, vertical: a.vertical, verticalNome: a.verticalNome});
+    if (a.concluida) itens.push({em: doDia(d, "16:30"), dia: d, tipo: "concluiu", texto: `concluiu «${a.assunto}»`, detalhe: a.nota,
+      empresa: a.empresa, empresaId: a.empresaId, vertical: a.vertical, verticalNome: a.verticalNome});
+  });
+  itens.sort((a, b) => a.em.localeCompare(b.em));
+  const hoje = iso(new Date());
+  return {inicio: ini, fim, usuario: {id: u.id, nome: u.nome, email: u.email}, itens,
+    resumo: {concluidas: itens.filter(x => x.tipo === "concluiu").length, atualizacoes: 0, criadas: itens.filter(x => x.tipo === "criou").length,
+      dados: 0, empresas: new Set(itens.map(x => x.empresaId).filter(Boolean)).size},
+    atrasadas: minhas.filter(a => !a.concluida && a.vencimento < hoje)};
 }
 
 /* ---------- Abas ---------- */
@@ -1767,7 +1799,7 @@ async function telaNegocios() {
   ligarPaginacao("neg", n => { filtroNeg.pagina = n; telaNegocios(); });
 }
 
-let TODOS_ITENS = [], TODOS_TIPO = "";
+let TODOS_ITENS = [], TODOS_TIPO = "", TODOS_VISAO = "fazer", LOG_USUARIO = null;
 const ICONE_TIPO = {call: "📞", meeting: "👥", task: "🕒", email: "✉️", deadline: "🚩", lunch: "🍴"};
 function linhaAtividade(i) {
   const nota = (i.nota || "").trim(), primeira = nota.split("\n").find(l => l.trim()) || "";
@@ -1783,8 +1815,60 @@ function linhaAtividade(i) {
     <td><div class="nota-cel" title="${esc(nota)}">${primeira ? esc(primeira) : ""}</div>${i.empresaId ? `<button type="button" class="lapis" data-nota-ativ="${i.id}" title="Atualização do negócio: o que aconteceu (a IA lê e ajusta o Score)">+ atualização</button>` : ""}</td>
   </tr>`;
 }
+// Duas visões em To-dos: "A fazer" (atividades da semana) e "Feito na semana" (log de cada pessoa)
+const visoesTodos = () => `<div class="filtros" role="group" aria-label="Visão">
+  <button class="chip off" data-visao="fazer" aria-pressed="${TODOS_VISAO === "fazer"}">A fazer</button>
+  <button class="chip off" data-visao="log" aria-pressed="${TODOS_VISAO === "log"}">Feito na semana</button></div>`;
+const LOG_ICONE = {criou: "＋", concluiu: "✓", atualizacao: "✎", incluiu: "⇥", cidade: "⌖", funcionarios: "👥", setor: "🏷",
+  cargo: "🪪", pessoa: "👤", ponte: "🤝", saude: "♥", reagendou: "↻", editou: "✎", excluiu: "✕"};
+const DIA_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+async function telaLog() {
+  const u = LOG_USUARIO || USUARIOS.find(x => x.email === EU.email)?.id;
+  const r = await api.get(`/api/todos/log?ref=${iso(refSemana)}${u ? "&usuario=" + u : ""}`);
+  LOG_USUARIO = r.usuario.id;
+  const dias = {};
+  r.itens.forEach(i => (dias[i.dia] ||= []).push(i));
+  const rs = r.resumo;
+  document.getElementById("app").innerHTML = `
+  <section style="display:grid;gap:14px">
+    <div class="semana">
+      <button class="btn sec" id="s-ant">← Semana anterior</button>
+      <button class="btn sec" id="s-hoje">Esta semana</button>
+      <button class="btn sec" id="s-prox">Próxima semana →</button>
+      <h1 style="margin-left:8px">Semana de ${dm(r.inicio)} a ${dm(r.fim)}</h1>
+    </div>
+    ${visoesTodos()}
+    <label class="log-pessoa">Pessoa <select id="log-u">${USUARIOS.filter(x => x.ativo !== false).map(x => `<option value="${x.id}" ${x.id === r.usuario.id ? "selected" : ""}>${esc(x.nome)}</option>`).join("")}</select></label>
+    <div class="kpi-row">
+      <div class="kpi"><b class="num" style="color:var(--good)">${rs.concluidas}</b><span>atividades concluídas</span></div>
+      <div class="kpi"><b class="num">${rs.atualizacoes}</b><span>atualizações do negócio</span></div>
+      <div class="kpi"><b class="num">${rs.criadas}</b><span>próximos passos criados</span></div>
+      <div class="kpi"><b class="num">${rs.dados}</b><span>dados completados à mão</span></div>
+      <div class="kpi"><b class="num">${rs.empresas}</b><span>empresas trabalhadas</span></div>
+    </div>
+    ${Object.keys(dias).length ? Object.entries(dias).map(([d, itens]) => `
+      <div class="grupo"><h3>${DIA_SEMANA[new Date(d + "T12:00:00").getDay()]}, ${dm(d)}<span class="sub">${itens.length} ${itens.length === 1 ? "ação" : "ações"}</span></h3>
+      <ol class="log">${itens.map(i => `<li class="log-${esc(i.tipo)}"><span class="log-hora">${esc(i.em.slice(11, 16))}</span><span class="log-ico" aria-hidden="true">${LOG_ICONE[i.tipo] || "•"}</span>
+        <div><div>${esc(i.texto)}</div>
+          <div class="sub">${i.empresa ? `<a href="#empresa-${i.empresaId}">${esc(i.empresa)}</a>` : ""}${i.vertical ? " " + vchip(i.vertical, i.verticalNome) : ""}${i.detalhe ? `<div>${esc(i.detalhe)}</div>` : ""}</div></div></li>`).join("")}</ol></div>`).join("")
+      : `<div class="grupo"><p class="vazio">${esc(r.usuario.nome)} ainda não registrou nada nesta semana.</p></div>`}
+    ${r.atrasadas.length ? `<div class="grupo"><h3 style="color:var(--bad)">Atrasadas ainda abertas<span class="sub">${r.atrasadas.length}</span></h3>
+      <ol class="log">${r.atrasadas.map(a => `<li><span class="log-hora">${dm(a.vencimento)}</span><span class="log-ico" aria-hidden="true">!</span>
+        <div><div>${esc(a.assunto)}</div><div class="sub">${a.empresa ? esc(a.empresa) : ""}${a.vertical ? " " + vchip(a.vertical, a.verticalNome) : ""}</div></div></li>`).join("")}</ol></div>` : ""}
+    <p class="nota">Linha do tempo do que a pessoa fez na plataforma na semana, em horário de Brasília: atividades criadas e concluídas, atualizações do negócio, oportunidades incluídas à mão e dados completados à mão (cidade, funcionários, setor, cargo, ponte, pessoas). Só o trabalho de cross sell: negócios ganhos no Pipedrive não entram. Atividade concluída direto no Pipedrive aparece na hora em que a plataforma sincronizou (de hora em hora).</p>
+  </section>`;
+  const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
+  document.getElementById("s-ant").onclick = () => mover(-7);
+  document.getElementById("s-prox").onclick = () => mover(7);
+  document.getElementById("s-hoje").onclick = () => { refSemana = new Date(); telaTodos(); };
+  document.getElementById("log-u").onchange = ev => { LOG_USUARIO = +ev.target.value; telaTodos(); };
+  document.querySelectorAll("[data-visao]").forEach(b => b.onclick = () => { TODOS_VISAO = b.dataset.visao; telaTodos(); });
+}
+
 async function telaTodos() {
   await carregarBase();
+  if (TODOS_VISAO === "log") return telaLog();
   const r = await api.get("/api/todos?ref=" + iso(refSemana));
   TODOS_ITENS = r.itens;
   const itensTipo = r.itens.filter(i => !TODOS_TIPO || i.tipo === TODOS_TIPO);
@@ -1802,6 +1886,7 @@ async function telaTodos() {
       <h1 style="margin-left:8px">Semana de ${dm(r.inicio)} a ${dm(r.fim)}</h1>
       <span class="sub">reunião na sexta, ${dt(r.fim)}</span>
     </div>
+    ${visoesTodos()}
     <div class="kpi-row">
       <div class="kpi"><b class="num">${total - feitas}</b><span>pendentes até sexta</span></div>
       <div class="kpi"><b class="num" style="color:var(--bad)">${atras}</b><span>atrasadas</span></div>
@@ -1825,6 +1910,7 @@ async function telaTodos() {
   document.getElementById("s-prox").onclick = () => mover(7);
   document.getElementById("s-hoje").onclick = () => { refSemana = new Date(); telaTodos(); };
   document.querySelectorAll("[data-tipo-ativ]").forEach(b => b.onclick = () => { TODOS_TIPO = b.dataset.tipoAtiv; telaTodos(); });
+  document.querySelectorAll("[data-visao]").forEach(b => b.onclick = () => { TODOS_VISAO = b.dataset.visao; telaTodos(); });
 }
 
 /* ---------- Equipe ---------- */

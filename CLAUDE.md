@@ -101,6 +101,10 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   ("atualização do negócio" in the UI; per company and vertical; not the activity's `Atividade.nota`, which is the
   "observação" sent to Pipedrive and never read by the AI) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of
   -50..+20 on the latest note; `tabela.oportunidades` adds it to the score and to "Por quê". Pending notes: `crosssell notas`.
+- **To-dos "Feito na semana"** (`/api/todos/log`, `tabela.log_semana`): per-person weekly timeline (Mon–Sun,
+  Brasília time) built from `Atividade` (criada_por / concluida_em), `NotaOportunidade`, `OportunidadeManual` and
+  `Registro` (manual actions logged by `app._registrar` in the edit endpoints: cidade, funcionários, setor, cargo,
+  pessoa, ponte, saúde, reagendou/editou/excluiu atividade). New manual endpoints should call `_registrar`.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group
   `crosssell-equipe`. `email_m365.sincronizar` records `leitura_em` / `leitura_erro` ("recusada" = 403).

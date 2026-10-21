@@ -93,6 +93,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
   empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data, quem executa, assunto e exclusão) volta
   para a plataforma na rotina de hora em hora.
+- **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
+  Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
+  à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade
+  reagendada, editada ou excluída, gravados em `registros`). No topo, o resumo em números; no fim, as atividades dela
+  ainda atrasadas. Todos veem o log de todos (seletor de pessoa e de semana). Só cross sell: negócios ganhos no
+  Pipedrive não entram.
 - **Rotina**: como a plataforma se atualiza sozinha, de hora em hora: a ordem dos passos (Pipedrive,
   organizações excluídas no Pipedrive, e-mails, notícias, Receita, site, LinkedIn, scores e a revisão semanal
   do cadastro), o que cada um faz,

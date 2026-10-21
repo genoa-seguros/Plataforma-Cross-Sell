@@ -20,7 +20,7 @@ from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS, PESSOAS_LF, PES
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
 from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeManual, Pessoa,
-                               Usuario)
+                               Registro, Usuario)
 from crosssell.normalize import AREA_LABEL, classificar_area, sem_acento
 from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei,
                                  melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
@@ -624,6 +624,65 @@ def todos(db: Session, ref: date | None = None) -> dict:
 
     return {"inicio": seg.isoformat(), "fim": sex.isoformat(),
             "itens": [item_atividade(a, ref) for a in [*pend, *feitas]]}
+
+
+# Horário de Brasília (sem horário de verão desde 2019): as datas no banco são UTC
+FUSO_BRASILIA = timedelta(hours=-3)
+
+
+def log_semana(db: Session, u: Usuario, ref: date | None = None) -> dict:
+    """O que a pessoa fez na semana de `ref` (segunda a domingo, horário de Brasília), numa linha do tempo para a
+    reunião de sexta: atividades criadas e concluídas, atualizações do negócio, oportunidades incluídas à mão e o que
+    ela completou à mão (`Registro`). Só o trabalho de cross sell: negócios ganhos no Pipedrive não entram.
+    No fim, as atividades dela ainda atrasadas."""
+    ref = ref or (datetime.utcnow() + FUSO_BRASILIA).date()
+    seg = ref - timedelta(days=ref.weekday())
+    de = datetime.combine(seg, datetime.min.time()) - FUSO_BRASILIA  # em UTC, como no banco
+    ate = de + timedelta(days=7)
+    itens = []
+
+    def item(em, tipo, texto, empresa=None, vertical=None, detalhe=None):
+        local = em + FUSO_BRASILIA
+        itens.append({"_em": em, "em": local.isoformat(timespec="minutes"), "dia": local.date().isoformat(), "tipo": tipo,
+                      "texto": texto, "detalhe": detalhe, "empresa": empresa.razao_social if empresa else None,
+                      "empresaId": empresa.id if empresa else None, "vertical": vertical,
+                      "verticalNome": VERTICAL_LABEL.get(vertical) if vertical else None})
+
+    def empresa_de(a: Atividade):
+        return a.empresa or (a.negocio.empresa if a.negocio else None)
+
+    def vertical_de(a: Atividade):
+        return a.vertical or (a.negocio.vertical if a.negocio else None)
+
+    for a in db.scalars(select(Atividade).where(Atividade.criada_por_id == u.id, Atividade.criada_em >= de,
+                                                Atividade.criada_em < ate)):
+        para = f"para {a.responsavel.nome} · " if a.responsavel_id != u.id else ""
+        item(a.criada_em, "criou", f"criou a atividade «{a.assunto}»", empresa_de(a), vertical_de(a),
+             f"{para}vence {a.vencimento:%d/%m}" + (f" · {a.nota}" if a.nota else ""))
+    for a in db.scalars(select(Atividade).where(Atividade.responsavel_id == u.id, Atividade.concluida.is_(True),
+                                                Atividade.concluida_em >= de, Atividade.concluida_em < ate)):
+        item(a.concluida_em, "concluiu", f"concluiu «{a.assunto}»", empresa_de(a), vertical_de(a), a.nota)
+    for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.usuario_id == u.id,
+                                                       NotaOportunidade.criada_em >= de, NotaOportunidade.criada_em < ate)):
+        efeito = f"Score {n.ajuste:+d}: {n.motivo}" if n.ajuste else ("sem efeito no Score" if n.ajuste == 0 else None)
+        item(n.criada_em, "atualizacao", f"atualização: {n.texto}", db.get(Empresa, n.empresa_id), n.vertical, efeito)
+    for m in db.scalars(select(OportunidadeManual).where(OportunidadeManual.usuario_id == u.id,
+                                                         OportunidadeManual.criada_em >= de,
+                                                         OportunidadeManual.criada_em < ate)):
+        item(m.criada_em, "incluiu", "incluiu à mão em Oportunidades", db.get(Empresa, m.empresa_id), m.vertical)
+    for r in db.scalars(select(Registro).where(Registro.usuario_id == u.id, Registro.em >= de, Registro.em < ate)):
+        item(r.em, r.tipo, r.texto, r.empresa)
+    itens.sort(key=lambda x: x.pop("_em"))
+    hoje = (datetime.utcnow() + FUSO_BRASILIA).date()
+    atrasadas = db.scalars(select(Atividade).where(Atividade.responsavel_id == u.id, Atividade.concluida.is_(False),
+                                                   Atividade.vencimento < hoje).order_by(Atividade.vencimento)).all()
+    contar = Counter(x["tipo"] for x in itens)
+    return {"inicio": seg.isoformat(), "fim": (seg + timedelta(days=4)).isoformat(),
+            "usuario": {"id": u.id, "nome": u.nome, "email": u.email},
+            "resumo": {"concluidas": contar["concluiu"], "atualizacoes": contar["atualizacao"], "criadas": contar["criou"],
+                       "dados": sum(v for k, v in contar.items() if k not in ("concluiu", "atualizacao", "criou")),
+                       "empresas": len({x["empresaId"] for x in itens if x["empresaId"]})},
+            "itens": itens, "atrasadas": [item_atividade(a, hoje) for a in atrasadas]}
 
 
 def item_atividade(a: Atividade, ref: date) -> dict:

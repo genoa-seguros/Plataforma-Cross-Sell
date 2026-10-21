@@ -24,7 +24,7 @@ from crosssell.connectors import pipedrive as pd
 from crosssell.connectors.noticias import PORTAIS, portal
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import (Atividade, Configuracao, Empresa, Melhoria, Negocio, NotaOportunidade, OportunidadeManual,
-                               Pessoa, SyncLog, Usuario)
+                               Pessoa, Registro, SyncLog, Usuario)
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
 
@@ -289,13 +289,18 @@ def api_tabela(db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual
     return {"linhas": tabela.montar(db, get_settings()), **api_base(db, u)}
 
 
+def _registrar(db: Session, u: Usuario, tipo: str, texto: str, empresa_id: int | None = None) -> None:
+    """O que a pessoa fez à mão, para o log da semana em To-dos (quem chama faz o commit)."""
+    db.add(Registro(usuario_id=u.id, tipo=tipo, texto=texto[:300], empresa_id=empresa_id))
+
+
 class FuncionariosIn(BaseModel):
     funcionarios: int | None
 
 
 @app.post("/api/empresas/{empresa_id}/funcionarios")
 def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depends(get_db),
-                     _u: Usuario = Depends(usuario_atual)):
+                     u: Usuario = Depends(usuario_atual)):
     """Número de funcionários informado à mão: vale sobre o do LinkedIn por 180 dias. Vazio volta ao automático."""
     e = db.get(Empresa, empresa_id)
     if e is None:
@@ -307,6 +312,7 @@ def api_funcionarios(empresa_id: int, dados: FuncionariosIn, db: Session = Depen
             e.funcionarios_fonte, e.funcionarios_em = None, None
     else:
         e.funcionarios, e.funcionarios_fonte, e.funcionarios_em = dados.funcionarios, "manual", datetime.utcnow()
+        _registrar(db, u, "funcionarios", f"informou {dados.funcionarios:,} funcionários".replace(",", "."), e.id)
     db.commit()
     return {"funcionarios": e.funcionarios, "funcionariosFonte": e.funcionarios_fonte}
 
@@ -316,7 +322,7 @@ class SetorIn(BaseModel):
 
 
 @app.post("/api/empresas/{empresa_id}/setor")
-def api_setor(empresa_id: int, dados: SetorIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+def api_setor(empresa_id: int, dados: SetorIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     """Setor informado à mão (quanto mais específico, melhor: "fintech" em vez de "tecnologia"). Vale sobre o do
     LinkedIn. Vazio volta ao automático: a próxima leitura do LinkedIn preenche."""
     e = db.get(Empresa, empresa_id)
@@ -325,6 +331,7 @@ def api_setor(empresa_id: int, dados: SetorIn, db: Session = Depends(get_db), _u
     setor = (dados.setor or "").strip()[:120] or None
     if setor:
         e.setor, e.setor_fonte = setor, "manual"
+        _registrar(db, u, "setor", f"informou o setor: {setor}", e.id)
     elif e.setor_fonte == "manual":
         e.setor, e.setor_fonte, e.linkedin_em = None, None, None  # relê a página na próxima rodada
     db.commit()
@@ -336,7 +343,7 @@ class CargoIn(BaseModel):
 
 
 @app.post("/api/pessoas/{pessoa_id}/cargo")
-def api_cargo(pessoa_id: int, dados: CargoIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual),
+def api_cargo(pessoa_id: int, dados: CargoIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual),
               client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Cargo informado à mão (vale sobre o do LinkedIn, que só preenche cargo vazio). Também grava no Pipedrive."""
     p = db.get(Pessoa, pessoa_id)
@@ -345,6 +352,8 @@ def api_cargo(pessoa_id: int, dados: CargoIn, db: Session = Depends(get_db), _u:
     cargo = (dados.cargo or "").strip()[:120] or None
     p.cargo = cargo
     p.senioridade = classificar_senioridade(cargo or p.linkedin_headline) if (cargo or p.linkedin_headline) else None
+    if cargo:
+        _registrar(db, u, "cargo", f"informou o cargo de {p.nome}: {cargo}", p.empresa_id)
     db.commit()
     no_pipedrive = False
     if p.pipedrive_person_id and cargo:
@@ -455,7 +464,7 @@ class PessoaNovaIn(BaseModel):
 
 
 @app.post("/api/empresas/{empresa_id}/pessoas")
-def api_pessoa_nova(empresa_id: int, dados: PessoaNovaIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+def api_pessoa_nova(empresa_id: int, dados: PessoaNovaIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     """Cadastra à mão alguém da empresa (ex.: quem decide que a equipe já conhece)."""
     from crosssell.normalize import normalizar_nome_pessoa
     from crosssell.resolver import resolver_pessoa
@@ -472,6 +481,7 @@ def api_pessoa_nova(empresa_id: int, dados: PessoaNovaIn, db: Session = Depends(
     if cargo:
         p.cargo = cargo
         p.senioridade = classificar_senioridade(cargo)
+    _registrar(db, u, "pessoa", f"cadastrou {p.nome}" + (f" ({cargo})" if cargo else ""), e.id)
     db.commit()
     return {"id": p.id, "nome": p.nome, "cargo": p.cargo, "area": AREA_LABEL.get(tabela.area_pessoa(p) or "")}
 
@@ -488,6 +498,8 @@ def api_ponte(pessoa_id: int, dados: PonteIn, db: Session = Depends(get_db), u: 
         raise HTTPException(404, "Pessoa não encontrada.")
     p.ponte_manual = dados.ponte
     p.ponte_manual_por, p.ponte_manual_em = (u.email, datetime.utcnow()) if dados.ponte else (None, None)
+    _registrar(db, u, "ponte", f"marcou {p.nome} como ponte" if dados.ponte else f"desmarcou {p.nome} como ponte",
+               p.empresa_id)
     db.commit()
     return {"ponteManual": p.ponte_manual}
 
@@ -533,7 +545,7 @@ def _salvar_nota(db: Session, u: Usuario, empresa_id: int, vertical: str, texto:
 
 
 @app.post("/api/empresas/{empresa_id}/local")
-def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     """Cidade e UF informadas à mão: valem sobre Receita, Pipedrive e LinkedIn e decidem a praça de Saúde.
     Em branco volta ao automático (a próxima consulta à Receita preenche)."""
     e = db.get(Empresa, empresa_id)
@@ -549,6 +561,7 @@ def api_local(empresa_id: int, dados: LocalIn, db: Session = Depends(get_db), _u
         if uf not in pd.UFS.values():
             raise HTTPException(400, "Escolha a UF.")
         e.cidade, e.uf, e.cidade_fonte, e.cidade_em = cidade, uf, "manual", datetime.utcnow()
+        _registrar(db, u, "cidade", f"informou a cidade: {cidade}/{uf}", e.id)
     db.commit()
     return {"cidade": e.cidade, "uf": e.uf, "cidadeFonte": e.cidade_fonte, "local": tabela.local(e)}
 
@@ -601,10 +614,12 @@ class SaudeIn(BaseModel):
 
 
 @app.post("/api/empresas/{empresa_id}/saude")
-def api_saude(empresa_id: int, dados: SaudeIn, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+def api_saude(empresa_id: int, dados: SaudeIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     if db.get(Empresa, empresa_id) is None:
         raise HTTPException(404, "Empresa não encontrada.")
     pd.marcar_saude(db, empresa_id, dados.cliente)
+    _registrar(db, u, "saude", "marcou como cliente de Saúde" if dados.cliente else "desmarcou cliente de Saúde",
+               empresa_id)
     db.commit()
     return {"ok": True}
 
@@ -687,7 +702,7 @@ def _erro_pipedrive(exc: httpx.HTTPStatusError) -> str:
 
 @app.post("/api/atividades/{atividade_id}/editar")
 def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Session = Depends(get_db),
-                         _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+                         u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Edita a atividade (To-dos) e sincroniza com o Pipedrive."""
     at = db.get(Atividade, atividade_id)
     resp = db.get(Usuario, dados.responsavel_id)
@@ -706,6 +721,8 @@ def api_editar_atividade(atividade_id: int, dados: EditarAtividadeIn, db: Sessio
         raise HTTPException(502, f"O Pipedrive não aceitou a alteração: {_erro_pipedrive(exc)}")
     except httpx.HTTPError:
         raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
+    _registrar(db, u, "editou", f"editou a atividade «{at.assunto}»", at.empresa_id or (at.negocio.empresa_id if at.negocio else None))
+    db.commit()
     return {"ok": True}
 
 
@@ -715,7 +732,7 @@ class DataIn(BaseModel):
 
 @app.post("/api/atividades/{atividade_id}/data")
 def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(get_db),
-                       _u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
+                       u: Usuario = Depends(usuario_atual), client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Muda o vencimento da atividade (To-dos da semana) e sincroniza com o Pipedrive."""
     at = db.get(Atividade, atividade_id)
     if at is None:
@@ -724,22 +741,28 @@ def api_data_atividade(atividade_id: int, dados: DataIn, db: Session = Depends(g
         pd.mudar_data_atividade(db, client, at, dados.vencimento)
     except httpx.HTTPError:
         raise HTTPException(502, "O Pipedrive não aceitou a nova data; tente de novo.")
+    _registrar(db, u, "reagendou", f"reagendou «{at.assunto}» para {at.vencimento:%d/%m}",
+               at.empresa_id or (at.negocio.empresa_id if at.negocio else None))
+    db.commit()
     return {"ok": True, "vencimento": at.vencimento.isoformat()}
 
 
 @app.post("/api/atividades/{atividade_id}/excluir")
-def api_excluir_atividade(atividade_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual),
+def api_excluir_atividade(atividade_id: int, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual),
                           client: pd.PipedriveClient = Depends(get_pipedrive)):
     """Exclui a atividade (To-dos) aqui e no Pipedrive."""
     at = db.get(Atividade, atividade_id)
     if at is None:
         raise HTTPException(404, "Atividade não encontrada.")
+    assunto, empresa_id = at.assunto, at.empresa_id or (at.negocio.empresa_id if at.negocio else None)
     try:
         pd.excluir_atividade(db, client, at)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"O Pipedrive não excluiu a atividade: {_erro_pipedrive(exc)}")
     except httpx.HTTPError:
         raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
+    _registrar(db, u, "excluiu", f"excluiu a atividade «{assunto}»", empresa_id)
+    db.commit()
     return {"ok": True}
 
 
@@ -756,6 +779,16 @@ def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(g
         raise HTTPException(400, "A atividade não tem empresa.")
     nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
     return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
+
+
+@app.get("/api/todos/log")
+def api_log(usuario: int | None = None, ref: date | None = None, db: Session = Depends(get_db),
+            u: Usuario = Depends(usuario_atual)):
+    """O que a pessoa fez na semana, numa linha do tempo (aba To-dos, para a reunião de sexta). Todos veem o de todos."""
+    alvo = db.get(Usuario, usuario) if usuario else u
+    if alvo is None:
+        raise HTTPException(404, "Pessoa não encontrada.")
+    return tabela.log_semana(db, alvo, ref)
 
 
 @app.get("/api/todos")

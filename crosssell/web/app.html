@@ -25,32 +25,40 @@ html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body)}
 a{color:var(--accent)}
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* Menu lateral: fundo azul em degradê com ícones. Em telas estreitas vira uma barra no topo */
-.top{position:fixed;inset:0 auto 0 0;width:232px;z-index:6;color:#fff;
-  background:linear-gradient(180deg,#02024E 0%,#0a2a9a 55%,#0554F2 100%);box-shadow:2px 0 12px color-mix(in srgb,#02024E 25%,transparent)}
-.top-in{height:100%;display:flex;flex-direction:column;gap:18px;padding:20px 14px 16px;overflow-y:auto}
-.brand{display:flex;flex-direction:column;align-items:flex-start;gap:8px;color:#fff;text-decoration:none;padding:0 8px}
-.brand img{height:26px;width:auto;display:block}
-.brand .logo-claro{display:none}
-.brand span{font:600 11px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:color-mix(in srgb,#fff 70%,transparent)}
-nav.abas{display:flex;flex-direction:column;gap:2px}
-nav.abas a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:color-mix(in srgb,#fff 82%,transparent);text-decoration:none;font-weight:500;font-size:14px}
-nav.abas a svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-nav.abas a:hover{background:color-mix(in srgb,#fff 12%,transparent);color:#fff}
-nav.abas a[aria-current="page"]{background:#fff;color:var(--brand);font-weight:600;box-shadow:0 2px 8px color-mix(in srgb,#02024E 30%,transparent)}
-.top .dir{margin-top:auto;display:grid;gap:8px;font-size:13px;color:color-mix(in srgb,#fff 80%,transparent);padding:12px 8px 0;border-top:1px solid color-mix(in srgb,#fff 18%,transparent)}
-.top .dir a{color:#fff}
-.top .pill-demo{white-space:normal;line-height:1.35}
-body{padding-left:232px}
+/* Menu lateral estreito, só com ícones, em degradê roxo-escuro (no estilo do Pipedrive). O nome aparece numa
+   janelinha ao passar o mouse (data-nome). Em telas estreitas vira uma barra no topo */
+:root{--menu-w:64px;--menu-ativo:#6c4ee8}
+.top{position:fixed;inset:0 auto 0 0;width:var(--menu-w);z-index:6;color:#fff;
+  background:linear-gradient(180deg,#3a2a7a 0%,#271a5c 45%,#160f3a 100%)}
+.top-in{height:100%;display:flex;flex-direction:column;align-items:center;gap:14px;padding:12px 0}
+.brand{position:relative;display:grid;place-items:center;width:44px;height:36px;flex:none;margin-bottom:4px}
+.brand img{width:36px;height:auto;display:block}
+.brand span{display:none}
+nav.abas{display:flex;flex-direction:column;align-items:center;gap:6px}
+nav.abas a,.top .dir .ico-btn{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;
+  color:color-mix(in srgb,#fff 82%,transparent);text-decoration:none;background:none;border:0;cursor:pointer;font:inherit}
+nav.abas a svg,.top .dir svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav.abas a:hover,.top .dir .ico-btn:hover{background:color-mix(in srgb,#fff 12%,transparent);color:#fff}
+nav.abas a[aria-current="page"]{background:var(--menu-ativo);color:#fff;box-shadow:0 2px 10px color-mix(in srgb,var(--menu-ativo) 45%,transparent)}
+/* Janelinha com o nome */
+[data-nome]::after{content:attr(data-nome);position:absolute;left:calc(100% + 12px);top:50%;transform:translate(-4px,-50%);
+  white-space:nowrap;background:#1d1640;color:#fff;font:500 12px/1.3 var(--f-body);padding:6px 10px;border-radius:6px;
+  box-shadow:0 4px 14px rgb(0 0 0 / 25%);opacity:0;pointer-events:none;transition:opacity .12s,transform .12s;z-index:30}
+[data-nome]:hover::after,[data-nome]:focus-visible::after{opacity:1;transform:translate(0,-50%)}
+.top .dir{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:8px}
+.top .eu{position:relative;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,#fff 18%,transparent);font:600 12px/1 var(--f-body);color:#fff}
+.top .pill-demo{position:relative;width:28px;height:28px;padding:0;display:grid;place-items:center;border-radius:50%;font-weight:700;background:#fff3d6;color:var(--warn);border:0}
+.top .pill-demo[hidden]{display:none}
+.top .pill-demo::after{white-space:normal;width:220px}
+body{padding-left:var(--menu-w)}
 @media (max-width:899px){
   body{padding-left:0}
-  .top{position:sticky;top:0;inset:auto;width:auto;box-shadow:none;background:linear-gradient(90deg,#02024E,#0554F2)}
-  .top-in{height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 16px;overflow:visible}
-  .brand{flex-direction:row;align-items:center;padding:0}
-  nav.abas{flex-direction:row;overflow-x:auto;scrollbar-width:none;width:100%;order:3}
-  nav.abas a{flex:none;padding:6px 10px}
-  .top .dir{margin:0 0 0 auto;display:flex;gap:10px;padding:0;border:0}
-  .top .pill-demo{display:none}
+  .top{position:sticky;top:0;inset:auto;width:auto;background:linear-gradient(90deg,#3a2a7a,#160f3a)}
+  .top-in{height:auto;flex-direction:row;padding:6px 10px;gap:8px}
+  nav.abas{flex-direction:row;overflow-x:auto;scrollbar-width:none;flex:1}
+  nav.abas a{flex:none}
+  nav.abas{order:2}.top .dir{margin:0;flex-direction:row;order:3}
+  [data-nome]::after{display:none}
 }
 .pill-demo{font-size:12px;padding:2px 10px;border-radius:99px;background:var(--soft);color:var(--warn);border:1px solid var(--line)}
 main{max-width:1320px;margin:0 auto;padding-inline:16px;padding-block:20px 56px;display:grid;gap:18px}
@@ -264,9 +272,11 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <a class="brand" href="#oportunidades"><img class="logo-claro" src="/static/logo-innoa.png" alt=""><img class="logo-escuro" src="/static/logo-innoa-branco.png" alt="Innoa Seguros"><span>Cross Sell</span></a>
+  <a class="brand" href="#oportunidades" data-nome="Innoa Cross Sell"><img src="/static/icone-innoa-branco.png" alt="Innoa Cross Sell"></a>
   <nav class="abas" id="abas" aria-label="Seções"></nav>
-  <div class="dir"><span class="pill-demo" id="demo" hidden>Prévia com dados de exemplo · nada é enviado ao Pipedrive</span><span id="eu"></span><a href="/logout" id="sair">Sair</a></div>
+  <div class="dir"><span class="pill-demo" id="demo" data-nome="Prévia com dados de exemplo: empresas fictícias, nada é enviado ao Pipedrive" tabindex="0" hidden>!</span>
+    <span class="eu" id="eu" tabindex="0"></span>
+    <a href="/logout" id="sair" class="ico-btn" data-nome="Sair" aria-label="Sair"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg></a></div>
 </div></header>
 <main id="app"><p class="vazio">Carregando…</p></main>
 <div id="modal"></div>
@@ -655,7 +665,7 @@ function abas(ativa) {
   const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["clientes","Clientes"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
   if (["master", "head"].includes(EU?.papel)) itens.push(["qualidade","Qualidade"]);
   if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
-  document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" ${ativa === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONE_ABA[k] || ""}</svg><span>${t}</span></a>`).join("");
+  document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" data-nome="${t}" aria-label="${t}" ${ativa === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONE_ABA[k] || ""}</svg></a>`).join("");
 }
 
 /* ---------- Negócios ---------- */
@@ -2423,7 +2433,9 @@ new ResizeObserver(medirTopo).observe(document.querySelector(".top"));
   document.getElementById("demo").hidden = !PREVIA;
   document.getElementById("sair").hidden = PREVIA;
   try { EU = await api.get("/api/eu"); } catch (e) { return; }
-  document.getElementById("eu").textContent = EU.nome;
+  const eu = document.getElementById("eu");  // iniciais no menu; o nome na janelinha
+  eu.textContent = EU.nome.split(/\s+/).filter(Boolean).map(x => x[0]).slice(0, 2).join("").toUpperCase();
+  eu.dataset.nome = EU.nome; eu.setAttribute("aria-label", EU.nome);
   window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
   render();
 })();

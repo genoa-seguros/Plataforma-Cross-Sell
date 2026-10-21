@@ -96,10 +96,14 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Clientes**: todas as empresas com seguro vigente (negócio ganho no Pipedrive com fim de vigência depois de hoje;
   Saúde, sem fim, vale até ser desmarcado), para o time dar o **tier de Saúde** à mão (A+, A, B, C; `Empresa.tier_saude`,
   com quem e quando). Colunas: empresa, produtos contratados (um chip por produto, mesmo com vários negócios),
-  funcionários (de onde houver: à mão, LinkedIn ou Pipedrive; ✎ para informar), tier, com quem falamos (ponte por
-  e-mail ou marcada à mão, com cargo; sem ninguém, dá para marcar a ponte ali) e atualizações (todas as do negócio da
+  funcionários (de onde houver: à mão, LinkedIn ou Pipedrive; ✎ para informar), tier, com quem falamos (👥 abre um
+  pop-up com a ponte por e-mail ou marcada à mão, com cargo, e as outras pessoas da empresa; dá para marcar a ponte
+  ali) e atualizações (todas as do negócio da
   empresa, de todas as verticais, com a opção de escrever outra). Filtros: nome, produto contratado e tier (inclusive
-  "sem tier"). A classificação entra no log da semana.
+  "sem tier"). Também os **critérios do Score de Saúde** (Localização, Qualificação, Funcionários, RH), com o valor de
+  cada um (0 a 1) e o Score Saúde, para o time completar à mão (cidade, setor, funcionários, alguém de RH; o Score é
+  recalculado). Todas as linhas têm a mesma altura (o resto fica na dica ou no pop-up). O ✕ no chip de Saúde desmarca
+  Saúde (menos o da planilha do Zeca). A classificação entra no log da semana.
 - **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
   Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
   à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade

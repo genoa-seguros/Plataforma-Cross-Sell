@@ -121,7 +121,19 @@ ul.motivos li.falta{color:var(--mute)}
 .grupo{background:var(--surface);border:1px solid var(--line);border-radius:8px}
 .grupo h3{font:700 14px/1.2 var(--f-display);margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .grupo ul{list-style:none;margin:0;padding:0}
-table.clientes{font-size:13px}table.clientes td{vertical-align:top}
+/* Clientes: linhas da mesma altura (uma linha por célula; o resto no title ou no pop-up) */
+table.clientes{font-size:13px;table-layout:fixed;min-width:1100px}table.clientes th{white-space:nowrap}
+.cel{display:flex;align-items:center;gap:4px;min-width:0}table.clientes td,table.clientes th{padding-left:6px;padding-right:6px}.cel-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cel .lapis{flex:none}
+.crit-v{flex:none;display:inline-block;min-width:26px;text-align:center;font-size:11px;font-weight:700;border-radius:4px;padding:1px 3px;margin-right:5px;background:var(--soft);color:var(--mute)}
+.crit-v.bom{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+.crit-v.medio{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}
+.crit-v.fraco{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+table.clientes td{vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:44px;padding-top:6px;padding-bottom:6px}
+.cli-chips{flex-wrap:nowrap;overflow:hidden}.cli-prod{display:inline-flex;align-items:center;gap:2px;flex:none}
+.desmarcar{border:0;background:none;color:var(--mute);cursor:pointer;font-size:11px;padding:0 2px}.desmarcar:hover{color:var(--bad)}
+.cli-pessoas{border:0;background:none;padding:0;cursor:pointer;color:var(--ink);font:inherit;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.cli-pessoas .ico{margin-right:6px}.cli-pessoas:hover{color:var(--accent)}
+.cli-lista-pes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .tier-sel{font-weight:700;min-width:64px}
 .tier-ap{color:#fff;background:var(--good);border-color:var(--good)}.tier-a{color:var(--good);border-color:var(--good)}
 .tier-b{color:var(--accent);border-color:var(--accent)}.tier-c{color:var(--mute)}
@@ -488,6 +500,8 @@ const previa = {
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/excluir$/))) { D.atividades = D.atividades.filter(x => x.id != m[1]); return {ok:true}; }
     if ((m = path.match(/^\/api\/atividades\/(\d+)\/concluir$/))) { const a = D.atividades.find(x => x.id == m[1]); a.concluida = b.concluida; return {ok:true}; }
     if ((m = path.match(/^\/api\/empresas\/(\d+)\/saude$/))) {
+      const cli = (D.clientes || []).find(x => x.id == m[1]);
+      if (cli && !b.cliente) { cli.produtos = cli.produtos.filter(p => p.vertical !== "saude"); if (!cli.produtos.length) D.clientes = D.clientes.filter(x => x !== cli); }
       if (b.cliente) D.oportunidades = (D.oportunidades || []).filter(o => !(o.empresa.id == m[1] && o.vertical === "saude"));
       [...D.linhas, ...(D.oportunidades || [])].filter(l => l.empresa?.id == m[1]).forEach(l => {
         l.saude.manual = b.cliente; l.saude.desmarcado = !b.cliente;
@@ -1954,7 +1968,7 @@ async function telaClientes() {
         <select id="cli-tier" aria-label="Tier de Saúde"></select>
       </div>
       <div id="cli-lista"></div>
-      <p class="nota">Empresas com seguro vigente: negócio ganho no Pipedrive com fim de vigência depois de hoje (Saúde, que não tem fim, vale até ser desmarcado). O <b>tier de Saúde</b> (A+, A, B, C) é dado à mão pelo time: o potencial do cliente para Saúde. Funcionários vêm do que houver (à mão, LinkedIn ou Pipedrive; ✎ para informar). "Com quem falamos" lista quem troca e-mails com a equipe ou foi marcado como ponte. "Atualizações" mostra todas as atualizações do negócio da empresa, de todas as verticais.</p>
+      <p class="nota">Empresas com seguro vigente: negócio ganho no Pipedrive com fim de vigência depois de hoje (Saúde, que não tem fim, vale até ser desmarcado). O <b>tier de Saúde</b> (A+, A, B, C) é dado à mão pelo time: o potencial do cliente para Saúde. Funcionários vêm do que houver (à mão, LinkedIn ou Pipedrive; ✎ para informar). "Com quem falamos" (👥) abre as pessoas: quem troca e-mails com a equipe ou foi marcado como ponte, e as outras da empresa. O ✕ no chip de Saúde desmarca Saúde (deixa de contar como cliente Saúde). <b>Critérios de Saúde</b> (Localização, Qualificação, Funcionários, RH): o número em cor é o valor do critério (0 a 1) no Score Saúde; ✎ ou "+" preenche à mão (cidade, setor, funcionários, alguém de RH) e o Score é recalculado. Funcionários do Pipedrive aparecem, mas só contam no Score os do LinkedIn ou informados à mão. "Atualizações" mostra todas as atualizações do negócio da empresa, de todas as verticais.</p>
     </section>`;
     const q = document.getElementById("cli-q");
     q.oninput = () => { clearTimeout(CLI_BUSCA); CLI_BUSCA = setTimeout(() => { filtroCli.q = q.value.trim(); listaClientes(); }, 200); };
@@ -1976,22 +1990,57 @@ function listaClientes() {
     && (!filtroCli.tier || (filtroCli.tier === "sem" ? !c.tier : c.tier === filtroCli.tier)));
   const classificados = CLIENTES.filter(c => c.tier).length;
   document.getElementById("cli-contagem").textContent = `${itens.length} de ${CLIENTES.length} clientes · ${classificados} com tier`;
+  const primeiro = t => esc(t.length > 42 ? t.slice(0, 42) + "…" : t);
   document.getElementById("cli-lista").innerHTML = itens.length ? `<div class="tabela fixa"><table class="clientes">
-    <thead><tr><th>Empresa</th><th>Produtos contratados</th><th>Funcionários</th><th>Tier Saúde</th><th>Com quem falamos</th><th>Atualizações</th></tr></thead>
+    <colgroup><col style="width:15%"><col style="width:12%"><col style="width:56px"><col style="width:13%"><col style="width:13%"><col style="width:100px"><col style="width:12%"><col style="width:74px"><col style="width:11%"><col style="width:96px"></colgroup>
+    <thead><tr><th>Empresa</th><th title="Produtos contratados">Produtos</th><th title="Score de Saúde pelos critérios ao lado">Score</th><th title="Critério de Saúde: cidade (com clientes da Innoa, praça ou fora)">Localização</th><th title="Critério de Saúde: setor (qualificação do time)">Qualificação</th><th title="Critério de Saúde: nº de funcionários">Func.</th><th title="Critério de Saúde: alguém de RH mapeado e o nível do cargo">RH</th><th title="Tier de Saúde dado pelo time">Tier</th><th>Com quem falamos</th><th>Atualizações</th></tr></thead>
     <tbody>${itens.map(c => `<tr>
-      <td><a href="#empresa-${c.id}">${esc(c.nome)}</a>${c.local ? `<div class="sub">${esc(c.local)}</div>` : ""}</td>
-      <td><div class="chips">${c.produtos.map(p => `<span title="${p.fim ? "vigente até " + dt(p.fim) : "sem fim de vigência"}${p.qtd > 1 ? ` · ${p.qtd} negócios` : ""}">${vchip(p.vertical, p.produto)}</span>`).join("")}</div></td>
-      <td style="white-space:nowrap">${c.funcionarios ? `<span title="${esc(c.funcionariosOrigem || "")}">${c.funcionarios.toLocaleString("pt-BR")}</span>` : '<span class="sub">—</span>'}
-        <button type="button" class="lapis" data-func="${c.id}" data-func-atual="${c.funcionarios || ""}" data-func-nome="${esc(c.nome)}" title="Informar o número de funcionários">${c.funcionarios ? "✎" : "+ funcionários"}</button>
-        ${c.funcionariosOrigem ? `<div class="sub">${esc(c.funcionariosOrigem)}</div>` : ""}</td>
-      <td><select class="tier-sel${c.tier ? " tier-" + (c.tier === "A+" ? "ap" : c.tier.toLowerCase()) : ""}" data-tier="${c.id}" aria-label="Tier de Saúde de ${esc(c.nome)}">
-          <option value="">—</option>${["A+", "A", "B", "C"].map(t => `<option ${t === c.tier ? "selected" : ""}>${t}</option>`).join("")}</select>
-        ${c.tierPor ? `<div class="sub" title="${esc(hora(c.tierEm))}">${esc(c.tierPor.split(" ")[0])} · ${dia(c.tierEm)}</div>` : ""}</td>
-      <td>${c.contatos.length ? c.contatos.map(p => `<div>${esc(p.nome)}${p.cargo ? ` <span class="sub">· ${esc(p.cargo)}</span>` : ""} ${btnCargo(p)}${p.quemFala ? `<div class="sub">fala com ${esc(p.quemFala)}</div>` : p.ponteManual ? '<div class="sub">ponte marcada à mão</div>' : ""}</div>`).join("")
-        : `<span class="sub">ninguém troca e-mails com a equipe</span>${c.pessoas.length ? `<div><select data-ponte-sel aria-label="Quem é nossa ponte"><option value="">Marcar quem é nossa ponte…</option>${c.pessoas.map(p => `<option value="${p.id}">${esc(p.nome)}${p.cargo ? " · " + esc(p.cargo.slice(0, 50)) : ""}</option>`).join("")}</select></div>` : ""}`}</td>
-      <td><button type="button" class="lapis" data-cli-notas="${c.id}">${c.notas.length ? `ver ${c.notas.length} ${c.notas.length === 1 ? "atualização" : "atualizações"}` : "+ atualização"}</button>
-        ${c.notas[0] ? `<div class="sub">${dia(c.notas[0].em)} · ${esc(c.notas[0].texto.length > 50 ? c.notas[0].texto.slice(0, 50) + "…" : c.notas[0].texto)}</div>` : ""}</td>
+      <td title="${esc(c.nome)}${c.local ? " · " + esc(c.local) : ""}"><a href="#empresa-${c.id}">${esc(c.nome)}</a>${c.local ? ` <span class="sub">· ${esc(c.local)}</span>` : ""}</td>
+      <td><div class="chips cli-chips">${c.produtos.map(p => `<span class="cli-prod" title="${p.fim ? "vigente até " + dt(p.fim) : "sem fim de vigência"}${p.qtd > 1 ? ` · ${p.qtd} negócios` : ""}">${vchip(p.vertical, p.produto)}${p.desmarcavel ? `<button type="button" class="desmarcar" data-saude-off="${c.id}" data-saude-nome="${esc(c.nome)}" title="Desmarcar Saúde: a empresa não é mais cliente Saúde" aria-label="Desmarcar Saúde de ${esc(c.nome)}">✕</button>` : ""}</span>`).join("")}</div></td>
+      <td title="${esc(Object.entries(c.saude.criterios).map(([k, x]) => `${CRIT_SAUDE[k] || k}: ${nota(x.valor)} × ${x.peso}`).join(" · "))}"><b>${Math.round(c.saude.score)}</b></td>
+      ${critCelula(c, "localizacao", c.cidade ? `${esc((c.cidade || "").split(",")[0])}${c.uf ? "/" + esc(c.uf) : ""}` : '<span class="sub">—</span>',
+        `<button type="button" class="lapis" data-local="${c.id}" data-local-cidade="${esc(c.cidadeFonte === "manual" ? c.cidade || "" : "")}" data-local-uf="${esc(c.uf || "")}" data-local-nome="${esc(c.nome)}" title="Informar cidade e UF">${c.cidade ? "✎" : "+"}</button>`)}
+      ${critCelula(c, "qualificacao", c.setor ? esc(c.setor) : '<span class="sub">—</span>',
+        `<button type="button" class="lapis" data-setor="${c.id}" data-setor-atual="${esc(c.setorFonte === "manual" ? c.setor || "" : "")}" data-setor-nome="${esc(c.nome)}" title="Informar o setor">${c.setor ? "✎" : "+"}</button>`)}
+      ${critCelula(c, "funcionarios", c.funcionarios ? c.funcionarios.toLocaleString("pt-BR") : '<span class="sub">—</span>',
+        `<button type="button" class="lapis" data-func="${c.id}" data-func-atual="${c.funcionarios || ""}" data-func-nome="${esc(c.nome)}" title="Informar o número de funcionários">${c.funcionarios ? "✎" : "+"}</button>`,
+        c.funcionariosOrigem && c.funcionariosOrigem.includes("Pipedrive") ? "do Pipedrive: não conta no Score (informe à mão ou espere o LinkedIn)" : c.funcionariosOrigem)}
+      ${critCelula(c, "rh", c.rh.length ? `${esc(c.rh[0].nome)}${c.rh[0].cargo ? ` <span class="sub">· ${esc(c.rh[0].cargo)}</span>` : ""}` : '<span class="sub">—</span>',
+        `<button type="button" class="lapis" data-pessoa-nova="${c.id}" data-pessoa-empresa="${esc(c.nome)}" title="Cadastrar alguém de RH (nome e cargo)">+</button>`,
+        c.rh.length ? c.rh.map(p => p.nome + (p.cargo ? ` (${p.cargo})` : "")).join(", ") : "ninguém de RH mapeado")}
+      <td title="${c.tierPor ? `classificado por ${esc(c.tierPor)} em ${esc(hora(c.tierEm))}` : "ainda sem tier"}"><select class="tier-sel${c.tier ? " tier-" + (c.tier === "A+" ? "ap" : c.tier.toLowerCase()) : ""}" data-tier="${c.id}" aria-label="Tier de Saúde de ${esc(c.nome)}">
+          <option value="">—</option>${["A+", "A", "B", "C"].map(t => `<option ${t === c.tier ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      <td><button type="button" class="cli-pessoas" data-cli-pessoas="${c.id}" title="Ver com quem falamos e as pessoas da empresa">
+          <span class="ico" aria-hidden="true">👥</span>${c.contatos.length ? `${primeiro(c.contatos[0].nome)}${c.contatos.length > 1 ? ` <span class="sub">+${c.contatos.length - 1}</span>` : ""}` : '<span class="sub">ninguém ainda</span>'}</button></td>
+      <td title="${c.notas[0] ? `última: ${esc(dt(c.notas[0].em))} · ${esc(c.notas[0].texto)}` : ""}"><button type="button" class="lapis" data-cli-notas="${c.id}">${c.notas.length ? `ver ${c.notas.length}` : "+ nova"}</button>${c.notas[0] ? ` <span class="sub">${dm(c.notas[0].em)}</span>` : ""}</td>
     </tr>`).join("")}</tbody></table></div>` : `<div class="grupo"><p class="vazio">Nenhum cliente com esses filtros.</p></div>`;
+}
+
+// Critérios do Score de Saúde na aba Clientes: valor (0 a 1, em cor) e o dado, com o botão para preencher à mão
+const CRIT_SAUDE = {localizacao: "Localização", qualificacao: "Qualificação", funcionarios: "Funcionários", rh: "RH"};
+const nota = v => (Math.round(v * 10) / 10).toLocaleString("pt-BR", {minimumFractionDigits: 1});
+function critCelula(c, chave, dado, botao, dica) {
+  const x = c.saude.criterios[chave];
+  const cls = !x ? "" : x.valor >= 0.8 ? "bom" : x.valor <= 0.3 ? "fraco" : "medio";
+  return `<td title="${esc([x?.texto, dica].filter(Boolean).join(" · "))}"><div class="cel">${x ? `<span class="crit-v ${cls}">${nota(x.valor)}</span>` : ""}<span class="cel-txt">${dado}</span>${botao}</div></td>`;
+}
+
+// Com quem falamos: pop-up com a ponte (cargo, quem da equipe fala com ela) e as outras pessoas da empresa
+function pessoasCliente(id) {
+  const c = (CLIENTES || []).find(x => x.id == id); if (!c) return;
+  const falam = new Set(c.contatos.map(p => p.id)), outras = c.pessoas.filter(p => !falam.has(p.id));
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><div class="modal" role="dialog" aria-labelledby="t-cli-pes" style="max-width:560px">
+    <h2 id="t-cli-pes" style="margin:0">Com quem falamos</h2><div class="sub">${esc(c.nome)}</div>
+    ${c.contatos.length ? `<ul class="cli-lista-pes">${c.contatos.map(p => `<li><b>${esc(p.nome)}</b>${p.cargo ? ` · ${esc(p.cargo)}` : ""} ${btnCargo(p)}
+        <div class="sub">${p.quemFala ? `fala com ${esc(p.quemFala)}` : p.ponteManual ? "ponte marcada à mão" : ""}</div></li>`).join("")}</ul>`
+      : '<p class="sub">Ninguém da empresa troca e-mails com a equipe (nem foi marcado como ponte).</p>'}
+    ${outras.length ? `<h3 style="margin:6px 0 0;font-size:13px">Outras pessoas da empresa</h3><ul class="cli-lista-pes">${outras.map(p => `<li>${esc(p.nome)}${p.cargo ? ` · <span class="sub">${esc(p.cargo)}</span>` : ""} ${btnCargo(p)}</li>`).join("")}</ul>
+      <label>Marcar como ponte (conhecido, WhatsApp)<select data-ponte-sel><option value="">Escolher…</option>${outras.map(p => `<option value="${p.id}">${esc(p.nome)}${p.cargo ? " · " + esc(p.cargo.slice(0, 50)) : ""}</option>`).join("")}</select></label>` : ""}
+    <div class="acoes"><button type="button" class="btn sec" id="cli-pes-fechar">Fechar</button></div>
+  </div></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("cli-pes-fechar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
 }
 
 // Todas as atualizações do negócio do cliente (todas as verticais), com a opção de escrever uma nova
@@ -2240,6 +2289,13 @@ document.addEventListener("click", ev => {
   const ed = ev.target.closest("[data-editar-ativ]"); if (ed) editarAtividade(+ed.dataset.editarAtiv);
 
   const cn = ev.target.closest("[data-cli-notas]"); if (cn) notasCliente(+cn.dataset.cliNotas);
+  const cp = ev.target.closest("[data-cli-pessoas]"); if (cp) pessoasCliente(+cp.dataset.cliPessoas);
+  const so = ev.target.closest("[data-saude-off]");
+  if (so && confirm(`Desmarcar Saúde de ${so.dataset.saudeNome}? A empresa deixa de contar como cliente Saúde.`)) {
+    api.post(`/api/empresas/${so.dataset.saudeOff}/saude`, {cliente: false})
+      .then(() => { aviso("Saúde desmarcado: não é mais cliente Saúde"); OPS_RESP = null; render(); })
+      .catch(err => aviso(err.message));
+  }
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
   const mv = ev.target.closest("[data-mover], [data-desfazer]");
   if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;
@@ -2261,7 +2317,7 @@ document.addEventListener("change", async ev => {
   }
   if (ev.target.matches?.("[data-ponte-sel]")) {
     if (!ev.target.value) return;
-    try { await api.post(`/api/pessoas/${ev.target.value}/ponte`, {ponte: true}); aviso("Marcada como nossa ponte"); OPS_RESP = null; render(); }
+    try { await api.post(`/api/pessoas/${ev.target.value}/ponte`, {ponte: true}); aviso("Marcada como nossa ponte"); document.getElementById("modal").innerHTML = ""; OPS_RESP = null; render(); }
     catch (err) { aviso(err.message); ev.target.value = ""; }
     return;
   }

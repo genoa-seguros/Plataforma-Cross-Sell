@@ -100,6 +100,7 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 @media (min-width:1240px){.tabela.fixa{overflow:visible}.tabela.fixa thead th{position:sticky;top:var(--topo,56px);z-index:3;box-shadow:0 1px 0 var(--line)}}
 .pesq{display:flex;align-items:center;gap:6px;margin:5px 0 2px;font-size:11px;color:var(--mute);cursor:help;max-width:150px}
 .pesq-barra{flex:1;height:4px;border-radius:99px;background:var(--line);overflow:hidden}.pesq-barra i{display:block;height:100%;border-radius:99px}
+.estac{margin-top:6px;font-size:12px;color:var(--mute);background:var(--soft);border-radius:6px;padding:6px 8px;display:grid;gap:4px}.estac b{color:var(--ink)}
 tbody tr:hover{background:color-mix(in srgb,var(--soft) 55%,transparent)}
 .score{display:grid;gap:4px;min-width:96px}
 .score b{font:600 16px/1 var(--f-data)}
@@ -399,23 +400,26 @@ const contatosPrevia = id => ([...(D.oportunidades || []), ...(D.linhas || [])].
 function opsPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), tudo = D.oportunidades || [], verticais = D.verticaisOportunidades || ["saude"];
   if (p.has("empresa")) return {itens: tudo.filter(o => o.empresa.id == p.get("empresa"))};
-  const visiveis = tudo.filter(o => verticais.includes(o.vertical) && !o.soGanho), todas = visiveis.filter(o => o.analisada);
+  const base = tudo.filter(o => verticais.includes(o.vertical) && !o.soGanho), paradas = base.filter(o => o.estacionada);
+  const visiveis = base.filter(o => !o.estacionada), todas = visiveis.filter(o => o.analisada);
   const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.some(f => FINAIS.includes(f))).map(o => o.empresa.id)).size]));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel"), oferta = p.get("oferta") || "cross";
   const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || relOk(o, rel)));
-  const ganhos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.faltando.some(f => FINAIS.includes(f))
+  const ganhos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.estacionada && !o.faltando.some(f => FINAIS.includes(f))
     && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente)
     && (!rel || relOk(o, rel)))
     .sort((a, b) => b.score - a.score || (b.influencia ?? 0) - (a.influencia ?? 0));
-  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length, ganhos: ganhos.length};
-  const ls = oferta === "ganhos" ? ganhos : filtradas.filter(o => (o.tipo || "cross") === oferta);
+  const est = paradas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente))
+    .sort((a, b) => b.estacionada.em.localeCompare(a.estacionada.em));
+  const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length, ganhos: ganhos.length, estacionadas: est.length};
+  const ls = oferta === "ganhos" ? ganhos : oferta === "estacionadas" ? est : filtradas.filter(o => (o.tipo || "cross") === oferta);
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas,
     pendencias: todas.filter(o => (o.pendencias || []).length).length};
 }
 function filaPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
-  const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada && !o.soGanho);
+  const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada && !o.soGanho && !o.estacionada);
   const final = o => o.faltando.some(f => FINAIS.includes(f)), finais = p.get("finais") === "true";
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical");
   const ls = fila.filter(o => final(o) === finais && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)))
@@ -560,6 +564,13 @@ const previa = {
       if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {setor: b.setor, setorFonte: b.setor ? "manual" : null});
       (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.setor = b.setor);
       return {setor: b.setor, setorFonte: b.setor ? "manual" : null};
+    }
+    if (path === "/api/oportunidades/estacionar" || path === "/api/oportunidades/trazer") {
+      const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
+      const rever = b.meses ? iso(new Date(Date.now() + b.meses * 30.44 * 864e5)) : null;
+      if (o) { o.voltou = null; o.estacionada = path.endsWith("trazer") ? null : {por: D.eu.nome, em: new Date().toISOString().slice(0, 16), motivo: b.motivo,
+        motivoTexto: MOTIVOS_EST[b.motivo], texto: b.texto || null, reverEm: rever}; }
+      return {ok: true, reverEm: rever};
     }
     if (path === "/api/oportunidades/manual") {
       const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
@@ -800,6 +811,35 @@ async function editarAtividade(id) {
 }
 
 /* ---------- Oportunidades ---------- */
+// Estacionar: tira a oportunidade da tela por ora, com o motivo e quando rever (volta sozinha na data,
+// ou antes com notícia de M&A/aporte ou negócio ganho)
+const MOTIVOS_EST = {sem_perspectiva: "Já trabalhamos, sem perspectiva agora", concorrente: "Corretor ou relação forte com concorrente",
+  perfil: "Score/perfil não compensa", outro: "Outro"};
+function estacionar(empresaId, vertical, nome) {
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-est" aria-labelledby="t-est">
+    <h2 id="t-est" style="margin:0">Estacionar oportunidade</h2><div class="sub">${esc(nome)} · ${esc(V[vertical] || vertical)}</div>
+    <label>Motivo<select id="est-motivo">${Object.entries(MOTIVOS_EST).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join("")}</select></label>
+    <label>Detalhe <span class="sub">(obrigatório em "Outro")</span><textarea id="est-texto" rows="2" maxlength="500" placeholder="ex.: renovou com a corretora do sócio em agosto"></textarea></label>
+    <label>Rever em<select id="est-meses"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option><option value="0">Sem data (só volta à mão)</option></select></label>
+    <p class="nota" style="margin:0">Sai da tela e vai para o filtro "Estacionadas". Volta sozinha na data ou antes, com notícia de M&A ou aporte ou com negócio ganho. O motivo fica no histórico do cliente e no Feito na semana.</p>
+    <p class="erro" id="est-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="est-cancelar">Cancelar</button><button class="btn" id="est-ok">Estacionar</button></div>
+  </form></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("est-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("f-est").onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById("est-ok"); b.disabled = true;
+    try {
+      const meses = +document.getElementById("est-meses").value;
+      const r = await api.post("/api/oportunidades/estacionar", {empresa_id: +empresaId, vertical, motivo: document.getElementById("est-motivo").value,
+        texto: document.getElementById("est-texto").value || null, meses: meses || null});
+      fechar(); aviso(r.reverEm ? `Estacionada até ${dt(r.reverEm)}` : "Estacionada (sem data para voltar)"); OPS_RESP = null; render();
+    } catch (err) { b.disabled = false; const el = document.getElementById("est-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
+
 /* Setor informado à mão: vale sobre o do LinkedIn. Quanto mais específico, melhor ("fintech", não "tecnologia"). */
 function editarSetor(id, atual, nome) {
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-setor" aria-labelledby="t-setor">
@@ -950,6 +990,9 @@ function opHTML(o) {
         <button type="button" class="lapis" data-desfazer="${o.empresa.id}|${o.vertical}">desfazer</button>${o.faltando.length ? `<br>ainda falta: ${esc(o.faltando.join(", "))}` : ""}</div>` : ""}
       <div style="margin-top:4px">${(o.notas || []).length ? `<span class="sub" title="${esc(o.notas[0].texto)}">atualização: ${esc(o.notas[0].texto.length > 60 ? o.notas[0].texto.slice(0, 60) + "…" : o.notas[0].texto)}</span> ` : ""}
         <button type="button" class="lapis" data-nota="${o.empresa.id}|${o.vertical}" title="Atualização do negócio: o que aconteceu (a IA lê e ajusta o Score)">${(o.notas || []).length ? `atualizações (${o.notas.length})` : "+ atualização"}</button></div>
+      ${o.estacionada ? `<div class="estac"><b>Estacionada</b> por ${esc(o.estacionada.por || "?")} em ${dia(o.estacionada.em)}<br>${esc(o.estacionada.motivoTexto)}${o.estacionada.texto ? `: ${esc(o.estacionada.texto)}` : ""}<br>${o.estacionada.reverEm ? `volta em ${dt(o.estacionada.reverEm)}` : "sem data para voltar"}
+          <div><button type="button" class="btn sec" data-trazer="${o.empresa.id}|${o.vertical}">Trazer de volta</button></div></div>`
+        : `<div style="margin-top:4px">${o.voltou ? `<span class="chip" style="--c:var(--accent)" title="${esc(o.voltou)}">voltou dos estacionados</span> ` : ""}<button type="button" class="lapis" data-estacionar="${o.empresa.id}|${o.vertical}" data-estacionar-nome="${esc(o.empresa.nome)}" title="Tirar da tela por ora (já trabalhada ou não vamos trabalhar), com o motivo">estacionar</button></div>`}
       ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
         : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
     <td>${listaMotivos(o.motivos)}</td>
@@ -980,8 +1023,8 @@ function mostrarOps() {
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
   const of = r.ofertas || {}, sel = document.getElementById("f-oferta-op");
-  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option><option value="ganhos" ${filtroOp.oferta === "ganhos" ? "selected" : ""}>Ganhos recentes · 14 dias (${of.ganhos ?? 0})</option>`;
-  document.getElementById("contagem-op").innerHTML = (filtroOp.oferta === "ganhos" ? `${r.total} com negócio ganho nos últimos 14 dias` : `${r.total} de ${r.totalGeral} analisadas`)
+  if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option><option value="ganhos" ${filtroOp.oferta === "ganhos" ? "selected" : ""}>Ganhos recentes · 14 dias (${of.ganhos ?? 0})</option><option value="estacionadas" ${filtroOp.oferta === "estacionadas" ? "selected" : ""}>Estacionadas (${of.estacionadas ?? 0})</option>`;
+  document.getElementById("contagem-op").innerHTML = (filtroOp.oferta === "ganhos" ? `${r.total} com negócio ganho nos últimos 14 dias` : filtroOp.oferta === "estacionadas" ? `${r.total} ${r.total === 1 ? "estacionada" : "estacionadas"} (fora da tela por ora)` : `${r.total} de ${r.totalGeral} analisadas`)
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
   const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila}) · Completar dados (${r.pendencias ?? 0})`;
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
@@ -1033,7 +1076,7 @@ function desenharOportunidades() {
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
-      <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF. Ganhos recentes: quem fechou negócio no Pipedrive nos últimos 14 dias (mesmo sem card aberto), analisada ou não."></select>
+      <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF. Ganhos recentes: quem fechou negócio no Pipedrive nos últimos 14 dias (mesmo sem card aberto), analisada ou não. Estacionadas: tiradas da tela por ora, com o motivo e quando voltam."></select>
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option><option value="baixa" ${filtroOp.rel === "baixa" ? "selected" : ""} title="Boas oportunidades onde falta relação: Score ≥ 70 e influência abaixo de 40">Score alto, influência baixa</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
@@ -1879,13 +1922,14 @@ const visoesTodos = () => `<div class="filtros" role="group" aria-label="Visão"
   <button class="chip off" data-visao="fazer" aria-pressed="${TODOS_VISAO === "fazer"}">A fazer</button>
   <button class="chip off" data-visao="log" aria-pressed="${TODOS_VISAO === "log"}">Feito na semana</button></div>`;
 const LOG_ICONE = {criou: "＋", concluiu: "✓", atualizacao: "✎", incluiu: "⇥", cidade: "⌖", funcionarios: "👥", setor: "🏷",
-  cargo: "🪪", pessoa: "👤", tier: "★", ponte: "🤝", saude: "♥", reagendou: "↻", editou: "✎", excluiu: "✕"};
+  cargo: "🪪", pessoa: "👤", tier: "★", estacionou: "⏸", trouxe: "▶", ponte: "🤝", saude: "♥", reagendou: "↻", editou: "✎", excluiu: "✕"};
 // Filtro por tipo de log (vários ao mesmo tempo). Começa no que importa na reunião: concluídas e atualizações
 const LOG_GRUPOS = [["concluiu", "Atividades concluídas", ["concluiu"]], ["atualizacao", "Atualizações do negócio", ["atualizacao"]],
   ["criou", "Próximos passos criados", ["criou"]], ["ajustes", "Atividades reagendadas, editadas ou excluídas", ["reagendou", "editou", "excluiu"]],
+  ["estacionou", "Oportunidades estacionadas", ["estacionou", "trouxe"]],
   ["dados", "Dados completados à mão", ["incluiu", "cidade", "funcionarios", "setor", "cargo", "pessoa", "ponte", "saude", "tier"]]];
 let LOG_FILTRO = (() => { try { const v = JSON.parse(localStorage.getItem("logFiltro")); if (Array.isArray(v)) return new Set(v); } catch (e) {} return new Set(["concluiu", "atualizacao"]); })();
-const grupoLog = tipo => (LOG_GRUPOS.find(g => g[2].includes(tipo)) || LOG_GRUPOS[4])[0];
+const grupoLog = tipo => (LOG_GRUPOS.find(g => g[2].includes(tipo)) || LOG_GRUPOS[LOG_GRUPOS.length - 1])[0];
 const DIA_SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 async function telaLog() {
@@ -2364,6 +2408,11 @@ document.addEventListener("click", ev => {
       .catch(err => aviso(err.message));
   }
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
+  const es = ev.target.closest("[data-estacionar]"); if (es) { const [id, v] = es.dataset.estacionar.split("|"); estacionar(id, v, es.dataset.estacionarNome); }
+  const tz = ev.target.closest("[data-trazer]");
+  if (tz) { const [id, v] = tz.dataset.trazer.split("|");
+    api.post("/api/oportunidades/trazer", {empresa_id: +id, vertical: v})
+      .then(() => { aviso("De volta em Oportunidades"); OPS_RESP = null; render(); }).catch(err => aviso(err.message)); }
   const mv = ev.target.closest("[data-mover], [data-desfazer]");
   if (mv) { const [id, v] = (mv.dataset.mover || mv.dataset.desfazer).split("|"), incluir = !!mv.dataset.mover;
     api.post("/api/oportunidades/manual", {empresa_id: +id, vertical: v, incluir})

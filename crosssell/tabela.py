@@ -19,10 +19,10 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS, PESSOAS_LF, PESSOAS_RE, mudou_de_empresa
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
-from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeManual, Pessoa,
-                               Registro, Usuario)
+from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeEstacionada,
+                               OportunidadeManual, Pessoa, Registro, Usuario)
 from crosssell.normalize import AREA_LABEL, classificar_area, sem_acento
-from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei,
+from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei, noticias_ma,
                                  melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
                                  produtos_lf, produtos_re, setor_valido)
 
@@ -32,6 +32,10 @@ VERTICAIS_OPORTUNIDADES = ("saude", "linhas_financeiras", "ramos_elementares")
 FINAIS = ("fora da praça", "MEI", "sem produto de RE")
 # Filtro "Ganhos recentes" em Oportunidades: quem fechou negócio no Pipedrive nestes dias (abordar com a Innoa fresca)
 GANHOS_DIAS = 14
+# "Estacionar": tira a oportunidade da tela por ora, com o motivo (vira a lista apartada "Estacionadas")
+MOTIVOS_ESTACIONAR = {"sem_perspectiva": "Já trabalhamos, sem perspectiva agora",
+                      "concorrente": "Corretor ou relação forte com concorrente",
+                      "perfil": "Score/perfil não compensa", "outro": "Outro"}
 # Filtro "Score alto, influência baixa": boas oportunidades onde falta relação com quem decide
 SCORE_ALTO, INFLUENCIA_BAIXA = 70, 40
 
@@ -424,6 +428,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.empresa_id.in_(ids))
                         .order_by(NotaOportunidade.criada_em.desc(), NotaOportunidade.id.desc())):
         notas_de[(n.empresa_id, n.vertical)].append(n)
+    estacionadas = {(x.empresa_id, x.vertical): x for x in db.scalars(
+        select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id.in_(ids)))}
     proxima_de: dict[int, Atividade] = {}
     for a in db.scalars(select(Atividade).where(Atividade.empresa_id.in_(ids), Atividade.negocio_id.is_(None),
                                                 Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
@@ -461,6 +467,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
             if nota is not None and nota.ajuste:
                 pot["score"] = round(max(0.0, min(100.0, pot["score"] + nota.ajuste)), 1)
             manual = manuais.get((e.id, v))
+            parada, voltou = estacionada(e, estacionadas.get((e.id, v)), hoje, nomes_id)
             prox = proxima_de.get(e.id)
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
@@ -496,6 +503,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "analisada": not falta or manual is not None,
                 "manual": {"por": nomes_id.get(manual.usuario_id), "em": manual.criada_em.isoformat(timespec="minutes")}
                 if manual else None,
+                # Estacionada (fora da tela por ora) ou que voltou da lista de estacionadas, e por quê
+                "estacionada": parada, "voltou": voltou,
                 "praca": praca(e) if v == "saude" else None,
                 # LF e RE: "cross" (a empresa ainda não tem nem negocia a vertical) ou "mais" (mais produtos para quem
                 # já tem); produtos sugeridos e etiquetas ("negociando D&O agora", "Cyber ofertado em 03/2026, perdido")
@@ -508,6 +517,24 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         item["pendencias"] = pendencias(item)
         item["pesquisa"] = pesquisa(item, por_id[item["empresa"]["id"]], settings.linkedin_validade_dias)
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
+
+
+def estacionada(e: Empresa, x: OportunidadeEstacionada | None, hoje: date,
+                nomes_id: dict[int, str]) -> tuple[dict | None, str | None]:
+    """(estacionada, voltou). Volta para a tela quando chega a data de rever ou, antes disso, com notícia de M&A ou
+    aporte ou negócio ganho depois de estacionar (o registro fica e a linha ganha a etiqueta do motivo da volta)."""
+    if x is None:
+        return None, None
+    desde = x.criada_em
+    if x.rever_em and x.rever_em <= hoje:
+        return None, f"chegou a data de rever ({x.rever_em:%d/%m/%Y})"
+    if any((n.publicada_em or n.coletada_em) and (n.publicada_em or n.coletada_em) > desde for n in noticias_ma(e)):
+        return None, "notícia de M&A ou aporte depois de estacionar"
+    if any(n.status == "ganho" and n.ganho_em and n.ganho_em > desde.date() for n in e.negocios):
+        return None, "negócio ganho depois de estacionar"
+    return {"por": nomes_id.get(x.usuario_id), "em": x.criada_em.isoformat(timespec="minutes"), "motivo": x.motivo,
+            "motivoTexto": MOTIVOS_ESTACIONAR.get(x.motivo, x.motivo), "texto": x.texto,
+            "reverEm": x.rever_em.isoformat() if x.rever_em else None}, None
 
 
 def ganhos_por_produto(ganhos: list[Negocio], nomes: dict[str, str]) -> list[dict]:
@@ -629,6 +656,18 @@ def todos(db: Session, ref: date | None = None) -> dict:
 TIERS_SAUDE = ("A+", "A", "B", "C")
 
 
+def _nota_cliente(n, nomes_id: dict[int, str]) -> dict:
+    """Atualização do negócio ou oportunidade estacionada, no histórico do cliente."""
+    base = {"vertical": n.vertical, "verticalNome": VERTICAL_LABEL.get(n.vertical, n.vertical),
+            "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes")}
+    if isinstance(n, OportunidadeEstacionada):
+        rever = f" · rever em {n.rever_em:%d/%m/%Y}" if n.rever_em else ""
+        return {**base, "id": f"e{n.id}", "estacionada": True, "ajuste": None,
+                "texto": f"Estacionada: {MOTIVOS_ESTACIONAR.get(n.motivo, n.motivo)}" + (f" ({n.texto})" if n.texto else ""),
+                "motivo": f"fora da tela Oportunidades{rever}"}
+    return {**base, "id": n.id, "texto": n.texto, "ajuste": n.ajuste, "motivo": n.motivo}
+
+
 def clientes(db: Session, settings: Settings) -> list[dict]:
     """Aba Clientes: empresas com seguro vigente (negócio ganho com fim de vigência depois de hoje; Saúde, que não tem
     fim, vale até ser desmarcado), para o time dar o tier de Saúde à mão. Produtos sem repetir, funcionários de onde
@@ -649,8 +688,11 @@ def clientes(db: Session, settings: Settings) -> list[dict]:
     for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.empresa_id.in_(alvo))
                         .order_by(NotaOportunidade.criada_em.desc(), NotaOportunidade.id.desc())):
         notas_de[n.empresa_id].append(n)
+    for x in db.scalars(select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id.in_(alvo))):
+        notas_de[x.empresa_id].append(x)
     saida = []
     for e in empresas:
+        notas_de[e.id].sort(key=lambda n: n.criada_em, reverse=True)
         produtos: dict[str, dict] = {}
         for v in seguros_vigentes(e):
             produto = (v.produto or v.titulo or VERTICAL_LABEL.get(v.vertical, "")).strip()
@@ -686,9 +728,7 @@ def clientes(db: Session, settings: Settings) -> list[dict]:
                           "quemFala": nomes.get(pontes.get(p.id), pontes.get(p.id)), "ponteManual": p.ponte_manual}
                          for p in contatos],
             "pessoas": [{"id": p.id, "nome": p.nome, "cargo": p.cargo} for p in sorted(e.pessoas, key=lambda p: p.nome)],
-            "notas": [{"id": n.id, "vertical": n.vertical, "verticalNome": VERTICAL_LABEL.get(n.vertical, n.vertical),
-                       "texto": n.texto, "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes"),
-                       "ajuste": n.ajuste, "motivo": n.motivo} for n in notas_de[e.id]],
+            "notas": [_nota_cliente(n, nomes_id) for n in notas_de[e.id]],
         })
     return sorted(saida, key=lambda x: sem_acento(x["nome"]).lower())
 

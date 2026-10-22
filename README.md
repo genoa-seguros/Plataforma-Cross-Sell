@@ -93,6 +93,13 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   não mexe no Score) e a **Atualização do negócio** ("+ atualização", o que aconteceu; fica na oportunidade da
   empresa na vertical escolhida e a IA lê para ajustar o Score); o que for mudado direto no Pipedrive (feita/pendente, data, quem executa, assunto e exclusão) volta
   para a plataforma na rotina de hora em hora.
+- **Estacionar** (Oportunidades): tira a oportunidade (empresa + vertical) da tela por ora, para a tela ficar só com o
+  que é execução. Motivo obrigatório (já trabalhamos, sem perspectiva agora; corretor ou relação forte com concorrente;
+  Score/perfil não compensa; outro, com texto) e quando rever (3, 6 ou 12 meses, sugestão 6, ou sem data). Vai para o
+  filtro "Estacionadas", com quem estacionou, o motivo e "Trazer de volta". Volta sozinha na data ou antes, com notícia
+  de M&A ou aporte ou negócio ganho depois de estacionar (etiqueta "voltou dos estacionados"). Estacionadas não entram
+  na fila de análise, em Completar dados nem na cota do LinkedIn; o motivo entra no histórico do cliente (aba
+  Clientes) e no Feito na semana (`OportunidadeEstacionada`, `tabela.estacionada`).
 - **Clientes**: todas as empresas com seguro vigente (negócio ganho no Pipedrive com fim de vigência depois de hoje;
   Saúde, sem fim, vale até ser desmarcado), para o time dar o **tier de Saúde** à mão (A+, A, B, C; `Empresa.tier_saude`,
   com quem e quando). Colunas: empresa, produtos contratados (um chip por produto, mesmo com vários negócios),

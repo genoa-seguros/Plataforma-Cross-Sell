@@ -2,7 +2,7 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -23,7 +23,8 @@ from crosssell.connectors import linkedin as lk
 from crosssell.connectors import pipedrive as pd
 from crosssell.connectors.noticias import PORTAIS, portal
 from crosssell.db import SessionLocal, init_db
-from crosssell.models import (Atividade, Configuracao, Empresa, Melhoria, Negocio, NotaOportunidade, OportunidadeManual,
+from crosssell.models import (Atividade, Configuracao, Empresa, Melhoria, Negocio, NotaOportunidade,
+                               OportunidadeEstacionada, OportunidadeManual,
                                Pessoa, Registro, SyncLog, Usuario)
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
@@ -388,7 +389,8 @@ def api_fila(pagina: int = 1, vertical: str = "", q: str = "", finais: bool = Fa
     """Oportunidades ainda não analisadas, com o que falta e as pessoas da empresa (para escolher quem decide e a
     ponte). finais=true: as que nunca entram sozinhas (fora da praça, MEI, sem produto de RE)."""
     todas = OPORTUNIDADES.obter(db)[0]
-    fila = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["analisada"]]
+    fila = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["analisada"]
+            and not o["estacionada"]]
     final = lambda o: bool(set(o["faltando"]) & set(tabela.FINAIS))  # noqa: E731
     busca = q.strip().lower()
     filtradas = [o for o in fila if final(o) == finais and (not vertical or o["vertical"] == vertical)
@@ -417,7 +419,8 @@ def api_pendencias(pagina: int = 1, vertical: str = "", dono: str = "", q: str =
     """Aba "Completar dados": oportunidades já na tela com algo a completar à mão (cargo, quem decide da área,
     cidade, funcionários, setor), com o resumo por responsável (dono dos cards abertos da empresa)."""
     todas = OPORTUNIDADES.obter(db)[0]
-    com = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and o["analisada"] and o["pendencias"]]
+    com = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and o["analisada"] and o["pendencias"]
+           and not o["estacionada"]]
     nomes = {u.email: u.nome for u in db.scalars(select(Usuario))}
     resumo: dict[str, int] = {}
     for o in com:
@@ -454,6 +457,59 @@ def api_oportunidade_manual(dados: ManualIn, db: Session = Depends(get_db), u: U
         db.add(OportunidadeManual(empresa_id=dados.empresa_id, vertical=dados.vertical, usuario_id=u.id))
     elif not dados.incluir and m is not None:
         db.delete(m)
+    db.commit()
+    return {"ok": True}
+
+
+class EstacionarIn(BaseModel):
+    empresa_id: int
+    vertical: str
+    motivo: str = "sem_perspectiva"
+    texto: str | None = None
+    meses: int | None = 6  # rever em N meses; None ou 0: só volta à mão (ou por M&A/negócio ganho)
+
+
+@app.post("/api/oportunidades/estacionar")
+def api_estacionar(dados: EstacionarIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Tira a oportunidade da tela por ora (lista "Estacionadas"), com o motivo e quando rever."""
+    e = db.get(Empresa, dados.empresa_id)
+    if e is None or dados.vertical not in tabela.VERTICAIS_OPORTUNIDADES:
+        raise HTTPException(404, "Oportunidade não encontrada.")
+    if dados.motivo not in tabela.MOTIVOS_ESTACIONAR:
+        raise HTTPException(400, "Escolha o motivo.")
+    texto = (dados.texto or "").strip()[:500] or None
+    if dados.motivo == "outro" and not texto:
+        raise HTTPException(400, "Conte o motivo.")
+    meses = dados.meses if dados.meses and dados.meses > 0 else None
+    rever = (date.today() + timedelta(days=round(30.44 * meses))) if meses else None
+    x = db.scalar(select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id == e.id,
+                                                        OportunidadeEstacionada.vertical == dados.vertical))
+    if x is None:
+        x = OportunidadeEstacionada(empresa_id=e.id, vertical=dados.vertical, usuario_id=u.id, motivo=dados.motivo)
+        db.add(x)
+    x.usuario_id, x.motivo, x.texto, x.rever_em, x.criada_em = u.id, dados.motivo, texto, rever, datetime.utcnow()
+    _registrar(db, u, "estacionou", f"estacionou {VERTICAL_LABEL[dados.vertical]}: "
+               f"{tabela.MOTIVOS_ESTACIONAR[dados.motivo]}" + (f" ({texto})" if texto else "")
+               + (f" · rever em {rever:%d/%m/%Y}" if rever else ""), e.id)
+    db.commit()
+    return {"ok": True, "reverEm": rever.isoformat() if rever else None}
+
+
+class TrazerIn(BaseModel):
+    empresa_id: int
+    vertical: str
+
+
+@app.post("/api/oportunidades/trazer")
+def api_trazer(dados: TrazerIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Traz a oportunidade estacionada de volta para a tela (e tira a etiqueta "voltou")."""
+    x = db.scalar(select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id == dados.empresa_id,
+                                                        OportunidadeEstacionada.vertical == dados.vertical))
+    if x is None:
+        raise HTTPException(404, "Essa oportunidade não está estacionada.")
+    db.delete(x)
+    _registrar(db, u, "trouxe", f"trouxe de volta {VERTICAL_LABEL.get(dados.vertical, dados.vertical)} para Oportunidades",
+               dados.empresa_id)
     db.commit()
     return {"ok": True}
 
@@ -966,6 +1022,9 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
         return {"itens": [o for o in [*todas, *(o for o in recentes if o["soGanho"])] if o["empresa"]["id"] == empresa]}
     # Na tela, só as verticais com fluxo definido e as empresas já analisadas; o resto está na fila de análise
     visiveis = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES]
+    # Estacionadas (fora da tela por ora) só aparecem no filtro "Estacionadas"
+    paradas = [o for o in visiveis if o["estacionada"]]
+    visiveis = [o for o in visiveis if not o["estacionada"]]
     itens = [o for o in visiveis if o["analisada"]]
     # Fora da praça e MEI não estão na fila: é definitivo, não vão para Oportunidades
     fila = {v: len({o["empresa"]["id"] for o in visiveis if o["vertical"] == v and not o["analisada"]
@@ -979,14 +1038,20 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  and (not rel or _relacao_ok(o, rel))]
     ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
     # Ganhos recentes: quem fechou negócio nos últimos 14 dias, analisada ou não (mostra o que falta), cross e mais
-    ganhos = [o for o in recentes if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES
+    ganhos = [o for o in recentes if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["estacionada"]
               and not set(o["faltando"]) & set(tabela.FINAIS)
               and (not vertical or o["vertical"] == vertical)
               and (not busca or busca in (o["empresa"]["nome"] or "").lower())
               and (not tipo or (tipo == "cliente") == o["cliente"])
               and (not rel or _relacao_ok(o, rel))]
     ofertas["ganhos"] = len(ganhos)
-    if oferta == "ganhos":  # pelo Score, como a lista padrão (a influência desempata)
+    paradas = [o for o in paradas if (not vertical or o["vertical"] == vertical)
+               and (not busca or busca in (o["empresa"]["nome"] or "").lower())
+               and (not tipo or (tipo == "cliente") == o["cliente"]) and (not rel or _relacao_ok(o, rel))]
+    ofertas["estacionadas"] = len(paradas)
+    if oferta == "estacionadas":  # as estacionadas mais recentes primeiro
+        filtradas = sorted(paradas, key=lambda o: o["estacionada"]["em"], reverse=True)
+    elif oferta == "ganhos":  # pelo Score, como a lista padrão (a influência desempata)
         filtradas = sorted(ganhos, key=lambda o: (o["score"], o["influencia"]), reverse=True)
     else:
         filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ("cross", "mais") else "cross")]

@@ -376,6 +376,25 @@ class OportunidadeManual(Base):
     usuario: Mapped[Usuario] = relationship()
 
 
+class OportunidadeEstacionada(Base):
+    """Oportunidade tirada da tela Oportunidades por ora ("Estacionar"): já trabalhada ou que não vamos trabalhar.
+    Volta sozinha em `rever_em` (ou antes, com notícia de M&A/aporte ou negócio ganho depois de estacionar)."""
+
+    __tablename__ = "oportunidades_estacionadas"
+    __table_args__ = (UniqueConstraint("empresa_id", "vertical"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    vertical: Mapped[str]
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    criada_em: Mapped[datetime] = mapped_column(default=_now)
+    motivo: Mapped[str]  # sem_perspectiva | concorrente | perfil | outro
+    texto: Mapped[str | None]
+    rever_em: Mapped[date | None] = mapped_column(Date)  # None: só volta à mão (ou por M&A/negócio ganho)
+
+    usuario: Mapped[Usuario] = relationship()
+
+
 class NotaOportunidade(Base):
     """O que aconteceu com a oportunidade, escrito pela equipe. A IA lê as notas da vertical e ajusta o Score
     (ajuste de -50 a +20, com o motivo); vale o ajuste da nota mais recente."""

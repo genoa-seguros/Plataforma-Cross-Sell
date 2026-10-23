@@ -161,6 +161,17 @@ table.clientes td{vertical-align:middle;white-space:nowrap;overflow:hidden;text-
 .tier-sel{font-weight:700;min-width:64px}
 .tier-ap{color:#fff;background:var(--good);border-color:var(--good)}.tier-a{color:var(--good);border-color:var(--good)}
 .tier-b{color:var(--accent);border-color:var(--accent)}.tier-c{color:var(--mute)}
+table.diario td{vertical-align:top;font-size:13px}table.diario .sobe{color:var(--good);font-weight:600;font-size:12px}table.diario .desce{color:var(--bad);font-weight:600;font-size:12px}
+table.diario details summary{cursor:pointer;color:var(--accent)}table.diario details div{margin-top:4px;white-space:nowrap}
+.trava{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}.trava .pesq-barra{grid-column:1/-1;max-width:none}
+.pre-lista{max-height:60vh;overflow:auto;display:grid;gap:10px}.pre-emp{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.pre-nome{font-weight:600;margin-bottom:4px}.pre-emp ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}.pre-emp .antes{color:var(--mute);text-decoration:line-through}
+.todos-barra{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
+.todos-resp{display:flex;gap:8px;align-items:center;font-size:13px}
+.periodos{display:flex;flex-wrap:wrap;gap:2px}
+.periodo{border:0;background:none;font:500 13px/1 var(--f-body);color:var(--ink);padding:7px 10px;border-radius:6px;cursor:pointer}
+.periodo:hover{background:var(--soft)}.periodo[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);font-weight:600}
+.periodo-datas{display:flex;gap:6px;align-items:center;font-size:13px}
 ol.log{list-style:none;margin:0;padding:0}
 ol.log li{display:grid;grid-template-columns:48px 22px 1fr;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);align-items:start;font-size:13px}
 ol.log li:last-child{border-bottom:0}
@@ -301,7 +312,7 @@ async function carregarBase() {
   const b = await api.get("/api/base"); USUARIOS = b.usuarios; V = b.verticais; PESOS = b.pesos || {};
 }
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
-const filtroOp = {vertical:"", q:"", tipo:"", rel:"", oferta:"cross", pagina:1};
+const filtroOp = {vertical:"", q:"", tipo:"", rel:"", oferta:"cross", ativ:"", pagina:1};
 const POR_PAGINA = 20;
 /* Recorte de uma lista no navegador, no mesmo formato que o servidor devolve ({itens, total, pagina, paginas}). */
 function pagLocal(lista, n) {
@@ -404,8 +415,9 @@ function opsPrevia(path) {
   const visiveis = base.filter(o => !o.estacionada), todas = visiveis.filter(o => o.analisada);
   const fila = Object.fromEntries(verticais.map(v => [v, new Set(visiveis.filter(o => o.vertical === v && !o.analisada && !o.faltando.some(f => FINAIS.includes(f))).map(o => o.empresa.id)).size]));
   const q = (p.get("q") || "").trim().toLowerCase(), v = p.get("vertical"), t = p.get("tipo"), rel = p.get("rel"), oferta = p.get("oferta") || "cross";
+  const at = p.get("ativ"), ativOk = o => !at || (at === "sem") === !o.proximaAtividade;
   const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
-    && (!t || (t === "cliente") === o.cliente) && (!rel || relOk(o, rel)));
+    && (!t || (t === "cliente") === o.cliente) && (!rel || relOk(o, rel)) && ativOk(o));
   const ganhos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.estacionada && !o.faltando.some(f => FINAIS.includes(f))
     && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente)
     && (!rel || relOk(o, rel)))
@@ -501,8 +513,10 @@ const previa = {
       const {itens, ...pag} = pagLocal(q.sugestoes, +m[2] || 1);
       return {...(m[1] ? {} : {...dup(1), suspeitas: q.suspeitas || []}), sugestoes: itens, sugestoesPagina: pag, semCnpj: q.semCnpj, aguardandoReceita: q.aguardandoReceita};
     }
-    m = path.match(/^\/api\/todos\?ref=(.+)$/); if (m) return todosLocal(m[1]);
+    if (path.startsWith("/api/todos?")) return todosLocal(path);
     if (path.startsWith("/api/todos/log")) return logLocal(path);
+    if (path.startsWith("/api/diario/preenchido")) return (D.preenchido || {})[new URLSearchParams(path.split("?")[1]).get("data")] || {total: 0, empresas: []};
+    if (path.startsWith("/api/diario")) return D.diario || {dias: [], travas: {}, verticais: V};
     if (path === "/api/clientes") return {itens: D.clientes || [], tiers: ["A+", "A", "B", "C"]};
     throw new Error("rota desconhecida");
   },
@@ -567,7 +581,7 @@ const previa = {
     }
     if (path === "/api/oportunidades/estacionar" || path === "/api/oportunidades/trazer") {
       const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
-      const rever = b.meses ? iso(new Date(Date.now() + b.meses * 30.44 * 864e5)) : null;
+      const rever = b.rever_em || (b.meses ? iso(new Date(Date.now() + b.meses * 30.44 * 864e5)) : null);
       if (o) { o.voltou = null; o.estacionada = path.endsWith("trazer") ? null : {por: D.eu.nome, em: new Date().toISOString().slice(0, 16), motivo: b.motivo,
         motivoTexto: MOTIVOS_EST[b.motivo], texto: b.texto || null, reverEm: rever}; }
       return {ok: true, reverEm: rever};
@@ -630,12 +644,25 @@ function semanaDe(ref) {
   const sex = new Date(seg); sex.setDate(seg.getDate() + 4);
   return [seg, sex];
 }
-function todosLocal(refIso) {
-  const ref = new Date(refIso + "T12:00:00"), [seg, sex] = semanaDe(ref), hoje = iso(new Date());
-  const ini = iso(seg), fim = iso(sex);
-  const itens = D.atividades.filter(a => (!a.concluida && a.vencimento <= fim) || (a.concluida && a.vencimento >= ini && a.vencimento <= fim))
+function todosLocal(path) {  // os mesmos filtros de /api/todos (período e quem executa)
+  const p = new URLSearchParams(path.split("?")[1] || ""), periodo = p.get("periodo") || "semana", hoje = iso(new Date());
+  const dia = n => iso(new Date(Date.now() + n * 864e5));
+  const resp = D.equipe.find(u => u.id == p.get("responsavel"));
+  let ini = null, fim = null, ok;
+  if (periodo === "fazer") ok = a => !a.concluida;
+  else if (periodo === "vencido") ok = a => !a.concluida && a.vencimento < hoje;
+  else if (periodo === "semana") { const [seg, sex] = semanaDe(new Date((p.get("ref") || hoje) + "T12:00:00")); ini = iso(seg); fim = iso(sex);
+    ok = a => (!a.concluida && a.vencimento <= fim) || (a.concluida && a.vencimento >= ini && a.vencimento <= fim); }
+  else {
+    if (periodo === "hoje") ini = fim = hoje;
+    else if (periodo === "amanha") ini = fim = dia(1);
+    else if (periodo === "proxima") { const [seg] = semanaDe(new Date()); seg.setDate(seg.getDate() + 7); ini = iso(seg); const d = new Date(seg); d.setDate(d.getDate() + 6); fim = iso(d); }
+    else { ini = p.get("de") || hoje; fim = p.get("ate") || ini; }
+    ok = a => a.vencimento >= ini && a.vencimento <= fim;
+  }
+  const itens = D.atividades.filter(a => ok(a) && (!resp || a.responsavel === resp.email))
     .map(a => ({...a, atrasada: !a.concluida && a.vencimento < hoje})).sort((a, b) => a.vencimento.localeCompare(b.vencimento));
-  return {inicio: ini, fim, itens};
+  return {periodo, inicio: ini, fim, itens};
 }
 
 // Prévia do log da semana: monta a linha do tempo com as atividades de exemplo da pessoa
@@ -667,13 +694,14 @@ const ICONE_ABA = {
   negocios: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
   clientes: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.6a3.5 3.5 0 0 1 0 6.8"/>',
   todos: '<rect x="4" y="4" width="16" height="17" rx="2"/><path d="M9 3v3M15 3v3M8 12l2.5 2.5L16 9"/>',
+  diario: '<path d="M4 19V5M4 19h16"/><path d="M7 15l4-4 3 3 5-6"/>',
   melhorias: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
   rotina: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/><path d="M12 8v4l3 2"/>',
   qualidade: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
   equipe: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/>',
 };
 function abas(ativa) {
-  const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["clientes","Clientes"],["todos","To-dos da semana"],["melhorias","Melhorias"],["rotina","Rotina"]];
+  const itens = [["oportunidades","Oportunidades"],["negocios","Negócios em aberto"],["clientes","Clientes"],["todos","To-dos da semana"],["diario","Diário da análise"],["melhorias","Melhorias"],["rotina","Rotina"]];
   if (["master", "head"].includes(EU?.papel)) itens.push(["qualidade","Qualidade"]);
   if (EU?.papel === "master") itens.push(["equipe","Equipe"]);
   document.getElementById("abas").innerHTML = itens.map(([k, t]) => `<a href="#${k}" data-nome="${t}" aria-label="${t}" ${ativa === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true">${ICONE_ABA[k] || ""}</svg></a>`).join("");
@@ -757,7 +785,8 @@ function modalAtividade(ctx) {
   const pessoaPadrao = l.contatos.find(c => c.id === ctx.pessoaId) || (ctx.edicao ? null : l.contatos[0]);
   const tipos = {...TIPOS, ...(ctx.tipo && !TIPOS[ctx.tipo] ? {[ctx.tipo]: ctx.tipo} : {})};  // tipo criado no Pipedrive
   document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-ativ" aria-labelledby="t-ativ">
-    <h2 id="t-ativ" style="margin:0">${ctx.edicao ? "Editar atividade" : "Nova atividade no Pipedrive"}</h2>
+    <h2 id="t-ativ" style="margin:0">${ctx.edicao ? "Editar atividade" : ctx.proximo ? "Atividade concluída: qual é o próximo passo?" : "Nova atividade no Pipedrive"}</h2>
+    ${ctx.proximo ? `<p class="nota" style="margin:0">Para a oportunidade não ficar sem ninguém trabalhando, a próxima atividade já vem preenchida. Ajuste e crie, ou feche se não houver próximo passo.</p>` : ""}
     <div class="sub">${esc(ctx.titulo)}</div>
     <label>Contato (a atividade fica dentro da pessoa)<select id="a-pessoa">${ctx.semPessoa ? `<option value="">Só na organização</option>` : ""}${l.contatos.map(c => `<option value="${c.id}" ${c.id === pessoaPadrao?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
     <label>Oportunidade <span class="sub">para qual vertical a atividade é feita</span><select id="a-vert"><option value="">—</option>${(D?.verticaisOportunidades || OPS_RESP?.verticais || ["saude", "linhas_financeiras", "ramos_elementares"]).map(v => `<option value="${v}" ${v === ctx.vertical ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
@@ -769,7 +798,7 @@ function modalAtividade(ctx) {
     <label>Quem executa<select id="a-resp">${USUARIOS.map(u => `<option value="${u.id}" ${u.id === dono?.id ? "selected" : ""} ${u.pipedrive || PREVIA ? "" : "disabled"}>${esc(u.nome)}${u.pipedrive || PREVIA ? "" : " (sem usuário no Pipedrive)"}</option>`).join("")}</select></label>
     <label>Observação${ctx.edicao ? "" : " (opcional)"} <span class="sub">lembrete da atividade; vai para a Anotação no Pipedrive e não mexe no Score</span><textarea id="a-nota" rows="${ctx.edicao ? 7 : 3}" placeholder="ex.: IDEAL: agenda com a Patrícia e o ponto focal do D&O">${esc(ctx.nota || "")}</textarea></label>
     <p class="erro" id="a-erro" hidden></p>
-    <div class="acoes">${ctx.edicao ? `<button type="button" class="btn perigo" id="a-excluir" title="Exclui a atividade aqui e no Pipedrive">Excluir</button>` : ""}<button type="button" class="btn sec" id="a-cancelar">Cancelar</button><button class="btn" id="a-salvar">${ctx.edicao ? "Salvar no Pipedrive" : "Criar atividade"}</button></div>
+    <div class="acoes">${ctx.edicao ? `<button type="button" class="btn perigo" id="a-excluir" title="Exclui a atividade aqui e no Pipedrive">Excluir</button>` : ""}<button type="button" class="btn sec" id="a-cancelar">${ctx.proximo ? "Sem próximo passo" : "Cancelar"}</button><button class="btn" id="a-salvar">${ctx.edicao ? "Salvar no Pipedrive" : "Criar atividade"}</button></div>
   </form></div>`;
   const fechar = () => document.getElementById("modal").innerHTML = "";
   document.getElementById("a-cancelar").onclick = fechar;
@@ -803,6 +832,19 @@ function modalAtividade(ctx) {
   };
 }
 
+// Ao concluir uma atividade, já abre a próxima (mesma empresa, pessoa, oportunidade e quem executa, daqui a 7 dias),
+// para a oportunidade não ficar sem ninguém trabalhando. Dá para mudar tudo antes de criar, ou fechar sem criar.
+async function proximoPasso(id) {
+  let a; try { a = await api.get(`/api/atividades/${id}`); } catch (err) { return; }
+  const corpo = a.negocioId ? {negocio_id: a.negocioId} : a.empresaId ? {empresa_id: a.empresaId} : null;
+  if (!corpo) return;
+  const vence = new Date(Date.now() + 7 * 864e5);
+  if (vence.getDay() === 6) vence.setDate(vence.getDate() + 2); else if (vence.getDay() === 0) vence.setDate(vence.getDate() + 1);
+  modalAtividade({titulo: [a.empresa, a.negocio].filter(Boolean).join(" · "), contatos: a.contatos, pessoaId: a.pessoaId, donoEmail: a.responsavel,
+    assunto: `Próximo passo: ${a.assunto}`.slice(0, 200), tipo: a.tipo, vencimento: iso(vence), vertical: a.vertical, semPessoa: !a.negocioId,
+    corpo, proximo: true});
+}
+
 // Editar a atividade (To-dos): pessoa, assunto, tipo, data, quem executa e nota, sincronizados com o Pipedrive
 async function editarAtividade(id) {
   let a; try { a = await api.get(`/api/atividades/${id}`); } catch (err) { aviso(err.message); return; }
@@ -820,21 +862,24 @@ function estacionar(empresaId, vertical, nome) {
     <h2 id="t-est" style="margin:0">Estacionar oportunidade</h2><div class="sub">${esc(nome)} · ${esc(V[vertical] || vertical)}</div>
     <label>Motivo<select id="est-motivo">${Object.entries(MOTIVOS_EST).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join("")}</select></label>
     <label>Detalhe <span class="sub">(obrigatório em "Outro")</span><textarea id="est-texto" rows="2" maxlength="500" placeholder="ex.: renovou com a corretora do sócio em agosto"></textarea></label>
-    <label>Rever em<select id="est-meses"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option><option value="0">Sem data (só volta à mão)</option></select></label>
+    <div class="form-linha"><label>Rever em<select id="est-meses"><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option><option value="data">Escolher a data…</option><option value="0">Sem data (só volta à mão)</option></select></label>
+      <label id="est-data-l" hidden>Data<input type="date" id="est-data" min="${iso(new Date(Date.now() + 864e5))}"></label></div>
     <p class="nota" style="margin:0">Sai da tela e vai para o filtro "Estacionadas". Volta sozinha na data ou antes, com notícia de M&A ou aporte ou com negócio ganho. O motivo fica no histórico do cliente e no Feito na semana.</p>
     <p class="erro" id="est-erro" hidden></p>
     <div class="acoes"><button type="button" class="btn sec" id="est-cancelar">Cancelar</button><button class="btn" id="est-ok">Estacionar</button></div>
   </form></div>`;
   const fechar = () => document.getElementById("modal").innerHTML = "";
   document.getElementById("est-cancelar").onclick = fechar;
+  document.getElementById("est-meses").onchange = ev => { const d = ev.target.value === "data";
+    document.getElementById("est-data-l").hidden = !d; document.getElementById("est-data").required = d; if (d) document.getElementById("est-data").focus(); };
   document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
   document.getElementById("f-est").onsubmit = async e => {
     e.preventDefault();
     const b = document.getElementById("est-ok"); b.disabled = true;
     try {
-      const meses = +document.getElementById("est-meses").value;
+      const sel = document.getElementById("est-meses").value, data = sel === "data" ? document.getElementById("est-data").value : null;
       const r = await api.post("/api/oportunidades/estacionar", {empresa_id: +empresaId, vertical, motivo: document.getElementById("est-motivo").value,
-        texto: document.getElementById("est-texto").value || null, meses: meses || null});
+        texto: document.getElementById("est-texto").value || null, meses: data ? null : (+sel || null), rever_em: data});
       fechar(); aviso(r.reverEm ? `Estacionada até ${dt(r.reverEm)}` : "Estacionada (sem data para voltar)"); OPS_RESP = null; render();
     } catch (err) { b.disabled = false; const el = document.getElementById("est-erro"); el.textContent = err.message; el.hidden = false; }
   };
@@ -1007,7 +1052,7 @@ function opHTML(o) {
 let OPS_RESP = null, OPS_SEQ = 0, OPS_BUSCA = 0;
 function urlOps() {
   const p = new URLSearchParams({pagina: filtroOp.pagina});
-  for (const k of ["vertical", "tipo", "rel", "q", "oferta"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
+  for (const k of ["vertical", "tipo", "rel", "q", "oferta", "ativ"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
   return "/api/oportunidades?" + p;
 }
 async function buscarOps() {  // devolve null se um pedido mais novo (outro filtro ou página) passou na frente
@@ -1078,6 +1123,7 @@ function desenharOportunidades() {
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
       <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF. Ganhos recentes: quem fechou negócio no Pipedrive nos últimos 14 dias (mesmo sem card aberto), analisada ou não. Estacionadas: tiradas da tela por ora, com o motivo e quando voltam."></select>
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
+      <select id="f-ativ-op" aria-label="Atividade" title="Sem atividade: ninguém está trabalhando a oportunidade (nenhuma atividade aberta na empresa)"><option value="">Atividade: qualquer</option><option value="sem" ${filtroOp.ativ === "sem" ? "selected" : ""}>Sem atividade (ninguém trabalhando)</option><option value="com" ${filtroOp.ativ === "com" ? "selected" : ""}>Com atividade aberta</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option><option value="baixa" ${filtroOp.rel === "baixa" ? "selected" : ""} title="Boas oportunidades onde falta relação: Score ≥ 70 e influência abaixo de 40">Score alto, influência baixa</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
       <span class="sub" id="contagem-op"></span>
@@ -1100,6 +1146,7 @@ function desenharOportunidades() {
   document.getElementById("abrir-fila").onclick = () => { FILA.pagina = 1; abrirFila(); };
   if (FILA.aberta) abrirFila();
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-ativ-op").onchange = e => { filtroOp.ativ = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
 }
 
 /* ---------- Fila de análise (painel lateral): completar à mão e levar para Oportunidades ---------- */
@@ -1902,6 +1949,11 @@ async function telaNegocios() {
 }
 
 let TODOS_ITENS = [], TODOS_TIPO = "", TODOS_VISAO = "fazer", LOG_USUARIO = null;
+// Filtros de To-dos como no Pipedrive: período e quem executa (começa nas atividades de quem está logado; fica guardado)
+const PERIODOS = [["fazer", "Para fazer"], ["vencido", "Vencido"], ["hoje", "Hoje"], ["amanha", "Amanhã"], ["semana", "Esta semana"], ["proxima", "Próxima semana"], ["periodo", "Selecionar período"]];
+const lerGuardado = (k, padrao) => { try { const v = localStorage.getItem(k); return v === null ? padrao : v; } catch (e) { return padrao; } };
+const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let TODOS_PERIODO = lerGuardado("todosPeriodo", "semana"), TODOS_RESP = lerGuardado("todosResp", "eu"), TODOS_DE = "", TODOS_ATE = "";
 const ICONE_TIPO = {call: "📞", meeting: "👥", task: "🕒", email: "✉️", deadline: "🚩", lunch: "🍴"};
 function linhaAtividade(i) {
   const nota = (i.nota || "").trim(), primeira = nota.split("\n").find(l => l.trim()) || "";
@@ -1984,8 +2036,16 @@ async function telaLog() {
 async function telaTodos() {
   await carregarBase();
   if (TODOS_VISAO === "log") return telaLog();
-  const r = await api.get("/api/todos?ref=" + iso(refSemana));
+  const eu = USUARIOS.find(u => u.email === EU.email);
+  const resp = TODOS_RESP === "eu" ? eu?.id : TODOS_RESP === "todos" ? null : +TODOS_RESP || null;
+  const qs = new URLSearchParams({ref: iso(refSemana), periodo: TODOS_PERIODO});
+  if (resp) qs.set("responsavel", resp);
+  if (TODOS_PERIODO === "periodo") { if (TODOS_DE) qs.set("de", TODOS_DE); if (TODOS_ATE) qs.set("ate", TODOS_ATE); }
+  const r = await api.get("/api/todos?" + qs);
   TODOS_ITENS = r.itens;
+  const semana = TODOS_PERIODO === "semana";
+  const titulo = semana ? `Semana de ${dm(r.inicio)} a ${dm(r.fim)}` : r.inicio && r.inicio !== r.fim ? `${PERIODOS.find(p => p[0] === TODOS_PERIODO)[1]}: ${dm(r.inicio)} a ${dm(r.fim)}`
+    : r.inicio ? `${PERIODOS.find(p => p[0] === TODOS_PERIODO)[1]}: ${dt(r.inicio)}` : PERIODOS.find(p => p[0] === TODOS_PERIODO)[1];
   const itensTipo = r.itens.filter(i => !TODOS_TIPO || i.tipo === TODOS_TIPO);
   const grupos = {};
   // Pendentes primeiro (pela data); as feitas na semana no fim de cada bloco
@@ -1995,17 +2055,20 @@ async function telaTodos() {
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:14px">
     <div class="semana">
-      <button class="btn sec" id="s-ant">← Semana anterior</button>
-      <button class="btn sec" id="s-hoje">Esta semana</button>
-      <button class="btn sec" id="s-prox">Próxima semana →</button>
-      <h1 style="margin-left:8px">Semana de ${dm(r.inicio)} a ${dm(r.fim)}</h1>
-      <span class="sub">reunião na sexta, ${dt(r.fim)}</span>
+      ${semana ? `<button class="btn sec" id="s-ant">← Semana anterior</button><button class="btn sec" id="s-hoje">Esta semana</button><button class="btn sec" id="s-prox">Próxima semana →</button>` : ""}
+      <h1 style="margin-left:8px">${esc(titulo)}</h1>
+      ${semana ? `<span class="sub">reunião na sexta, ${dt(r.fim)}</span>` : ""}
     </div>
     ${visoesTodos()}
+    <div class="todos-barra">
+      <label class="todos-resp">Quem executa <select id="todos-resp"><option value="">Todos</option>${USUARIOS.filter(u => u.ativo !== false).map(u => `<option value="${u.id}" ${u.id === resp ? "selected" : ""}>${esc(u.nome)}${u.id === eu?.id ? " (eu)" : ""}</option>`).join("")}</select></label>
+      <div class="periodos" role="group" aria-label="Período">${PERIODOS.map(([k, t]) => `<button type="button" class="periodo" data-periodo="${k}" aria-pressed="${TODOS_PERIODO === k}">${t}</button>`).join("")}</div>
+      ${TODOS_PERIODO === "periodo" ? `<div class="periodo-datas"><input type="date" id="todos-de" value="${esc(TODOS_DE)}" aria-label="De"> a <input type="date" id="todos-ate" value="${esc(TODOS_ATE)}" aria-label="Até"></div>` : ""}
+    </div>
     <div class="kpi-row">
-      <div class="kpi"><b class="num">${total - feitas}</b><span>pendentes até sexta</span></div>
+      <div class="kpi"><b class="num">${total - feitas}</b><span>${semana ? "pendentes até sexta" : "pendentes"}</span></div>
       <div class="kpi"><b class="num" style="color:var(--bad)">${atras}</b><span>atrasadas</span></div>
-      <div class="kpi"><b class="num" style="color:var(--good)">${feitas}</b><span>feitas na semana</span></div>
+      <div class="kpi"><b class="num" style="color:var(--good)">${feitas}</b><span>${semana ? "feitas na semana" : "feitas"}</span></div>
     </div>
     <div class="filtros" role="group" aria-label="Tipo de atividade">
       <button class="chip off" data-tipo-ativ="" aria-pressed="${!TODOS_TIPO}">Tudo</button>
@@ -2017,15 +2080,81 @@ async function telaTodos() {
         <colgroup><col style="width:34px"><col style="width:24%"><col style="width:150px"><col style="width:17%"><col style="width:13%"><col style="width:190px"><col></colgroup>
         <thead><tr><th></th><th>Assunto</th><th>Oportunidade</th><th>Organização</th><th>Pessoa</th><th>Vencimento</th><th>Observação</th></tr></thead>
         <tbody>${itens.map(linhaAtividade).join("")}</tbody></table></div></div>`).join("")
-      : `<div class="grupo"><p class="vazio">${TODOS_TIPO ? "Nenhuma atividade desse tipo nesta semana." : "Nenhuma atividade para esta semana. Crie atividades na aba Negócios."}</p></div>`}
+      : `<div class="grupo"><p class="vazio">${TODOS_TIPO ? "Nenhuma atividade desse tipo neste período." : "Nenhuma atividade neste período."}</p></div>`}
     <p class="nota">Lista as atividades criadas pela plataforma, por responsável: pendentes com vencimento até sexta (inclusive atrasadas) e, no fim de cada bloco, as feitas na semana. Marcar como feita atualiza o Pipedrive; clicar no assunto abre a atividade para mudar a oportunidade, pessoa, data, tipo, quem executa e a <b>Observação</b> (lembrete da atividade, vai para a Anotação no Pipedrive e não mexe no Score); para mudar só a data, escolha o dia no calendário e clique em Confirmar. "+ atualização" registra a <b>atualização do negócio</b> (o que aconteceu), que fica na oportunidade e a IA lê para ajustar o Score. O que for mudado direto no Pipedrive aparece aqui na rodada seguinte (de hora em hora).</p>
   </section>`;
   const mover = dias => { refSemana = new Date(refSemana); refSemana.setDate(refSemana.getDate() + dias); telaTodos(); };
-  document.getElementById("s-ant").onclick = () => mover(-7);
-  document.getElementById("s-prox").onclick = () => mover(7);
-  document.getElementById("s-hoje").onclick = () => { refSemana = new Date(); telaTodos(); };
+  if (semana) {
+    document.getElementById("s-ant").onclick = () => mover(-7);
+    document.getElementById("s-prox").onclick = () => mover(7);
+    document.getElementById("s-hoje").onclick = () => { refSemana = new Date(); telaTodos(); };
+  }
+  document.getElementById("todos-resp").onchange = ev => { TODOS_RESP = ev.target.value || "todos"; guardar("todosResp", TODOS_RESP); telaTodos(); };
+  document.querySelectorAll("[data-periodo]").forEach(b => b.onclick = () => {
+    TODOS_PERIODO = b.dataset.periodo; guardar("todosPeriodo", TODOS_PERIODO);
+    if (TODOS_PERIODO === "semana") refSemana = new Date();
+    if (TODOS_PERIODO === "periodo" && !TODOS_DE) { TODOS_DE = iso(new Date()); TODOS_ATE = iso(new Date(Date.now() + 6 * 864e5)); }
+    telaTodos();
+  });
+  ["todos-de", "todos-ate"].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = () => {
+    TODOS_DE = document.getElementById("todos-de").value; TODOS_ATE = document.getElementById("todos-ate").value || TODOS_DE; telaTodos(); }; });
   document.querySelectorAll("[data-tipo-ativ]").forEach(b => b.onclick = () => { TODOS_TIPO = b.dataset.tipoAtiv; telaTodos(); });
   document.querySelectorAll("[data-visao]").forEach(b => b.onclick = () => { TODOS_VISAO = b.dataset.visao; telaTodos(); });
+}
+
+/* ---------- Diário da análise ---------- */
+// O que a plataforma analisou por dia: oportunidades analisadas e na fila por vertical, quem entrou, o trabalho da
+// rotina (LinkedIn, Receita, notícias, sites) e o que mais trava a fila agora
+const MOTIVO_FILA = {"quem decide": "Quem decide (ninguém da área mapeado)", "ponte por e-mail": "Ponte por e-mail (ninguém troca e-mails com a equipe)",
+  "praça": "Praça (onde estão os funcionários)", cidade: "Cidade", "funcionários": "Funcionários", setor: "Setor", Receita: "Receita Federal",
+  "notícias": "Notícias", "site (IA)": "Site lido pela IA", "cargos-chave": "Cargos-chave no LinkedIn"};
+async function telaDiario() {
+  await carregarBase();
+  const r = await api.get("/api/diario?dias=14"), vs = Object.keys(r.verticais);
+  const num = (n, d) => `<b>${n}</b>${d ? ` <span class="${d > 0 ? "sobe" : "desce"}">${d > 0 ? "+" : ""}${d}</span>` : ""}`;
+  const travas = vs.filter(v => (r.travas[v] || []).length).map(v => {
+    const t = r.travas[v], max = Math.max(...t.map(x => x.empresas));
+    return `<div class="rot-painel"><h2>${vchip(v, r.verticais[v])} o que mais trava a fila</h2>
+      ${t.slice(0, 6).map(x => `<div class="trava"><span>${esc(MOTIVO_FILA[x.motivo] || x.motivo)}</span><b>${x.empresas}</b><div class="pesq-barra"><i style="width:${Math.round(100 * x.empresas / max)}%;background:var(--warn)"></i></div></div>`).join("")}</div>`;
+  }).join("");
+  document.getElementById("app").innerHTML = `
+  <section style="display:grid;gap:16px">
+    <div class="semana"><h1>Diário da análise</h1><span class="sub">o que a plataforma analisou por dia (horário de Brasília)</span></div>
+    ${r.desde ? "" : `<div class="grupo"><p class="vazio">A foto diária começa na próxima rodada da rotina (de hora em hora). Os pedidos ao LinkedIn e o trabalho da Receita, notícias e sites já aparecem abaixo.</p></div>`}
+    ${travas ? `<div class="rot-paineis">${travas}</div>` : ""}
+    <div class="tabela"><table class="diario">
+      <thead><tr><th>Dia</th>${vs.map(v => `<th title="Analisadas (em Oportunidades) e, embaixo, quantas na fila">${esc(r.verticais[v])}</th>`).join("")}<th title="Entraram em Oportunidades naquele dia">Entraram</th><th title="Cada dado que a própria plataforma preencheu ou mudou no dia (Receita, LinkedIn, notícias, sites, IA, e-mails)">Preenchido pela plataforma</th><th title="Pedidos enviados ao LinkedIn, aplicados (voltaram e foram gravados) e com erro">LinkedIn</th><th>Receita, notícias e sites</th></tr></thead>
+      <tbody>${r.dias.map(d => `<tr>
+        <td style="white-space:nowrap"><b>${DIA_SEMANA[new Date(d.data + "T12:00:00").getDay()].slice(0, 3)}</b> ${dm(d.data)}</td>
+        ${vs.map(v => { const x = d.verticais[v]; return `<td>${x ? `${num(x.analisadas, x.variacao)}<div class="sub">${x.fila} na fila</div>` : '<span class="sub">—</span>'}</td>`; }).join("")}
+        <td>${d.entraram.length ? `<details><summary>${d.entraram.length} ${d.entraram.length === 1 ? "empresa" : "empresas"}</summary>${d.entraram.map(e => `<div>${vchip(e.vertical, e.verticalNome)} <a href="#empresa-${e.id}">${esc(e.nome)}</a></div>`).join("")}</details>` : '<span class="sub">nenhuma</span>'}</td>
+        <td>${d.preenchido.total ? `<b>${d.preenchido.total}</b> ${d.preenchido.total === 1 ? "dado" : "dados"} em ${d.preenchido.empresas} ${d.preenchido.empresas === 1 ? "empresa" : "empresas"}
+          <div class="sub">${Object.entries(d.preenchido.porFonte).map(([f, n]) => `${esc(f)} ${n}`).join(" · ")}</div>
+          <button type="button" class="lapis" data-preenchido="${d.data}">ver tudo</button>` : '<span class="sub">nada</span>'}</td>
+        <td>${d.linkedin.pedidos || d.linkedin.aplicados ? `${d.linkedin.pedidos} pedidos · ${d.linkedin.aplicados} aplicados${d.linkedin.erros ? ` · <span style="color:var(--bad)">${d.linkedin.erros} com erro</span>` : ""}
+          <div class="sub">${Object.entries(d.linkedin.porVertical).map(([v, n]) => `${esc(r.verticais[v] || v)} ${n}`).join(" · ")}</div>` : '<span class="sub" style="color:var(--warn)">nenhum pedido</span>'}</td>
+        <td>${Object.keys(d.trabalho).length ? Object.entries(d.trabalho).map(([k, n]) => `${esc(k)} ${n}`).join(" · ") : '<span class="sub">—</span>'}${d.falhas.length ? `<div style="color:var(--bad);font-size:12px">falhou: ${esc(d.falhas.join(", "))}</div>` : ""}</td>
+      </tr>`).join("")}</tbody></table></div>
+    <p class="nota">A cada rodada da rotina, a plataforma tira uma foto de quantas oportunidades estão analisadas (entram em Oportunidades) e quantas estão na fila, por vertical; vale a última foto do dia. O número verde ou vermelho é a variação em relação ao dia anterior; "Entraram" lista quem passou a ficar completo naquele dia. "Preenchido pela plataforma" conta cada dado que a própria plataforma preencheu ou mudou no dia (Receita, LinkedIn, notícias, sites, IA, e-mails; não entra o que vem do Pipedrive nem o que a equipe faz à mão), e "ver tudo" mostra campo a campo, por empresa, o antes e o depois. "O que mais trava a fila" mostra o que falta nas empresas da fila: o que depende do LinkedIn anda conforme a cota diária; o que depende de e-mail (ponte) só anda quando alguém da equipe troca e-mails com a empresa ou marca a ponte à mão. Estacionadas e os casos definitivos (fora da praça, MEI) não contam.</p>
+  </section>`;
+}
+
+// Tudo o que a plataforma preencheu no dia, por empresa: campo, antes → depois, fonte e hora (com busca)
+async function preenchidoNoDia(data) {
+  let r; try { r = await api.get(`/api/diario/preenchido?data=${data}`); } catch (err) { aviso(err.message); return; }
+  const lista = q => r.empresas.filter(e => !q || e.nome.toLowerCase().includes(q) || e.itens.some(i => (i.campo + " " + (i.depois || "")).toLowerCase().includes(q)))
+    .map(e => `<div class="pre-emp"><div class="pre-nome">${e.id ? `<a href="#empresa-${e.id}">${esc(e.nome)}</a>` : esc(e.nome)} <span class="sub">${e.itens.length}</span></div>
+      <ul>${e.itens.map(i => `<li><b>${esc(i.campo)}</b>: ${i.antes ? `<span class="antes">${esc(i.antes)}</span> → ` : ""}${i.depois ? esc(i.depois) : '<span class="sub">apagado</span>'} <span class="sub">· ${esc(i.fonte)} · ${esc(i.hora)}</span></li>`).join("")}</ul></div>`).join("")
+    || '<p class="sub">Nada encontrado.</p>';
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><div class="modal" role="dialog" aria-labelledby="t-pre" style="max-width:760px">
+    <h2 id="t-pre" style="margin:0">Preenchido pela plataforma em ${dt(data)}</h2><div class="sub">${r.total} ${r.total === 1 ? "dado" : "dados"} em ${r.empresas.length} ${r.empresas.length === 1 ? "empresa" : "empresas"}</div>
+    <input type="search" id="pre-q" placeholder="Buscar empresa, campo ou valor" aria-label="Buscar">
+    <div id="pre-lista" class="pre-lista">${lista("")}</div>
+    <div class="acoes"><button type="button" class="btn sec" id="pre-fechar">Fechar</button></div></div></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("pre-fechar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("pre-q").oninput = e => { document.getElementById("pre-lista").innerHTML = lista(e.target.value.trim().toLowerCase()); };
 }
 
 /* ---------- Clientes ---------- */
@@ -2398,6 +2527,7 @@ document.addEventListener("click", ev => {
   const na = ev.target.closest("[data-nota-ativ]"); if (na) notaAtividade(na.dataset.notaAtiv);
   const ed = ev.target.closest("[data-editar-ativ]"); if (ed) editarAtividade(+ed.dataset.editarAtiv);
 
+  const pr = ev.target.closest("[data-preenchido]"); if (pr) preenchidoNoDia(pr.dataset.preenchido);
   const cn = ev.target.closest("[data-cli-notas]"); if (cn) notasCliente(+cn.dataset.cliNotas);
   const cp = ev.target.closest("[data-cli-pessoas]"); if (cp) pessoasCliente(+cp.dataset.cliPessoas);
   const cpr = ev.target.closest("[data-cli-produtos]"); if (cpr) produtosCliente(+cpr.dataset.cliProdutos);
@@ -2442,7 +2572,8 @@ document.addEventListener("change", async ev => {
       OPS_RESP = null; render(); }
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       OPS_RESP = null; render(); }
-    if (c) { await api.post(`/api/atividades/${c}/concluir`, {concluida: ev.target.checked}); telaTodos(); }
+    if (c) { const feita = ev.target.checked; await api.post(`/api/atividades/${c}/concluir`, {concluida: feita}); await telaTodos();
+      if (feita) proximoPasso(c); }
     if (ev.target.dataset?.ativData) {  // a data só vai para o Pipedrive no botão Confirmar
       const ok = document.querySelector(`[data-ativ-ok="${ev.target.dataset.ativData}"]`);
       if (ok) ok.hidden = !ev.target.value || ev.target.value === ev.target.dataset.ativAntes;
@@ -2463,6 +2594,7 @@ async function render() {
     else if (h === "#todos") await telaTodos();
     else if (h === "#negocios") await telaNegocios();
     else if (h === "#clientes") await telaClientes();
+    else if (h === "#diario") await telaDiario();
     else if (h === "#qualidade") await telaQualidade();
     else if (h === "#melhorias") await telaMelhorias();
     else if (h === "#rotina") await telaRotina();

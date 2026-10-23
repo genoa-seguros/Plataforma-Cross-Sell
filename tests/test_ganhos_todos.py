@@ -162,6 +162,9 @@ def test_excluir_atividade_sai_daqui_e_do_pipedrive(cenario, db):  # noqa: F811
     assert pid in fake.excluidas and db.scalar(select(Atividade).where(Atividade.id == aid)) is None
     assert aid not in {i["id"] for i in c.get("/api/todos").json()["itens"]}
     assert c.post(f"/api/atividades/{aid}/excluir", headers=H).status_code == 404
+    db.expunge_all()  # o SQLite reaproveita o id da excluída: a sessão do teste não pode guardar a antiga
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    alfa = db.scalar(select(Empresa).where(Empresa.pipedrive_org_id == 10))
     # Excluída direto no Pipedrive: some daqui na sincronização
     outra = pipedrive.criar_atividade(db, client, empresa=alfa, pessoa_id=None, assunto="Reunião",
                                       vencimento=date.today(), responsavel=victor, criada_por=victor)

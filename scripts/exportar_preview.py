@@ -10,7 +10,7 @@ import base64
 import json
 import re
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -64,6 +64,9 @@ def exportar(como: str | None) -> dict:
         "verticaisOportunidades": list(tabela.VERTICAIS_OPORTUNIDADES),
         "negocios": tabela.negocios_abertos(db, s),
         "clientes": tabela.clientes(db, s),
+        "diario": (tabela.registrar_dia(db, s), tabela.diario(db))[1],
+        "preenchido": {d.isoformat(): tabela.preenchido_no_dia(db, d)
+                       for d in (tabela.hoje_brasilia() - timedelta(days=i) for i in range(14))},
         "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db),
                       "suspeitas": qualidade.suspeitas(db)},
         "rotina": _rotina_exemplo(webapp.api_rotina(db=db, _u=None), hoje),

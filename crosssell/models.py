@@ -429,3 +429,40 @@ class Registro(Base):
     texto: Mapped[str]
 
     empresa: Mapped[Empresa | None] = relationship()
+
+
+class AnaliseDia(Base):
+    """Foto da análise por dia e vertical (gravada a cada rodada da rotina; vale a última do dia), para o Diário da
+    análise: quantas oportunidades estão analisadas, quantas na fila, por que a fila está parada e quem entrou."""
+
+    __tablename__ = "analise_dia"
+    __table_args__ = (UniqueConstraint("data", "vertical"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[date] = mapped_column(Date, index=True)  # dia em Brasília
+    vertical: Mapped[str]
+    analisadas: Mapped[int] = mapped_column(Integer, default=0)
+    fila: Mapped[int] = mapped_column(Integer, default=0)
+    ids: Mapped[list] = mapped_column(JSON, default=list)  # empresas analisadas (para saber quem entrou no dia)
+    faltando: Mapped[dict] = mapped_column(JSON, default=dict)  # o que falta na fila -> quantas empresas
+    atualizado_em: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
+class AlteracaoDado(Base):
+    """Dado preenchido ou mudado pela própria plataforma num passo de análise da rotina (Receita, LinkedIn, notícias,
+    sites, IA...), campo a campo, para o Diário da análise. O que vem do Pipedrive e o que a equipe faz à mão não
+    entram aqui (a mão fica em `registros`)."""
+
+    __tablename__ = "alteracoes_dado"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    em: Mapped[datetime] = mapped_column(default=_now, index=True)
+    fonte: Mapped[str]  # passo da rotina (receita, linkedin, noticias, sites-ia...)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
+    pessoa_id: Mapped[int | None] = mapped_column(ForeignKey("pessoas.id"))
+    campo: Mapped[str]
+    antes: Mapped[str | None]
+    depois: Mapped[str | None]
+
+    empresa: Mapped[Empresa | None] = relationship()
+    pessoa: Mapped[Pessoa | None] = relationship()

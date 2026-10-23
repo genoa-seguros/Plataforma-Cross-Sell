@@ -467,6 +467,7 @@ class EstacionarIn(BaseModel):
     motivo: str = "sem_perspectiva"
     texto: str | None = None
     meses: int | None = 6  # rever em N meses; None ou 0: só volta à mão (ou por M&A/negócio ganho)
+    rever_em: date | None = None  # data escolhida (vale sobre os meses)
 
 
 @app.post("/api/oportunidades/estacionar")
@@ -482,6 +483,10 @@ def api_estacionar(dados: EstacionarIn, db: Session = Depends(get_db), u: Usuari
         raise HTTPException(400, "Conte o motivo.")
     meses = dados.meses if dados.meses and dados.meses > 0 else None
     rever = (date.today() + timedelta(days=round(30.44 * meses))) if meses else None
+    if dados.rever_em is not None:
+        if dados.rever_em <= date.today():
+            raise HTTPException(400, "Escolha uma data depois de hoje.")
+        rever = dados.rever_em
     x = db.scalar(select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id == e.id,
                                                         OportunidadeEstacionada.vertical == dados.vertical))
     if x is None:
@@ -874,8 +879,10 @@ def api_log(usuario: int | None = None, ref: date | None = None, db: Session = D
 
 
 @app.get("/api/todos")
-def api_todos(ref: date | None = None, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
-    return tabela.todos(db, ref)
+def api_todos(ref: date | None = None, periodo: str = "semana", de: date | None = None, ate: date | None = None,
+              responsavel: int | None = None, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """To-dos: filtros de período (como no Pipedrive) e de quem executa."""
+    return tabela.todos(db, ref, periodo, de, ate, responsavel)
 
 
 @app.get("/api/equipe")
@@ -1011,12 +1018,12 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 
 @app.get("/api/oportunidades")
 def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: str = "", q: str = "",
-                      oferta: str = "cross", empresa: int | None = None, db: Session = Depends(get_db),
+                      oferta: str = "cross", empresa: int | None = None, ativ: str = "", db: Session = Depends(get_db),
                       _u: Usuario = Depends(usuario_atual)):
     """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
     rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead.
     oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais (mais produtos de LF ou RE para quem
-    já tem ou negocia a vertical)."""
+    já tem ou negocia a vertical). ativ: sem (nenhuma atividade aberta: ninguém está trabalhando) | com."""
     todas, relacoes, recentes = OPORTUNIDADES.obter(db)
     if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
         return {"itens": [o for o in [*todas, *(o for o in recentes if o["soGanho"])] if o["empresa"]["id"] == empresa]}
@@ -1035,7 +1042,7 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
                  if (not vertical or o["vertical"] == vertical)
                  and (not busca or busca in (o["empresa"]["nome"] or "").lower())
                  and (not tipo or (tipo == "cliente") == o["cliente"])
-                 and (not rel or _relacao_ok(o, rel))]
+                 and (not rel or _relacao_ok(o, rel)) and _atividade_ok(o, ativ)]
     ofertas = {k: sum(o["tipo"] == k for o in filtradas) for k in ("cross", "mais")}
     # Ganhos recentes: quem fechou negócio nos últimos 14 dias, analisada ou não (mostra o que falta), cross e mais
     ganhos = [o for o in recentes if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and not o["estacionada"]
@@ -1043,11 +1050,12 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
               and (not vertical or o["vertical"] == vertical)
               and (not busca or busca in (o["empresa"]["nome"] or "").lower())
               and (not tipo or (tipo == "cliente") == o["cliente"])
-              and (not rel or _relacao_ok(o, rel))]
+              and (not rel or _relacao_ok(o, rel)) and _atividade_ok(o, ativ)]
     ofertas["ganhos"] = len(ganhos)
     paradas = [o for o in paradas if (not vertical or o["vertical"] == vertical)
                and (not busca or busca in (o["empresa"]["nome"] or "").lower())
-               and (not tipo or (tipo == "cliente") == o["cliente"]) and (not rel or _relacao_ok(o, rel))]
+               and (not tipo or (tipo == "cliente") == o["cliente"]) and (not rel or _relacao_ok(o, rel))
+               and _atividade_ok(o, ativ)]
     ofertas["estacionadas"] = len(paradas)
     if oferta == "estacionadas":  # as estacionadas mais recentes primeiro
         filtradas = sorted(paradas, key=lambda o: o["estacionada"]["em"], reverse=True)
@@ -1057,7 +1065,16 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
         filtradas = [o for o in filtradas if o["tipo"] == (oferta if oferta in ("cross", "mais") else "cross")]
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
             "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas,
-            "pendencias": sum(bool(o["pendencias"]) for o in itens)}
+            "pendencias": sum(bool(o["pendencias"]) for o in itens),
+            # Analisadas que ninguém está trabalhando (sem atividade aberta), para o filtro "Sem atividade"
+            "semAtividade": sum(o["proximaAtividade"] is None for o in itens if o["tipo"] == "cross")}
+
+
+def _atividade_ok(o: dict, ativ: str) -> bool:
+    """Filtro "Atividade": sem (nenhuma atividade aberta na empresa fora de negócios) | com | vazio (todas)."""
+    if ativ == "sem":
+        return o["proximaAtividade"] is None
+    return o["proximaAtividade"] is not None if ativ == "com" else True
 
 
 def _relacao_ok(o: dict, rel: str) -> bool:
@@ -1300,6 +1317,18 @@ def api_linkedin(db: Session = Depends(get_db), _m: Usuario = Depends(somente_ma
     return {"configurado": lk.configurado(s), "lote": s.linkedin_lote, **lk.situacao(db, s),
             "disparado": _ultimo(db, "linkedin" if direto else "linkedin-disparo"),
             "recebido": _ultimo(db, "linkedin" if direto else "linkedin-retorno")}
+
+
+@app.get("/api/diario")
+def api_diario(dias: int = 14, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Diário da análise: o que a plataforma analisou por dia e o que trava a fila."""
+    return tabela.diario(db, max(1, min(dias, 60)))
+
+
+@app.get("/api/diario/preenchido")
+def api_diario_preenchido(data: date, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Tudo o que a plataforma preencheu no dia, por empresa (campo, antes, depois, fonte)."""
+    return tabela.preenchido_no_dia(db, data)
 
 
 @app.get("/api/rotina")

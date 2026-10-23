@@ -230,6 +230,20 @@ def main():
                          else HOJE + timedelta(days=desloc),
                          responsavel_id=usuarios[n.responsavel_email].id, criada_por_id=master.id, concluida=feita))
     db.commit()
+
+    # O que a plataforma preencheu hoje e ontem (Diário da análise)
+    from crosssell.models import AlteracaoDado
+    agora = datetime.utcnow()
+    exemplos = [(0, 0, "linkedin", "funcionários", None, "610"), (0, 0, "linkedin", "setor", None, "Panificação industrial"),
+                (0, 0, "linkedin", "pessoa nova", None, "Rose Lima · Assistente de Departamento Pessoal"),
+                (1, 0, "receita", "porte", None, "DEMAIS"), (1, 0, "receita", "cidade", None, "SAO PAULO"),
+                (2, 0, "noticias", "notícia", None, "Construtora Pedra Alta vence licitação de R$ 80 milhões"),
+                (3, 0, "sites-ia", "leitura do site pela IA", None, "lida"),
+                (4, 1, "linkedin", "funcionários", "120", "140"), (5, 1, "email", "temperatura de Ana Ribeiro", None, "media")]
+    for idx, dias_atras, fonte, campo, antes, depois in exemplos:
+        db.add(AlteracaoDado(em=agora - timedelta(days=dias_atras, hours=idx), fonte=fonte, empresa_id=empresas[idx].id,
+                             campo=campo, antes=antes, depois=depois))
+    db.commit()
     print(recalcular(db, s))
 
 

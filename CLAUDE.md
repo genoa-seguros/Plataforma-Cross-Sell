@@ -104,6 +104,11 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
 - **Estacionar** (`OportunidadeEstacionada`, `POST /api/oportunidades/estacionar|trazer`, `tabela.estacionada`):
   parked opportunities leave the default list, fila, pendências and LinkedIn targets; `?oferta=estacionadas` lists them.
   They return on `rever_em` or after an M&A/aporte news item or a won deal newer than the parking (item `voltou`).
+- **Funil** (`GET /api/oportunidades/funil`, `tabela.estagio`): Oportunidades as a kanban. Stage per item: atualizado
+  (latest `NotaOportunidade.vale_ate`, chosen in months when writing it, still valid), em_foco (open activity for that
+  company+vertical created after the note expired), else nao_atuamos; virou = `OportunidadeConvertida` (deal created by
+  `POST /api/oportunidades/negocio` → `pipedrive.criar_negocio`, options from `/api/oportunidades/negocio-opcoes`) in the
+  last 90 days. Estacionadas are a side lane, not a stage.
 - **Diário da análise** (`AnaliseDia`, rotina step `diario` → `tabela.registrar_dia`, `/api/diario` →
   `tabela.diario`): daily snapshot per vertical (analisadas ids, fila, faltando counts) plus LinkedinPedido and SyncLog
   work per day. `historico.py` (a `before_flush` listener) logs every Empresa/Pessoa/Noticia field the platform fills

@@ -24,6 +24,11 @@ pipedrive:
       - 87667ea5ea62cfd03118a42581f40bc5fb33e973   # Produtos RE
       - 74bcdb3b63321d279e6ada0de40e1ca1b36f0171   # Produto Vertical Saúde
       - 111caded10585e6ab8d4e46d53597c930dee42cc   # Produto Foco
+    # Campo de produto de cada vertical, usado no botão "Criar negócio" (Oportunidades)
+    produto_por_vertical:
+      linhas_financeiras: 243db2a0f48ee484d65af0c737bcea6ab509a590   # Produtos Responsabilidade
+      ramos_elementares: 87667ea5ea62cfd03118a42581f40bc5fb33e973    # Produtos RE
+      saude: 74bcdb3b63321d279e6ada0de40e1ca1b36f0171                # Produto Vertical Saúde
     # Porte para Saúde: quantidade de vidas informada no negócio
     vidas: 3b47081b57efbf488b9f8872569826aade33057d        # Quantidade de Vidas
     faixa_vidas: 0b51bac054685ca49b31360b65782bab350a150b  # Faixa de Vidas

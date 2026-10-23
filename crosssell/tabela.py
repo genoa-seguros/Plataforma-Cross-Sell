@@ -430,10 +430,11 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         notas_de[(n.empresa_id, n.vertical)].append(n)
     estacionadas = {(x.empresa_id, x.vertical): x for x in db.scalars(
         select(OportunidadeEstacionada).where(OportunidadeEstacionada.empresa_id.in_(ids)))}
-    proxima_de: dict[int, Atividade] = {}
+    # Próxima atividade aberta por empresa e vertical (a sem vertical vale para todas as verticais da empresa)
+    proxima_de: dict[tuple, Atividade] = {}
     for a in db.scalars(select(Atividade).where(Atividade.empresa_id.in_(ids), Atividade.negocio_id.is_(None),
                                                 Atividade.concluida.is_(False)).order_by(Atividade.vencimento, Atividade.id)):
-        proxima_de.setdefault(a.empresa_id, a)
+        proxima_de.setdefault((a.empresa_id, a.vertical), a)
     saida = []
     for e in empresas:
         if interna(e, settings):
@@ -468,7 +469,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 pot["score"] = round(max(0.0, min(100.0, pot["score"] + nota.ajuste)), 1)
             manual = manuais.get((e.id, v))
             parada, voltou = estacionada(e, estacionadas.get((e.id, v)), hoje, nomes_id)
-            prox = proxima_de.get(e.id)
+            prox = proxima_de.get((e.id, v)) or proxima_de.get((e.id, None))
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
             saida.append({
@@ -495,8 +496,11 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "notas": [{"id": n.id, "texto": n.texto, "autor": nomes_id.get(n.usuario_id), "em": n.criada_em.isoformat(timespec="minutes"),
                            "ajuste": n.ajuste, "motivo": n.motivo} for n in notas],
                 "contatos": [{"id": c.id, "nome": c.nome, "cargo": c.cargo, "area": area_pessoa(c)} for c in contatos],
-                "proximaAtividade": {"assunto": prox.assunto, "vencimento": prox.vencimento.isoformat(),
-                                     "responsavel": prox.responsavel.email} if prox else None,
+                "proximaAtividade": {"id": prox.id, "assunto": prox.assunto, "tipo": prox.tipo,
+                                     "vencimento": prox.vencimento.isoformat(), "responsavel": prox.responsavel.email,
+                                     "responsavelNome": prox.responsavel.nome} if prox else None,
+                # Funil: nao_atuamos | em_foco (atividade aberta) | atualizado (atualização ainda valendo)
+                **estagio(notas[0] if notas else None, prox, hoje),
                 "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas),
                                                sem_produto=bool(lf) and not lf["algumSugerido"])),
                 # Incluída à mão (antes da reunião de sexta): entra mesmo faltando algo
@@ -517,6 +521,21 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         item["pendencias"] = pendencias(item)
         item["pesquisa"] = pesquisa(item, por_id[item["empresa"]["id"]], settings.linkedin_validade_dias)
     return sorted(saida, key=lambda x: (x["score"], x["influencia"]), reverse=True)
+
+
+ATUALIZACAO_DIAS = 61  # atualização antiga, sem validade escolhida: vale 2 meses
+
+
+def estagio(nota: NotaOportunidade | None, prox: Atividade | None, hoje: date) -> dict:
+    """Estágio no funil de Oportunidades. Atualizado: a última atualização do negócio ainda vale (a equipe escolhe
+    por quantos meses ao escrever). Em foco: tem atividade aberta (criada depois de a atualização vencer, se houver).
+    Não atuamos: o resto, inclusive quem tinha atualização vencida e nenhuma atividade nova."""
+    vale = (nota.vale_ate or (nota.criada_em.date() + timedelta(days=ATUALIZACAO_DIAS))) if nota else None
+    if vale and vale >= hoje:
+        return {"estagio": "atualizado", "atualizadoAte": vale.isoformat()}
+    if prox is not None and (vale is None or prox.criada_em.date() >= vale):
+        return {"estagio": "em_foco", "atualizadoAte": vale.isoformat() if vale else None}
+    return {"estagio": "nao_atuamos", "atualizadoAte": vale.isoformat() if vale else None}
 
 
 def estacionada(e: Empresa, x: OportunidadeEstacionada | None, hoje: date,

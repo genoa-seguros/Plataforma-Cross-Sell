@@ -128,6 +128,16 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   período (Para fazer, Vencido, Hoje, Amanhã, Esta semana, Próxima semana, Selecionar período); a escolha fica
   guardada no navegador. "Esta semana" é a visão da reunião (pendentes até sexta e as feitas na semana).
 - **Estacionar** também aceita uma data escolhida para voltar.
+- **Funil** (Oportunidades, botão ▥ Funil ao lado de ☰ Lista; a escolha fica guardada no navegador): as mesmas
+  oportunidades dos filtros, em colunas calculadas sozinhas (`tabela.estagio`): **Não atuamos** (sem atividade aberta
+  e sem atualização válida), **Em foco** (atividade aberta na empresa e vertical, criada depois que a última
+  atualização venceu), **Atualizado** (a atualização do negócio ainda vale) e **Virou negócio** (negócio criado pela
+  plataforma nos últimos 90 dias, com ganho/perdido/etapa vindos do Pipedrive). Estacionadas ficam numa raia ao lado.
+  Ao escrever a atualização, escolhe-se em quantos meses ela vence (1, 2, 3, 6 ou 12; padrão 2,
+  `NotaOportunidade.vale_ate`); vencida, a oportunidade volta para Não atuamos. No card: concluir a próxima atividade,
+  "+ atividade", "+ atualização", "estacionar" e **Criar negócio**: funil e etapa da vertical, produto (campo de
+  produto da vertical, `pipedrive.campos.produto_por_vertical`), título automático "produto + ano" (ex.: D&O 2026,
+  editável), contato e responsável; abre o negócio no Pipedrive (`OportunidadeConvertida`).
 - **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
   Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
   à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade

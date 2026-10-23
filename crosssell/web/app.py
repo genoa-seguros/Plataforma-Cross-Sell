@@ -24,7 +24,7 @@ from crosssell.connectors import pipedrive as pd
 from crosssell.connectors.noticias import PORTAIS, portal
 from crosssell.db import SessionLocal, init_db
 from crosssell.models import (Atividade, Configuracao, Empresa, Melhoria, Negocio, NotaOportunidade,
-                               OportunidadeEstacionada, OportunidadeManual,
+                               OportunidadeConvertida, OportunidadeEstacionada, OportunidadeManual,
                                Pessoa, Registro, SyncLog, Usuario)
 from crosssell.pipeline import (NOTICIAS_HORAS, QUALIDADE_DIAS, RECEITA_LOTE, ROTINA_DIAS, SITES_LOTE, recalcular,
                                 registrar)
@@ -568,6 +568,7 @@ def api_ponte(pessoa_id: int, dados: PonteIn, db: Session = Depends(get_db), u: 
 class NotaIn(BaseModel):
     vertical: str
     texto: str
+    meses: int | None = 2  # em quantos meses precisa de nova atualização (funil: sai de "Atualizado")
 
 
 def leitor_notas(db: Session):
@@ -582,11 +583,12 @@ def leitor_notas(db: Session):
 def api_nota(empresa_id: int, dados: NotaIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
     """O que aconteceu com a oportunidade. A IA lê as notas da vertical e ajusta o Score (de -50 a +20); se ela
     não responder agora, a rotina avalia depois."""
-    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
+    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto, dados.meses)
     return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
 
 
-def _salvar_nota(db: Session, u: Usuario, empresa_id: int, vertical: str, texto: str | None) -> NotaOportunidade:
+def _salvar_nota(db: Session, u: Usuario, empresa_id: int, vertical: str, texto: str | None,
+                 meses: int | None = 2) -> NotaOportunidade:
     from crosssell import nota_ia
 
     texto = (texto or "").strip()[:2000]
@@ -594,7 +596,9 @@ def _salvar_nota(db: Session, u: Usuario, empresa_id: int, vertical: str, texto:
         raise HTTPException(404, "Oportunidade não encontrada.")
     if len(texto) < 5:
         raise HTTPException(400, "Escreva o que aconteceu.")
-    nota = NotaOportunidade(empresa_id=empresa_id, vertical=vertical, texto=texto, usuario_id=u.id)
+    meses = meses if meses and 0 < meses <= 24 else 2
+    nota = NotaOportunidade(empresa_id=empresa_id, vertical=vertical, texto=texto, usuario_id=u.id,
+                            vale_ate=date.today() + timedelta(days=round(30.44 * meses)))
     db.add(nota)
     db.commit()
     try:
@@ -838,7 +842,7 @@ def api_nota_atividade(atividade_id: int, dados: NotaIn, db: Session = Depends(g
     empresa_id = at.empresa_id or (at.negocio.empresa_id if at.negocio else None)
     if empresa_id is None:
         raise HTTPException(400, "A atividade não tem empresa.")
-    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto)
+    nota = _salvar_nota(db, u, empresa_id, dados.vertical, dados.texto, dados.meses)
     return {"id": nota.id, "texto": nota.texto, "ajuste": nota.ajuste, "motivo": nota.motivo}
 
 
@@ -1068,6 +1072,121 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
             "pendencias": sum(bool(o["pendencias"]) for o in itens),
             # Analisadas que ninguém está trabalhando (sem atividade aberta), para o filtro "Sem atividade"
             "semAtividade": sum(o["proximaAtividade"] is None for o in itens if o["tipo"] == "cross")}
+
+
+ESTAGIOS = (("nao_atuamos", "Não atuamos"), ("em_foco", "Em foco"), ("atualizado", "Atualizado"))
+VIROU_DIAS = 90  # "Virou negócio" mostra as convertidas nos últimos N dias
+
+
+def _card(o: dict) -> dict:
+    """O que o card do funil precisa (a oportunidade inteira é grande demais para centenas de cards)."""
+    return {k: o[k] for k in ("id", "vertical", "verticalNome", "score", "influencia", "cliente", "proximaAtividade",
+                              "atualizadoAte", "estagio", "contatos", "quemDecide", "tipo", "voltou")} | {
+        "empresa": {"id": o["empresa"]["id"], "nome": o["empresa"]["nome"]},
+        "produtos": [x["produto"] for x in o["produtos"] if x.get("sugerido", True)][:4],
+        "ultimaNota": {"texto": o["notas"][0]["texto"], "em": o["notas"][0]["em"]} if o["notas"] else None}
+
+
+@app.get("/api/oportunidades/funil")
+def api_funil(vertical: str = "", tipo: str = "", rel: str = "", q: str = "", oferta: str = "cross",
+              db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Visão de funil de Oportunidades: Não atuamos, Em foco, Atualizado (calculados), Virou negócio (criado pela
+    plataforma nos últimos 90 dias, com o andamento no Pipedrive) e as estacionadas à parte."""
+    todas = OPORTUNIDADES.obter(db)[0]
+    busca = q.strip().lower()
+    ok = [o for o in todas if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES and o["analisada"]
+          and (not vertical or o["vertical"] == vertical) and (not busca or busca in (o["empresa"]["nome"] or "").lower())
+          and (not tipo or (tipo == "cliente") == o["cliente"]) and (not rel or _relacao_ok(o, rel))
+          and o["tipo"] == (oferta if oferta in ("cross", "mais") else "cross")]
+    colunas = []
+    for chave, nome in ESTAGIOS:
+        cards = sorted((o for o in ok if not o["estacionada"] and o["estagio"] == chave),
+                       key=lambda o: (o["score"], o["influencia"]), reverse=True)
+        colunas.append({"chave": chave, "nome": nome, "total": len(cards), "cards": [_card(o) for o in cards[:80]]})
+    desde = datetime.utcnow() - timedelta(days=VIROU_DIAS)
+    virou = []
+    for x in db.scalars(select(OportunidadeConvertida).where(OportunidadeConvertida.criada_em >= desde)
+                        .order_by(OportunidadeConvertida.criada_em.desc())):
+        if (vertical and x.vertical != vertical) or (busca and busca not in (x.empresa.razao_social or "").lower()):
+            continue
+        n = db.scalar(select(Negocio).where(Negocio.fonte == "pipedrive", Negocio.id_externo == str(x.pipedrive_deal_id)))
+        virou.append({"id": f"c{x.id}", "empresa": {"id": x.empresa_id, "nome": x.empresa.razao_social},
+                      "vertical": x.vertical, "verticalNome": VERTICAL_LABEL.get(x.vertical, x.vertical),
+                      "produto": x.produto, "em": x.criada_em.isoformat(timespec="minutes"),
+                      "status": n.status if n else "aberto", "etapa": n.etapa if n else None,
+                      "titulo": n.titulo if n else None, "dealId": x.pipedrive_deal_id})
+    colunas.append({"chave": "virou", "nome": "Virou negócio", "total": len(virou), "cards": virou})
+    paradas = [o for o in ok if o["estacionada"]]
+    return {"colunas": colunas, "estacionadas": len(paradas), "virouDias": VIROU_DIAS,
+            "dominio": get_settings().pipedrive_company_domain}
+
+
+_OPCOES_NEGOCIO: dict[str, tuple[datetime, dict]] = {}  # vertical -> (quando, opções): poupa o Pipedrive por 1 hora
+
+
+@app.get("/api/oportunidades/negocio-opcoes")
+def api_negocio_opcoes(vertical: str, _u: Usuario = Depends(usuario_atual),
+                       client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Funis (com as etapas) e produtos da vertical, para o botão "Criar negócio"."""
+    if vertical not in tabela.VERTICAIS_OPORTUNIDADES:
+        raise HTTPException(404, "Vertical sem funil.")
+    guardado = _OPCOES_NEGOCIO.get(vertical)
+    if guardado and guardado[0] > datetime.utcnow() - timedelta(hours=1):
+        return guardado[1]
+    s = get_settings()
+    try:
+        funis = [{"id": pid, "nome": f["nome"], "etapas": [{"id": e["id"], "nome": e["name"]} for e in client.etapas(pid)]}
+                 for pid, f in s.pipelines().items() if f["vertical"] == vertical]
+        campo = (s.campos_pipedrive().get("produto_por_vertical") or {}).get(vertical)
+        produtos = client.opcoes_campo_negocio(campo) if campo else []
+    except httpx.HTTPError:
+        raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
+    saida = {"funis": funis, "produtos": produtos}
+    _OPCOES_NEGOCIO[vertical] = (datetime.utcnow(), saida)
+    return saida
+
+
+class NegocioIn(BaseModel):
+    empresa_id: int
+    vertical: str
+    pipeline_id: int
+    stage_id: int
+    produto_id: int | None = None
+    titulo: str
+    pessoa_id: int | None = None
+    responsavel_id: int
+
+
+@app.post("/api/oportunidades/negocio")
+def api_criar_negocio(dados: NegocioIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual),
+                      client: pd.PipedriveClient = Depends(get_pipedrive)):
+    """Cria o negócio no Pipedrive a partir da oportunidade (funil "Virou negócio")."""
+    e, resp = db.get(Empresa, dados.empresa_id), db.get(Usuario, dados.responsavel_id)
+    if e is None or resp is None or dados.vertical not in tabela.VERTICAIS_OPORTUNIDADES:
+        raise HTTPException(404, "Oportunidade ou responsável não encontrado.")
+    if not dados.titulo.strip():
+        raise HTTPException(400, "Escreva o título do negócio.")
+    opcoes = api_negocio_opcoes(dados.vertical, u, client)
+    funil = next((f for f in opcoes["funis"] if f["id"] == dados.pipeline_id), None)
+    etapa = next((x for x in (funil or {}).get("etapas", []) if x["id"] == dados.stage_id), None)
+    if etapa is None:
+        raise HTTPException(400, "Escolha o funil e a etapa.")
+    produto = next(({"id": p["id"], "label": p["label"]} for p in opcoes["produtos"] if p["id"] == dados.produto_id), None)
+    try:
+        neg = pd.criar_negocio(db, client, get_settings(), empresa=e, vertical=dados.vertical, pipeline_id=funil["id"],
+                               etapa={"id": etapa["id"], "name": etapa["nome"]}, produto=produto,
+                               titulo=dados.titulo.strip()[:200], pessoa_id=dados.pessoa_id, responsavel=resp)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"O Pipedrive não criou o negócio: {_erro_pipedrive(exc)}")
+    except httpx.HTTPError:
+        raise HTTPException(502, "O Pipedrive não respondeu; tente de novo.")
+    db.add(OportunidadeConvertida(empresa_id=e.id, vertical=dados.vertical, produto=produto["label"] if produto else None,
+                                  pipedrive_deal_id=int(neg.id_externo), usuario_id=u.id))
+    _registrar(db, u, "negocio", f"criou o negócio «{neg.titulo}» no Pipedrive ({funil['nome']} · {etapa['nome']})", e.id)
+    db.commit()
+    return {"ok": True, "dealId": int(neg.id_externo)}
 
 
 def _atividade_ok(o: dict, ativ: str) -> bool:

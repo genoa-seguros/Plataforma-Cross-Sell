@@ -68,3 +68,15 @@ def test_estacionada_volta_na_data_ou_com_ma_ou_negocio_ganho(cenario, db):  # n
     db.commit()
     webapp.OPORTUNIDADES.limpar()
     assert item()["voltou"].startswith("chegou a data de rever")
+
+
+def test_estacionar_com_data_escolhida(cenario, db):  # noqa: F811
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    a = _lead(db, 4)
+    data = (date.today() + timedelta(days=40)).isoformat()
+    r = c.post("/api/oportunidades/estacionar", headers=H,
+               json={"empresa_id": a.id, "vertical": "saude", "motivo": "perfil", "rever_em": data})
+    assert r.json()["reverEm"] == data
+    assert c.post("/api/oportunidades/estacionar", headers=H, json={
+        "empresa_id": a.id, "vertical": "saude", "motivo": "perfil", "rever_em": date.today().isoformat()}).status_code == 400

@@ -19,8 +19,8 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS, PESSOAS_LF, PESSOAS_RE, mudou_de_empresa
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
-from crosssell.models import (Atividade, Empresa, Interacao, Negocio, NotaOportunidade, OportunidadeEstacionada,
-                               OportunidadeManual, Pessoa, Registro, Usuario)
+from crosssell.models import (AnaliseDia, Atividade, Empresa, Interacao, LinkedinPedido, Negocio, NotaOportunidade,
+                               OportunidadeEstacionada, OportunidadeManual, Pessoa, Registro, SyncLog, Usuario)
 from crosssell.normalize import AREA_LABEL, classificar_area, sem_acento
 from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei, noticias_ma,
                                  melhor_contato, motivos as motivos_potencial, potencial, praca, produto_lf, produto_re,
@@ -641,16 +641,45 @@ def semana(ref: date) -> tuple[date, date]:
     return seg, seg + timedelta(days=4)
 
 
-def todos(db: Session, ref: date | None = None) -> dict:
-    ref = ref or date.today()
-    seg, sex = semana(ref)
-    pend = db.scalars(select(Atividade).where(Atividade.concluida.is_(False), Atividade.vencimento <= sex)
-                      .order_by(Atividade.vencimento)).all()
-    feitas = db.scalars(select(Atividade).where(Atividade.concluida.is_(True), Atividade.vencimento >= seg,
-                                                Atividade.vencimento <= sex)).all()
+PERIODOS_TODOS = ("semana", "fazer", "vencido", "hoje", "amanha", "proxima", "periodo")
 
-    return {"inicio": seg.isoformat(), "fim": sex.isoformat(),
-            "itens": [item_atividade(a, ref) for a in [*pend, *feitas]]}
+
+def todos(db: Session, ref: date | None = None, periodo: str = "semana", de: date | None = None,
+          ate: date | None = None, responsavel_id: int | None = None) -> dict:
+    """Atividades criadas pela plataforma, como os filtros do Pipedrive. semana (padrão, a da reunião de sexta):
+    pendentes até sexta, inclusive atrasadas, e as feitas na semana de `ref`. fazer: todas as pendentes. vencido:
+    pendentes com vencimento antes de hoje. hoje, amanha, proxima (próxima semana) e periodo (de/ate): pendentes e
+    feitas com vencimento no intervalo. responsavel_id: só as de quem executa."""
+    hoje = date.today()
+    ref = ref or hoje
+    q = select(Atividade).order_by(Atividade.vencimento, Atividade.id)
+    if responsavel_id:
+        q = q.where(Atividade.responsavel_id == responsavel_id)
+    pend = q.where(Atividade.concluida.is_(False))
+    ini = fim = None
+    if periodo == "fazer":
+        itens = db.scalars(pend).all()
+    elif periodo == "vencido":
+        itens = db.scalars(pend.where(Atividade.vencimento < hoje)).all()
+    elif periodo in ("hoje", "amanha", "proxima", "periodo"):
+        if periodo == "hoje":
+            ini = fim = hoje
+        elif periodo == "amanha":
+            ini = fim = hoje + timedelta(days=1)
+        elif periodo == "proxima":
+            ini = semana(hoje)[0] + timedelta(days=7)
+            fim = ini + timedelta(days=6)
+        else:
+            ini, fim = de or hoje, ate or de or hoje
+        itens = db.scalars(q.where(Atividade.vencimento >= ini, Atividade.vencimento <= fim)).all()
+    else:
+        ini, fim = semana(ref)
+        itens = [*db.scalars(pend.where(Atividade.vencimento <= fim)),
+                 *db.scalars(q.where(Atividade.concluida.is_(True), Atividade.vencimento >= ini,
+                                     Atividade.vencimento <= fim))]
+    return {"periodo": periodo if periodo in PERIODOS_TODOS else "semana",
+            "inicio": ini.isoformat() if ini else None, "fim": fim.isoformat() if fim else None,
+            "itens": [item_atividade(a, hoje) for a in itens]}
 
 
 TIERS_SAUDE = ("A+", "A", "B", "C")
@@ -802,3 +831,97 @@ def item_atividade(a: Atividade, ref: date) -> dict:
             "verticalNome": VERTICAL_LABEL.get(v) if v else None,
             "etapa": a.negocio.etapa if a.negocio else None, "valor": a.negocio.valor if a.negocio else None,
             "nota": a.nota}
+
+
+
+# --- Diário da análise ---------------------------------------------------------------------------------------------
+# Passos da rotina que contam como trabalho de análise no diário (fonte do SyncLog -> rótulo)
+TRABALHO_DIA = {"receita": "Receita", "noticias": "Notícias", "sites-ia": "Sites lidos pela IA",
+                "linkedin-sites": "LinkedIn achado no site", "cnpj-sites": "CNPJ achado no site", "email": "E-mails"}
+
+
+def hoje_brasilia() -> date:
+    return (datetime.utcnow() + FUSO_BRASILIA).date()
+
+
+def registrar_dia(db: Session, settings: Settings) -> dict:
+    """Foto da análise de hoje (a última rodada do dia vale): por vertical, as empresas analisadas, quantas na fila
+    e o que falta na fila. Estacionadas e "só ganho" não contam; os casos definitivos (fora da praça, MEI) também não."""
+    ops = [o for o in oportunidades(db, settings) if o["vertical"] in VERTICAIS_OPORTUNIDADES
+           and not o["soGanho"] and not o["estacionada"]]
+    dia, saida = hoje_brasilia(), {}
+    for v in VERTICAIS_OPORTUNIDADES:
+        dav = [o for o in ops if o["vertical"] == v]
+        ids = sorted({o["empresa"]["id"] for o in dav if o["analisada"]})
+        fila = [o for o in dav if not o["analisada"] and not set(o["faltando"]) & set(FINAIS)]
+        falta = Counter(f for o in fila for f in o["faltando"])
+        x = db.scalar(select(AnaliseDia).where(AnaliseDia.data == dia, AnaliseDia.vertical == v))
+        if x is None:
+            x = AnaliseDia(data=dia, vertical=v)
+            db.add(x)
+        x.analisadas, x.fila, x.ids, x.faltando = len(ids), len({o["empresa"]["id"] for o in fila}), ids, dict(falta)
+        x.atualizado_em = datetime.utcnow()
+        saida[v] = len(ids)
+    db.commit()
+    return saida
+
+
+def diario(db: Session, dias: int = 14) -> dict:
+    """Diário da análise: por dia (horário de Brasília), quantas oportunidades estavam analisadas e na fila em cada
+    vertical, quem entrou em Oportunidades naquele dia, e o trabalho da rotina (pedidos ao LinkedIn, Receita,
+    notícias, sites). E o que mais trava a fila hoje."""
+    fim = hoje_brasilia()
+    inicio = fim - timedelta(days=dias - 1)
+    fotos = db.scalars(select(AnaliseDia).where(AnaliseDia.data >= inicio - timedelta(days=1))
+                       .order_by(AnaliseDia.data)).all()
+    por_dia: dict[date, dict[str, AnaliseDia]] = defaultdict(dict)
+    for f in fotos:
+        por_dia[f.data][f.vertical] = f
+    de = datetime.combine(inicio, datetime.min.time()) - FUSO_BRASILIA
+    dia_de = lambda t: (t + FUSO_BRASILIA).date()  # noqa: E731
+    linkedin: dict[date, Counter] = defaultdict(Counter)
+    for p in db.scalars(select(LinkedinPedido).where(LinkedinPedido.criado_em >= de)):
+        linkedin[dia_de(p.criado_em)]["pedidos"] += 1
+        linkedin[dia_de(p.criado_em)][f"pedidos:{p.vertical or 'geral'}"] += 1
+        if p.situacao in ("erro", "expirado"):
+            linkedin[dia_de(p.criado_em)]["erros"] += 1
+    for p in db.scalars(select(LinkedinPedido).where(LinkedinPedido.concluido_em >= de,
+                                                     LinkedinPedido.situacao == "aplicado")):
+        linkedin[dia_de(p.concluido_em)]["aplicados"] += 1
+    trabalho: dict[date, Counter] = defaultdict(Counter)
+    falhas: dict[date, list] = defaultdict(list)
+    for x in db.scalars(select(SyncLog).where(SyncLog.inicio >= de, SyncLog.fonte.in_(list(TRABALHO_DIA)))):
+        trabalho[dia_de(x.inicio)][x.fonte] += x.registros or 0
+        if x.erro:
+            falhas[dia_de(x.inicio)].append(TRABALHO_DIA[x.fonte])
+    entraram_ids: set[int] = set()
+    linhas = []
+    d = fim
+    while d >= inicio:
+        hoje_f, ontem_f = por_dia.get(d, {}), por_dia.get(d - timedelta(days=1), {})
+        verts, entraram = {}, []
+        for v in VERTICAIS_OPORTUNIDADES:
+            f, a = hoje_f.get(v), ontem_f.get(v)
+            if f is None:
+                continue
+            novos = sorted(set(f.ids) - set(a.ids)) if a is not None else []
+            entraram_ids.update(novos)
+            entraram += [(v, i) for i in novos]
+            verts[v] = {"analisadas": f.analisadas, "fila": f.fila, "entraram": len(novos),
+                        "variacao": f.analisadas - a.analisadas if a is not None else None}
+        lk, tr = linkedin.get(d, Counter()), trabalho.get(d, Counter())
+        linhas.append({"data": d.isoformat(), "verticais": verts, "entraram": entraram,
+                       "linkedin": {"pedidos": lk["pedidos"], "aplicados": lk["aplicados"], "erros": lk["erros"],
+                                    "porVertical": {v: lk[f"pedidos:{v}"] for v in VERTICAIS_OPORTUNIDADES if lk[f"pedidos:{v}"]}},
+                       "trabalho": {TRABALHO_DIA[k]: n for k, n in tr.items() if n},
+                       "falhas": sorted(set(falhas.get(d, [])))})
+        d -= timedelta(days=1)
+    nomes = {e.id: e.razao_social for e in db.scalars(select(Empresa).where(Empresa.id.in_(entraram_ids)))} if entraram_ids else {}
+    for linha in linhas:
+        linha["entraram"] = [{"vertical": v, "verticalNome": VERTICAL_LABEL[v], "id": i, "nome": nomes.get(i, "?")}
+                             for v, i in linha["entraram"]]
+    atual = {v: por_dia.get(max(por_dia), {}).get(v) for v in VERTICAIS_OPORTUNIDADES} if por_dia else {}
+    travas = {v: sorted(({"motivo": k, "empresas": n} for k, n in (f.faltando or {}).items()), key=lambda x: -x["empresas"])
+              for v, f in atual.items() if f is not None}
+    return {"dias": linhas, "travas": travas, "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS_OPORTUNIDADES},
+            "desde": min(por_dia).isoformat() if por_dia else None}

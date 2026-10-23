@@ -344,13 +344,14 @@ def _rodar_rotina(dias: int) -> None:
     passos = [("pipedrive", lambda: pipedrive(dias=dias)), ("pipedrive-excluidas", pipedrive_excluidas),
               ("cnpj-sites", cnpj_sites), ("dominios", dominios), ("emails", lambda: emails(dias=dias, temperatura=True)),
               ("noticias", lambda: noticias(horas=NOTICIAS_HORAS)), ("receita", lambda: enriquecer(limite=RECEITA_LOTE)),
-              ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular)]
+              ("linkedin-sites", lambda: linkedin_sites(limite=SITES_LOTE)), ("recalcular", recalcular),
+              ("diario", diario)]  # foto da análise do dia, depois de tudo
     if get_settings().anthropic_api_key:
         passos.insert(passos.index(("recalcular", recalcular)), ("notas", notas))
     if get_settings().site_ia_ativo:
         passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", lambda: sites_ia(limite=0)))  # 0 = SITE_IA_LOTE
     if lk.configurado(get_settings()):
-        passos.insert(len(passos) - 1, ("linkedin", linkedin))  # antes de recalcular
+        passos.insert(passos.index(("recalcular", recalcular)), ("linkedin", linkedin))  # antes de recalcular
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal
         passos.append(("qualidade", qualidade))
     for nome, fn in passos:
@@ -368,6 +369,16 @@ def enriquecer(limite: int = 200):
 
     db = _db()
     typer.echo(registrar(db, "receita", enriquecimento.enriquecer_todas, db, limite=limite))
+
+
+@app.command()
+def diario():
+    """Grava a foto da análise de hoje (Diário da análise): analisadas, fila e o que falta, por vertical."""
+    from crosssell import tabela
+    from crosssell.pipeline import registrar
+
+    db = _db()
+    typer.echo(registrar(db, "diario", tabela.registrar_dia, db, get_settings()))
 
 
 @app.command()

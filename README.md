@@ -100,6 +100,15 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   de M&A ou aporte ou negócio ganho depois de estacionar (etiqueta "voltou dos estacionados"). Estacionadas não entram
   na fila de análise, em Completar dados nem na cota do LinkedIn; o motivo entra no histórico do cliente (aba
   Clientes) e no Feito na semana (`OportunidadeEstacionada`, `tabela.estacionada`).
+- **Filtro "Atividade"** (Oportunidades): "Sem atividade (ninguém trabalhando)" mostra as oportunidades sem nenhuma
+  atividade aberta na empresa; "Com atividade aberta", o contrário.
+- **Próximo passo ao concluir** (To-dos): ao marcar uma atividade como feita, abre a próxima já preenchida (mesma
+  empresa, pessoa, oportunidade e quem executa, daqui a 7 dias, em dia útil) para a oportunidade não ficar sem ninguém
+  trabalhando; dá para ajustar e criar ou fechar em "Sem próximo passo".
+- **Diário da análise** (aba própria): a cada rodada a rotina grava a foto do dia (`analise_dia`: analisadas, fila, o
+  que falta, por vertical; vale a última do dia). A aba mostra, por dia, as analisadas com a variação, quantas na
+  fila, quem entrou em Oportunidades, os pedidos ao LinkedIn (enviados, aplicados, com erro, por vertical) e o
+  trabalho da Receita, notícias e sites; no topo, "o que mais trava a fila" por vertical.
 - **Clientes**: todas as empresas com seguro vigente (negócio ganho no Pipedrive com fim de vigência depois de hoje;
   Saúde, sem fim, vale até ser desmarcado), para o time dar o **tier de Saúde** à mão (A+, A, B, C; `Empresa.tier_saude`,
   com quem e quando). Colunas: empresa, produtos contratados (um chip por produto, mesmo com vários negócios),
@@ -111,6 +120,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   o botão de desmarcar Saúde. Também os **critérios do Score de Saúde** (Localização, Qualificação, Funcionários, RH), com o valor de
   cada um (0 a 1) e o Score Saúde, para o time completar à mão (cidade, setor, funcionários, alguém de RH; o Score é
   recalculado). Todas as linhas têm a mesma altura (o resto fica na dica ou no pop-up). Desmarcar Saúde fica no pop-up dos produtos (menos o da planilha do Zeca). A classificação entra no log da semana.
+- **To-dos: filtros** como no Pipedrive: quem executa (começa em quem está logado; "Todos" mostra a equipe) e
+  período (Para fazer, Vencido, Hoje, Amanhã, Esta semana, Próxima semana, Selecionar período); a escolha fica
+  guardada no navegador. "Esta semana" é a visão da reunião (pendentes até sexta e as feitas na semana).
+- **Estacionar** também aceita uma data escolhida para voltar.
 - **To-dos > Feito na semana**: o log de cada pessoa para a reunião de sexta, numa linha do tempo por dia (horário de
   Brasília): atividades criadas e concluídas, atualizações do negócio (com o efeito no Score), oportunidades incluídas
   à mão e dados completados à mão (cidade, funcionários, setor, cargo, pessoa, ponte, cliente de Saúde, atividade

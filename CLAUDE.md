@@ -104,6 +104,10 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
 - **Estacionar** (`OportunidadeEstacionada`, `POST /api/oportunidades/estacionar|trazer`, `tabela.estacionada`):
   parked opportunities leave the default list, fila, pendências and LinkedIn targets; `?oferta=estacionadas` lists them.
   They return on `rever_em` or after an M&A/aporte news item or a won deal newer than the parking (item `voltou`).
+- **Diário da análise** (`AnaliseDia`, rotina step `diario` → `tabela.registrar_dia`, `/api/diario` →
+  `tabela.diario`): daily snapshot per vertical (analisadas ids, fila, faltando counts) plus LinkedinPedido and SyncLog
+  work per day. To-dos `/api/todos` takes `periodo` (semana | fazer | vencido | hoje | amanha | proxima | periodo with
+  de/ate) and `responsavel`; Oportunidades takes `ativ=sem|com` (no open activity on the company).
 - **Clientes tab** (`/api/clientes`, `tabela.clientes`): companies with `seguros_vigentes`, products deduplicated, any
   employee count, pontes with cargo, all `NotaOportunidade` of the company. The team sets `Empresa.tier_saude`
   (`tabela.TIERS_SAUDE`: A+, A, B, C) via `POST /api/empresas/{id}/tier`, logged as `Registro` tipo "tier".

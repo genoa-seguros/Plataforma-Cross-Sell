@@ -64,6 +64,7 @@ def exportar(como: str | None) -> dict:
         "verticaisOportunidades": list(tabela.VERTICAIS_OPORTUNIDADES),
         "negocios": tabela.negocios_abertos(db, s),
         "clientes": tabela.clientes(db, s),
+        "diario": (tabela.registrar_dia(db, s), tabela.diario(db))[1],
         "qualidade": {"duplicadas": qualidade.duplicadas(db), **qualidade.razao_social(db),
                       "suspeitas": qualidade.suspeitas(db)},
         "rotina": _rotina_exemplo(webapp.api_rotina(db=db, _u=None), hoje),

@@ -66,6 +66,7 @@ class FakePipedrive:
         self.pessoas_atualizadas: list[tuple[int, dict]] = []
         self.feitas: set[int] = set()
         self.excluidas: set[int] = set()
+        self.negocios_criados: list[dict] = []
         self.atividades: dict[int, dict] = {}  # como cada atividade está agora "no Pipedrive"
         self.datas: dict[int, str] = {}  # vencimento mudado (due_date)
         self.falhar_usuarios = False  # /v1/users fora do ar
@@ -99,6 +100,19 @@ class FakePipedrive:
             if "due_date" in corpo:
                 self.datas[aid] = corpo["due_date"]
             return httpx.Response(200, json={"data": {"id": aid, **corpo}})
+        if req.method == "POST" and caminho.endswith("/v2/deals"):
+            corpo = json.loads(req.content)
+            corpo["id"] = 7000 + len(self.negocios_criados)
+            self.negocios_criados.append(corpo)
+            return httpx.Response(201, json={"data": corpo})
+        if req.method == "GET" and caminho.endswith("/v1/dealFields"):
+            return httpx.Response(200, json={"data": [{"key": "243db2a0f48ee484d65af0c737bcea6ab509a590", "options": [
+                {"id": 28, "label": "D&O"}, {"id": 30, "label": "Cyber"}]}, {"key": "74bcdb3b63321d279e6ada0de40e1ca1b36f0171",
+                "options": [{"id": 711, "label": "Saúde"}, {"id": 712, "label": "Vida"}]}]})
+        if req.method == "GET" and caminho.endswith("/v2/stages") and req.url.params.get("pipeline_id"):
+            pid = int(req.url.params.get("pipeline_id", 0))
+            return httpx.Response(200, json={"data": [{"id": pid * 10 + i, "name": n, "order_nr": i, "pipeline_id": pid}
+                                                      for i, n in enumerate(["Qualificação", "Cotação", "Proposta"])]})
         if req.method == "DELETE" and "/v2/activities/" in caminho:
             aid = int(caminho.rsplit("/", 1)[1])
             self.excluidas.add(aid)

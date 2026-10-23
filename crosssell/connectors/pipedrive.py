@@ -131,6 +131,24 @@ class PipedriveClient:
         if r.status_code != 404:
             r.raise_for_status()
 
+    def etapas(self, pipeline_id: int) -> list[dict]:
+        """Etapas do funil, na ordem do Pipedrive."""
+        r = self.http.get("/v2/stages", params={"pipeline_id": pipeline_id, "limit": 500})
+        r.raise_for_status()
+        return sorted(r.json().get("data") or [], key=lambda x: x.get("order_nr") or 0)
+
+    def opcoes_campo_negocio(self, chave: str) -> list[dict]:
+        """Opções (id, label) de um campo de negócio de escolha (ex.: produto)."""
+        r = self.http.get("/v1/dealFields", params={"limit": 500})
+        r.raise_for_status()
+        campo = next((c for c in r.json().get("data") or [] if c.get("key") == chave), None)
+        return [{"id": o["id"], "label": o["label"]} for o in (campo or {}).get("options") or []]
+
+    def criar_negocio(self, dados: dict) -> dict:
+        r = self.http.post("/v2/deals", json=dados)
+        r.raise_for_status()
+        return r.json()["data"]
+
     def atividade(self, atividade_id: int) -> dict | None:
         r = self.http.get(f"/v2/activities/{atividade_id}")
         if r.status_code == 404:
@@ -315,6 +333,36 @@ def marcar_saude(db: Session, empresa_id: int, cliente: bool, origem: str = "man
     neg.titulo = neg.produto = "Saúde"
     neg.seguradora = "marcado na plataforma" if origem == "manual" else "informado no Pipedrive"
     db.flush()
+    return neg
+
+
+def criar_negocio(db: Session, client: PipedriveClient, settings: Settings, *, empresa, vertical: str, pipeline_id: int,
+                  etapa: dict, produto: dict | None, titulo: str, pessoa_id: int | None, responsavel: Usuario) -> Negocio:
+    """Abre o negócio no Pipedrive a partir de uma oportunidade (funil, etapa, produto, título, pessoa e dono) e já
+    o grava aqui como aberto: a oportunidade sai da lista porque a vertical (ou o produto) passa a estar em negociação."""
+    from crosssell.models import Pessoa
+
+    if not empresa.pipedrive_org_id:
+        raise ValueError("A empresa não existe no Pipedrive.")
+    if not responsavel.pipedrive_user_id:
+        raise ValueError(f"{responsavel.nome} não está vinculado a um usuário do Pipedrive.")
+    pessoa = db.get(Pessoa, pessoa_id) if pessoa_id else None
+    if pessoa is not None and (pessoa.empresa_id != empresa.id or not pessoa.pipedrive_person_id):
+        raise ValueError("Escolha uma pessoa da empresa que exista no Pipedrive.")
+    dados = {"title": titulo, "pipeline_id": pipeline_id, "stage_id": etapa["id"], "org_id": empresa.pipedrive_org_id,
+             "owner_id": responsavel.pipedrive_user_id}
+    if pessoa is not None:
+        dados["person_id"] = int(pessoa.pipedrive_person_id)
+    campo = (settings.campos_pipedrive().get("produto_por_vertical") or {}).get(vertical)
+    if produto and campo:
+        dados["custom_fields"] = {campo: produto["id"]}
+    d = client.criar_negocio(dados)
+    neg = Negocio(fonte="pipedrive", id_externo=str(d["id"]), status="aberto", empresa=empresa, pessoa=pessoa,
+                  vertical=settings.pipelines().get(pipeline_id, {}).get("vertical") or vertical, titulo=titulo,
+                  pipeline_id=pipeline_id, etapa=etapa.get("name"), produto=produto["label"] if produto else None,
+                  pipedrive_owner_id=responsavel.pipedrive_user_id, responsavel_email=responsavel.email)
+    db.add(neg)
+    db.commit()
     return neg
 
 

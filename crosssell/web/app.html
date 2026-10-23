@@ -166,6 +166,16 @@ table.diario details summary{cursor:pointer;color:var(--accent)}table.diario det
 .trava{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}.trava .pesq-barra{grid-column:1/-1;max-width:none}
 .pre-lista{max-height:60vh;overflow:auto;display:grid;gap:10px}.pre-emp{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .pre-nome{font-weight:600;margin-bottom:4px}.pre-emp ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}.pre-emp .antes{color:var(--mute);text-decoration:line-through}
+.funil-cols{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr)) minmax(170px,.6fr);gap:10px;align-items:start;overflow-x:auto}
+.fcol{background:var(--soft);border-radius:10px;padding:8px;display:grid;gap:8px;min-width:0}
+.fcol-cab{display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px}.fcol-cab b{font:700 14px/1.2 var(--f-display)}
+.fcol-cards{display:grid;gap:8px;max-height:75vh;overflow-y:auto}
+.fcol-virou{background:color-mix(in srgb,var(--good) 10%,var(--soft))}.fcol-est{background:transparent;border:1px dashed var(--line)}
+.fcard{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:5px;font-size:13px;min-width:0}
+.fcard-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.fcard-top a{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fscore{font:700 13px/1 var(--f-data);color:var(--accent)}.fnota{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fativ-l{display:flex;gap:6px;align-items:baseline;cursor:pointer}.fativ-l.atras{color:var(--bad)}
+.facoes{display:flex;flex-wrap:wrap;gap:2px 10px;border-top:1px solid var(--line);padding-top:5px}
 .todos-barra{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
 .todos-resp{display:flex;gap:8px;align-items:center;font-size:13px}
 .periodos{display:flex;flex-wrap:wrap;gap:2px}
@@ -330,6 +340,9 @@ function ligarPaginacao(alvo, ir) {
   document.querySelectorAll(`[data-pag="${alvo}"] [data-ir]`).forEach(b => b.onclick = () => ir(+b.dataset.ir));
 }
 let refSemana = new Date();
+// Preferências da tela guardadas no navegador (podem não existir: aba anônima, prévia)
+const lerGuardado = (k, padrao) => { try { const v = localStorage.getItem(k); return v === null ? padrao : v; } catch (e) { return padrao; } };
+const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const dt = d => d ? d.slice(0,10).split("-").reverse().join("/") : "";
@@ -429,6 +442,19 @@ function opsPrevia(path) {
   return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas,
     pendencias: todas.filter(o => (o.pendencias || []).length).length};
 }
+function funilPrevia(path) {  // as mesmas colunas de /api/oportunidades/funil
+  const p = new URLSearchParams(path.split("?")[1] || ""), v = p.get("vertical"), q = (p.get("q") || "").toLowerCase(), oferta = p.get("oferta") || "cross";
+  const ok = (D.oportunidades || []).filter(o => (D.verticaisOportunidades || []).includes(o.vertical) && o.analisada && !o.soGanho
+    && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (o.tipo || "cross") === oferta);
+  const card = o => ({...o, produtos: (o.produtos || []).map(x => x.produto), ultimaNota: (o.notas || [])[0] || null});
+  const colunas = [["nao_atuamos", "Não atuamos"], ["em_foco", "Em foco"], ["atualizado", "Atualizado"]].map(([chave, nome]) => {
+    const cards = ok.filter(o => !o.estacionada && (o.estagio || "nao_atuamos") === chave).sort((a, b) => b.score - a.score);
+    return {chave, nome, total: cards.length, cards: cards.map(card)};
+  });
+  const virou = (D.convertidas || []).filter(x => !v || x.vertical === v);
+  colunas.push({chave: "virou", nome: "Virou negócio", total: virou.length, cards: virou});
+  return {colunas, estacionadas: ok.filter(o => o.estacionada).length, virouDias: 90, dominio: "app"};
+}
 function filaPrevia(path) {
   const p = new URLSearchParams(path.split("?")[1] || ""), verticais = D.verticaisOportunidades || ["saude"];
   const fila = (D.oportunidades || []).filter(o => verticais.includes(o.vertical) && !o.analisada && !o.soGanho && !o.estacionada);
@@ -492,6 +518,9 @@ const previa = {
     if (path === "/api/linkedin") return D.linkedin;
     if (path === "/api/ia") return D.ia || (D.ia = {modelo: "claude-sonnet-5-5", origem: "servidor", chave: true,
       opcoes: [{id: "claude-sonnet-5-5", nome: "Claude Sonnet 5.5"}, {id: "claude-opus-5-5", nome: "Claude Opus 5.5"}]});
+    if (path.startsWith("/api/oportunidades/funil")) return funilPrevia(path);
+    if (path.startsWith("/api/oportunidades/negocio-opcoes")) return {funis: [{id: 1, nome: "Funil da vertical", etapas: [{id: 11, nome: "Qualificação"}, {id: 12, nome: "Cotação"}, {id: 13, nome: "Proposta"}]}],
+      produtos: ["D&O", "Cyber", "E&O", "Saúde", "Vida", "Empresarial", "Fiança", "Transportes"].map((l, i) => ({id: i + 1, label: l}))};
     if (path.startsWith("/api/oportunidades")) return opsPrevia(path);
     const ma = path.match(/^\/api\/atividades\/(\d+)$/);
     if (ma) { const a = D.atividades.find(x => x.id == ma[1]); const cs = contatosPrevia(a.empresaId);
@@ -578,6 +607,13 @@ const previa = {
       if (D.empresas[m[1]]) Object.assign(D.empresas[m[1]], {setor: b.setor, setorFonte: b.setor ? "manual" : null});
       (D.negocios || []).filter(n => n.empresa?.id == m[1]).forEach(n => n.empresa.setor = b.setor);
       return {setor: b.setor, setorFonte: b.setor ? "manual" : null};
+    }
+    if (path === "/api/oportunidades/negocio") {
+      const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
+      if (o) { (D.convertidas ||= []).unshift({id: "c" + Date.now(), empresa: o.empresa, vertical: o.vertical, verticalNome: o.verticalNome, produto: null,
+        em: new Date().toISOString().slice(0, 16), status: "aberto", etapa: "Cotação", titulo: b.titulo, dealId: 0});
+        D.oportunidades = D.oportunidades.filter(x => x !== o); }
+      return {ok: true, dealId: 0};
     }
     if (path === "/api/oportunidades/estacionar" || path === "/api/oportunidades/trazer") {
       const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
@@ -771,7 +807,7 @@ function listaMotivos(ms) {
 /* ---------- Criar atividade ---------- */
 function proximaSexta() { const d = new Date(); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7 || 7)); return iso(d); }
 function abrirAtividadeOp(id) {
-  const o = OPS.find(x => x.id === id);
+  const o = OPS.find(x => x.id === id) || FUNIL_CARDS.find(x => x.id === id);
   const ponte = o.quemDecide?.ponte, alvo = o.quemDecide?.pessoas?.[0];
   const pref = [ponte, alvo].find(x => x && x.noPipedrive);
   const quem = alvo ? ` (${alvo.nome})` : "";
@@ -1064,6 +1100,7 @@ async function buscarOps() {  // devolve null se um pedido mais novo (outro filt
 }
 function mostrarOps() {
   const r = OPS_RESP;
+  if (VISAO_OP === "funil") desenharFunil();
   OPS = r.itens; filtroOp.pagina = r.pagina;
   document.getElementById("ops").innerHTML = r.itens.length ? r.itens.map(opHTML).join("") : `<tr><td colspan="9" class="vazio">Nenhuma oportunidade com esses filtros.</td></tr>`;
   const fila = Object.values(r.fila || {}).reduce((a, b) => a + b, 0);
@@ -1118,6 +1155,10 @@ function painelCriterios() {
 function desenharOportunidades() {
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:10px">
+    <div class="filtros" role="group" aria-label="Visão">
+      <button class="chip off" data-visao-op="lista" aria-pressed="${VISAO_OP === "lista"}">☰ Lista</button>
+      <button class="chip off" data-visao-op="funil" aria-pressed="${VISAO_OP === "funil"}">▥ Funil</button>
+    </div>
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
@@ -1130,7 +1171,8 @@ function desenharOportunidades() {
       <button type="button" class="btn sec" id="abrir-fila" title="Completar à mão o que falta e levar para Oportunidades">Fila de análise</button>
     </div>
     ${painelCriterios()}
-    <div class="tabela fixa"><table class="ops">
+    <div id="funil-op" class="funil"${VISAO_OP === "funil" ? "" : " hidden"}></div>
+    <div class="tabela fixa"${VISAO_OP === "funil" ? " hidden" : ""}><table class="ops">
       <colgroup><col style="width:7%"><col style="width:12%"><col style="width:8.5%"><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:14.5%"><col style="width:12%"><col style="width:9%"></colgroup>
       <thead><tr><th>Score</th><th>Empresa</th><th>Em negociação</th><th>Oportunidade</th><th>Por quê</th><th>Já tem conosco</th><th>Quem decide · ponte</th><th>Notícias</th><th>Próxima atividade</th></tr></thead>
       <tbody id="ops"></tbody></table><div id="pag-op"></div></div>
@@ -1147,6 +1189,91 @@ function desenharOportunidades() {
   if (FILA.aberta) abrirFila();
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
   document.getElementById("f-ativ-op").onchange = e => { filtroOp.ativ = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.querySelectorAll("[data-visao-op]").forEach(b => b.onclick = () => { VISAO_OP = b.dataset.visaoOp; guardar("visaoOp", VISAO_OP); desenharOportunidades(); });
+}
+
+/* ---------- Funil de Oportunidades ---------- */
+const MESES_ATUALIZACAO = [[1, "1 mês"], [2, "2 meses"], [3, "3 meses"], [6, "6 meses"], [12, "12 meses"]].map(([m, t]) => `<option value="${m}" ${m === 2 ? "selected" : ""}>${t}</option>`).join("");
+// Estágios calculados: Não atuamos (ninguém pegou), Em foco (atividade aberta), Atualizado (atualização valendo) e
+// Virou negócio (criado pelo botão, com o andamento no Pipedrive). Estacionadas ficam à parte.
+let VISAO_OP = lerGuardado("visaoOp", "lista"), FUNIL_CARDS = [], FUNIL_SEQ = 0;
+async function desenharFunil() {
+  const alvo = document.getElementById("funil-op"); if (!alvo || VISAO_OP !== "funil") return;
+  const p = new URLSearchParams();
+  for (const k of ["vertical", "tipo", "rel", "q"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
+  if (["cross", "mais"].includes(filtroOp.oferta)) p.set("oferta", filtroOp.oferta);
+  const seq = ++FUNIL_SEQ;
+  let r; try { r = await api.get("/api/oportunidades/funil?" + p); } catch (err) { alvo.innerHTML = `<p class="vazio">${esc(err.message)}</p>`; return; }
+  if (seq !== FUNIL_SEQ) return;
+  FUNIL_CARDS = r.colunas.filter(c => c.chave !== "virou").flatMap(c => c.cards);
+  const hoje = iso(new Date());
+  const card = o => `<div class="fcard">
+      <div class="fcard-top"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><b class="fscore" title="Score">${Math.round(o.score)}</b></div>
+      <div class="chips">${vchip(o.vertical, o.verticalNome)}${(o.produtos || []).map(x => `<span class="chip c-${o.vertical}">${esc(x)}</span>`).join("")}</div>
+      ${o.voltou ? `<span class="chip" style="--c:var(--accent)" title="${esc(o.voltou)}">voltou dos estacionados</span>` : ""}
+      ${o.ultimaNota ? `<div class="sub fnota" title="${esc(o.ultimaNota.texto)}">✎ ${esc(o.ultimaNota.texto)}${o.atualizadoAte ? ` · vale até ${dm(o.atualizadoAte)}` : ""}</div>` : ""}
+      <div class="fativ">${o.proximaAtividade ? `<label class="fativ-l${o.proximaAtividade.vencimento < hoje ? " atras" : ""}" title="Marcar como feita"><input type="checkbox" data-concluir="${o.proximaAtividade.id}"> ${ICONE_TIPO[o.proximaAtividade.tipo] || "•"} ${esc(o.proximaAtividade.assunto)}<span class="sub"> · ${dm(o.proximaAtividade.vencimento)} · ${esc((o.proximaAtividade.responsavelNome || "").split(" ")[0])}</span></label>`
+        : '<span class="sub" style="color:var(--warn)">sem atividade</span>'}</div>
+      <div class="facoes"><button type="button" class="lapis" data-ativ-op="${esc(o.id)}">+ atividade</button>
+        <button type="button" class="lapis" data-nota="${o.empresa.id}|${o.vertical}">+ atualização</button>
+        <button type="button" class="lapis" data-negocio-op="${esc(o.id)}">criar negócio</button>
+        <button type="button" class="lapis" data-estacionar="${o.empresa.id}|${o.vertical}" data-estacionar-nome="${esc(o.empresa.nome)}">estacionar</button></div>
+    </div>`;
+  const virou = v => `<div class="fcard"><div class="fcard-top"><a href="#empresa-${v.empresa.id}">${esc(v.empresa.nome)}</a></div>
+      <div class="chips">${vchip(v.vertical, v.verticalNome)}${v.produto ? `<span class="chip c-${v.vertical}">${esc(v.produto)}</span>` : ""}</div>
+      <div><a href="https://${esc(r.dominio)}.pipedrive.com/deal/${v.dealId}" target="_blank" rel="noopener">${esc(v.titulo || "negócio")}</a></div>
+      <div class="sub">${v.status === "ganho" ? '<b style="color:var(--good)">Ganho</b>' : v.status === "perdido" ? '<b style="color:var(--bad)">Perdido</b>' : esc(v.etapa || "aberto")} · criado em ${dm(v.em)}</div></div>`;
+  alvo.innerHTML = `<div class="funil-cols">${r.colunas.map(c => `<div class="fcol fcol-${c.chave}">
+      <div class="fcol-cab"><b>${esc(c.nome)}</b><span class="sub">${c.total}${c.chave === "virou" ? ` · últimos ${r.virouDias} dias` : ""}</span></div>
+      <div class="fcol-cards">${c.cards.length ? c.cards.map(c.chave === "virou" ? virou : card).join("") + (c.total > c.cards.length ? `<p class="sub">+${c.total - c.cards.length} (use os filtros)</p>` : "") : '<p class="sub">nenhuma</p>'}</div></div>`).join("")}
+      <div class="fcol fcol-est"><div class="fcol-cab"><b>Estacionadas</b><span class="sub">${r.estacionadas}</span></div>
+        <div class="fcol-cards"><p class="sub">Fora do funil por ora; voltam na data ou com M&A/negócio ganho.</p><button type="button" class="btn sec" data-ver-estacionadas>Ver estacionadas</button></div></div></div>`;
+  alvo.querySelector("[data-ver-estacionadas]").onclick = () => { VISAO_OP = "lista"; guardar("visaoOp", "lista"); filtroOp.oferta = "estacionadas"; filtroOp.pagina = 1; desenharOportunidades(); filtrarOps(); };
+}
+
+// Criar negócio no Pipedrive a partir da oportunidade: funil, etapa, produto e título (produto + ano, editável)
+async function criarNegocioOp(id) {
+  const o = FUNIL_CARDS.find(x => x.id === id) || OPS.find(x => x.id === id); if (!o) return;
+  let op; try { op = await api.get(`/api/oportunidades/negocio-opcoes?vertical=${o.vertical}`); } catch (err) { aviso(err.message); return; }
+  if (!op.funis.length) { aviso("Nenhum funil do Pipedrive para essa vertical."); return; }
+  const ano = new Date().getFullYear(), sug = (o.produtos || [])[0] || o.verticalNome;
+  const prodPadrao = op.produtos.find(x => x.label.toLowerCase() === String(sug).toLowerCase()) || op.produtos.find(x => x.label.toLowerCase().includes(String(sug).toLowerCase()));
+  const ponte = o.quemDecide?.ponte, alvoP = o.quemDecide?.pessoas?.[0];
+  const pref = [alvoP, ponte].find(x => x && x.noPipedrive);
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-neg" aria-labelledby="t-neg">
+    <h2 id="t-neg" style="margin:0">Criar negócio no Pipedrive</h2><div class="sub">${esc(o.empresa.nome)} · ${esc(o.verticalNome)}</div>
+    <div class="form-linha"><label>Funil<select id="n-funil">${op.funis.map(f => `<option value="${f.id}">${esc(f.nome)}</option>`).join("")}</select></label>
+      <label>Etapa<select id="n-etapa"></select></label></div>
+    <label>Produto<select id="n-prod"><option value="">—</option>${op.produtos.map(x => `<option value="${x.id}" ${x.id === prodPadrao?.id ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
+    <label>Título do negócio<input id="n-titulo" required maxlength="200" value="${esc(`${prodPadrao?.label || sug} ${ano}`)}"></label>
+    <label>Contato<select id="n-pessoa"><option value="">Só na organização</option>${(o.contatos || []).map(c => `<option value="${c.id}" ${c.id === pref?.id ? "selected" : ""}>${esc(c.nome)}${c.cargo ? " · " + esc(c.cargo) : ""}</option>`).join("")}</select></label>
+    <label>Responsável<select id="n-resp">${USUARIOS.map(u => `<option value="${u.id}" ${u.email === EU.email ? "selected" : ""} ${u.pipedrive || PREVIA ? "" : "disabled"}>${esc(u.nome)}</option>`).join("")}</select></label>
+    <p class="nota" style="margin:0">O negócio é aberto no Pipedrive e a oportunidade vai para "Virou negócio" (ganho e perdido vêm do Pipedrive).</p>
+    <p class="erro" id="n-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="n-cancelar">Cancelar</button><button class="btn" id="n-ok">Criar negócio</button></div>
+  </form></div>`;
+  const etapas = () => { const f = op.funis.find(x => x.id == document.getElementById("n-funil").value);
+    document.getElementById("n-etapa").innerHTML = (f?.etapas || []).map(e => `<option value="${e.id}">${esc(e.nome)}</option>`).join(""); };
+  etapas();
+  let tituloEditado = false;
+  document.getElementById("n-funil").onchange = etapas;
+  document.getElementById("n-titulo").oninput = () => { tituloEditado = true; };
+  document.getElementById("n-prod").onchange = ev => { if (tituloEditado) return; const pr = op.produtos.find(x => x.id == ev.target.value);
+    document.getElementById("n-titulo").value = `${pr?.label || sug} ${ano}`; };
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("n-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("f-neg").onsubmit = async e => {
+    e.preventDefault();
+    const b = document.getElementById("n-ok"); b.disabled = true;
+    try {
+      await api.post("/api/oportunidades/negocio", {empresa_id: o.empresa.id, vertical: o.vertical, pipeline_id: +document.getElementById("n-funil").value,
+        stage_id: +document.getElementById("n-etapa").value, produto_id: +document.getElementById("n-prod").value || null,
+        titulo: document.getElementById("n-titulo").value, pessoa_id: +document.getElementById("n-pessoa").value || null,
+        responsavel_id: +document.getElementById("n-resp").value});
+      fechar(); aviso(PREVIA ? "Negócio criado na prévia (não foi enviado ao Pipedrive)" : "Negócio criado no Pipedrive"); OPS_RESP = null; render();
+    } catch (err) { b.disabled = false; const el = document.getElementById("n-erro"); el.textContent = err.message; el.hidden = false; }
+  };
 }
 
 /* ---------- Fila de análise (painel lateral): completar à mão e levar para Oportunidades ---------- */
@@ -1260,6 +1387,7 @@ function editarNota(empresaId, vertical) {
     <h2 id="t-nota">Atualização do negócio</h2><div class="sub">${esc(o.empresa.nome)} · ${esc(o.verticalNome || V[vertical] || vertical)}</div>
     ${(o.notas || []).length ? `<div class="nota-hist">${o.notas.map(n => `<div>${esc(n.texto)}<div class="sub">${esc(n.autor || "")} · ${dia(n.em)} · ${esc(ajuste(n))}</div></div>`).join("")}</div>` : ""}
     <label>Nova atualização<textarea id="nota-texto" rows="4" maxlength="2000" placeholder="ex.: tem um corretor da família, muito difícil entrar; renovou o plano em agosto; pediu cotação de Cyber"></textarea></label>
+    <label>Precisa de nova atualização em <span class="sub">(até lá fica em "Atualizado" no funil; depois volta para "Não atuamos")</span><select id="nota-meses">${MESES_ATUALIZACAO}</select></label>
     <p class="nota">Vale só para esta vertical. A IA lê as notas e ajusta o Score (de −50 a +20); o motivo aparece no "Por quê".</p>
     <p class="erro" id="nota-erro" hidden></p>
     <div class="acoes"><button type="button" class="btn sec" id="nota-cancelar">Fechar</button><button class="btn" id="nota-salvar">Salvar atualização</button></div>
@@ -1272,7 +1400,7 @@ function editarNota(empresaId, vertical) {
     e.preventDefault();
     const b = document.getElementById("nota-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
     try {
-      const r = await api.post(`/api/empresas/${empresaId}/notas`, {vertical, texto: document.getElementById("nota-texto").value});
+      const r = await api.post(`/api/empresas/${empresaId}/notas`, {vertical, texto: document.getElementById("nota-texto").value, meses: +document.getElementById("nota-meses").value});
       fechar(); aviso(r.ajuste === null || r.ajuste === undefined ? "Atualização salva (a IA avalia na próxima rodada)" : `Atualização salva: ${r.ajuste > 0 ? "+" : ""}${r.ajuste} no Score`);
       OPS_RESP = null; render();
     } catch (err) { b.disabled = false; b.textContent = "Salvar atualização"; const el = document.getElementById("nota-erro"); el.textContent = err.message; el.hidden = false; }
@@ -1288,6 +1416,7 @@ function notaAtividade(id) {
     <h2 id="t-nota-at">Atualização do negócio</h2><div class="sub">${esc(i.assunto)} · ${esc(i.empresa || "")} · ${esc(i.responsavelNome || "")}</div>
     <label>Vertical<select id="nota-at-vert">${verts.map(v => `<option value="${v}" ${v === padrao ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
     <label>O que aconteceu<textarea id="nota-at-texto" rows="4" maxlength="2000" placeholder="ex.: apresentou para o RH, pediu proposta até o fim do mês"></textarea></label>
+    <label>Precisa de nova atualização em <span class="sub">(até lá fica em "Atualizado" no funil; depois volta para "Não atuamos")</span><select id="nota-at-meses">${MESES_ATUALIZACAO}</select></label>
     <p class="nota">Fica na oportunidade da empresa nesta vertical e a IA lê para ajustar o Score. Para um lembrete da atividade, use a Observação (clique no assunto).</p>
     <p class="erro" id="nota-at-erro" hidden></p>
     <div class="acoes"><button type="button" class="btn sec" id="nota-at-cancelar">Fechar</button><button class="btn" id="nota-at-salvar">Salvar atualização</button></div>
@@ -1300,7 +1429,7 @@ function notaAtividade(id) {
     e.preventDefault();
     const b = document.getElementById("nota-at-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
     try {
-      const r = await api.post(`/api/atividades/${id}/nota`, {vertical: document.getElementById("nota-at-vert").value, texto: document.getElementById("nota-at-texto").value});
+      const r = await api.post(`/api/atividades/${id}/nota`, {vertical: document.getElementById("nota-at-vert").value, texto: document.getElementById("nota-at-texto").value, meses: +document.getElementById("nota-at-meses").value});
       fechar(); OPS_RESP = null;
       aviso(r.ajuste === null || r.ajuste === undefined ? "Atualização salva (a IA avalia na próxima rodada)" : `Atualização salva: ${r.ajuste > 0 ? "+" : ""}${r.ajuste} no Score`);
       telaTodos();
@@ -1951,8 +2080,6 @@ async function telaNegocios() {
 let TODOS_ITENS = [], TODOS_TIPO = "", TODOS_VISAO = "fazer", LOG_USUARIO = null;
 // Filtros de To-dos como no Pipedrive: período e quem executa (começa nas atividades de quem está logado; fica guardado)
 const PERIODOS = [["fazer", "Para fazer"], ["vencido", "Vencido"], ["hoje", "Hoje"], ["amanha", "Amanhã"], ["semana", "Esta semana"], ["proxima", "Próxima semana"], ["periodo", "Selecionar período"]];
-const lerGuardado = (k, padrao) => { try { const v = localStorage.getItem(k); return v === null ? padrao : v; } catch (e) { return padrao; } };
-const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 let TODOS_PERIODO = lerGuardado("todosPeriodo", "semana"), TODOS_RESP = lerGuardado("todosResp", "eu"), TODOS_DE = "", TODOS_ATE = "";
 const ICONE_TIPO = {call: "📞", meeting: "👥", task: "🕒", email: "✉️", deadline: "🚩", lunch: "🍴"};
 function linhaAtividade(i) {
@@ -2292,6 +2419,7 @@ function notasCliente(id) {
     ${c.notas.length ? `<div class="nota-hist" style="max-height:340px">${c.notas.map(n => `<div>${vchip(n.vertical, n.verticalNome)} ${esc(n.texto)}<div class="sub">${esc(n.autor || "")} · ${dia(n.em)} · ${esc(ajuste(n))}</div></div>`).join("")}</div>` : '<p class="sub">Nenhuma atualização ainda.</p>'}
     <label>Vertical<select id="cli-nota-vert">${verts.map(v => `<option value="${v}" ${v === "saude" ? "selected" : ""}>${esc(V[v] || v)}</option>`).join("")}</select></label>
     <label>Nova atualização<textarea id="cli-nota-texto" rows="3" maxlength="2000" placeholder="ex.: plano renova em março; corretor atual é da família do sócio"></textarea></label>
+    <label>Precisa de nova atualização em <span class="sub">(até lá fica em "Atualizado" no funil; depois volta para "Não atuamos")</span><select id="cli-nota-meses">${MESES_ATUALIZACAO}</select></label>
     <p class="erro" id="cli-nota-erro" hidden></p>
     <div class="acoes"><button type="button" class="btn sec" id="cli-nota-fechar">Fechar</button><button class="btn" id="cli-nota-salvar">Salvar atualização</button></div>
   </form></div>`;
@@ -2302,7 +2430,7 @@ function notasCliente(id) {
     e.preventDefault();
     const b = document.getElementById("cli-nota-salvar"); b.disabled = true; b.textContent = "A IA está lendo…";
     try {
-      await api.post(`/api/empresas/${id}/notas`, {vertical: document.getElementById("cli-nota-vert").value, texto: document.getElementById("cli-nota-texto").value});
+      await api.post(`/api/empresas/${id}/notas`, {vertical: document.getElementById("cli-nota-vert").value, texto: document.getElementById("cli-nota-texto").value, meses: +document.getElementById("cli-nota-meses").value});
       fechar(); aviso("Atualização salva"); OPS_RESP = null; render();
     } catch (err) { b.disabled = false; b.textContent = "Salvar atualização"; const el = document.getElementById("cli-nota-erro"); el.textContent = err.message; el.hidden = false; }
   };
@@ -2538,6 +2666,7 @@ document.addEventListener("click", ev => {
       .catch(err => aviso(err.message));
   }
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
+  const ng = ev.target.closest("[data-negocio-op]"); if (ng) criarNegocioOp(ng.dataset.negocioOp);
   const es = ev.target.closest("[data-estacionar]"); if (es) { const [id, v] = es.dataset.estacionar.split("|"); estacionar(id, v, es.dataset.estacionarNome); }
   const tz = ev.target.closest("[data-trazer]");
   if (tz) { const [id, v] = tz.dataset.trazer.split("|");
@@ -2572,7 +2701,7 @@ document.addEventListener("change", async ev => {
       OPS_RESP = null; render(); }
     if (s) { await api.post(`/api/empresas/${s}/saude`, {cliente: ev.target.checked}); aviso(ev.target.checked ? "Marcada como cliente Saúde" : "Desmarcada: não é mais cliente Saúde");
       OPS_RESP = null; render(); }
-    if (c) { const feita = ev.target.checked; await api.post(`/api/atividades/${c}/concluir`, {concluida: feita}); await telaTodos();
+    if (c) { const feita = ev.target.checked; await api.post(`/api/atividades/${c}/concluir`, {concluida: feita}); OPS_RESP = null; await render();
       if (feita) proximoPasso(c); }
     if (ev.target.dataset?.ativData) {  // a data só vai para o Pipedrive no botão Confirmar
       const ok = document.querySelector(`[data-ativ-ok="${ev.target.dataset.ativData}"]`);

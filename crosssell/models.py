@@ -407,6 +407,7 @@ class NotaOportunidade(Base):
     texto: Mapped[str]
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
     criada_em: Mapped[datetime] = mapped_column(default=_now)
+    vale_ate: Mapped[date | None] = mapped_column(Date)  # até quando a atualização vale (funil: "Atualizado")
     ajuste: Mapped[int | None]  # None: a IA ainda não avaliou (tenta de novo na rotina)
     motivo: Mapped[str | None]
     avaliada_em: Mapped[datetime | None]
@@ -466,3 +467,20 @@ class AlteracaoDado(Base):
 
     empresa: Mapped[Empresa | None] = relationship()
     pessoa: Mapped[Pessoa | None] = relationship()
+
+
+class OportunidadeConvertida(Base):
+    """Oportunidade que virou negócio no Pipedrive pelo botão "Criar negócio" (funil de Oportunidades: "Virou
+    negócio"). O andamento (etapa, ganho, perdido) vem do negócio sincronizado."""
+
+    __tablename__ = "oportunidades_convertidas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), index=True)
+    vertical: Mapped[str]
+    produto: Mapped[str | None]
+    pipedrive_deal_id: Mapped[int] = mapped_column(index=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    criada_em: Mapped[datetime] = mapped_column(default=_now, index=True)
+
+    empresa: Mapped[Empresa] = relationship()

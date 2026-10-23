@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from crosssell import auth, qualidade, site_ia, tabela, temperatura
-from crosssell.normalize import AREA_LABEL, classificar_senioridade, sem_acento
+from crosssell import assistente, auth, qualidade, site_ia, tabela, temperatura
+from crosssell.normalize import AREA_LABEL, classificar_senioridade, normalizar_nome_empresa, sem_acento
 from crosssell.potencial import criterios, fatia_minima, funcionarios_validos, influencia, praca, setor_valido
 from crosssell.config import VERTICAIS, VERTICAL_LABEL, get_settings
 from crosssell.connectors import linkedin as lk
@@ -110,7 +110,9 @@ QUALIDADE = _Guardada(lambda db: (qualidade.duplicadas(db), qualidade.razao_soci
 @app.middleware("http")
 async def _alteracao_invalida_oportunidades(request: Request, call_next):
     resp = await call_next(request)
-    if request.method not in ("GET", "HEAD", "OPTIONS") and resp.status_code < 400:
+    # O assistente só lê: perguntar não muda nada e não deve jogar fora o cálculo das oportunidades
+    if (request.method not in ("GET", "HEAD", "OPTIONS") and resp.status_code < 400
+            and request.url.path != "/api/assistente"):
         OPORTUNIDADES.limpar()
         QUALIDADE.limpar()
     return resp
@@ -1427,6 +1429,90 @@ def api_ia_modelo(dados: IaIn, db: Session = Depends(get_db), u: Usuario = Depen
     db.add(c)
     db.commit()
     return _ia_json(db)
+
+
+# Assistente (fase 1: só tira dúvidas e consulta; não altera nada)
+OP_ASSISTENTE = ("id", "vertical", "score", "influencia", "cliente", "estagio", "atualizadoAte", "analisada",
+                 "faltando", "pendencias", "motivos", "quemDecide", "proximaAtividade", "estacionada", "voltou",
+                 "etiquetas", "praca", "negociando", "vigentes", "manual", "tipo", "saude")
+
+
+def _op_assistente(o: dict) -> dict:
+    """A parte de uma oportunidade que o assistente precisa (a inteira é grande e cheia de ids)."""
+    return {k: o.get(k) for k in OP_ASSISTENTE} | {
+        "empresa": {"id": o["empresa"]["id"], "nome": o["empresa"]["nome"], "local": o["empresa"]["local"],
+                    "funcionarios": o["empresa"]["funcionarios"], "setor": o["empresa"]["setor"]},
+        "produtos": [{"produto": x.get("produto"), "sugerido": x.get("sugerido", True)} for x in o["produtos"]],
+        "notas": [{k: n[k] for k in ("texto", "autor", "em", "ajuste", "motivo")} for n in o["notas"][:3]],
+        "pesquisa": o.get("pesquisa", {}).get("estado")}
+
+
+def _ferramenta(db: Session, u: Usuario, nome: str, a: dict):
+    """Roda uma ferramenta de leitura do assistente com as permissões de quem pergunta."""
+    if nome == "buscar_empresas":
+        termo = f"%{normalizar_nome_empresa(str(a.get('texto', '')))}%"
+        if len(termo) < 5:
+            return {"erro": "Digite ao menos 3 letras do nome."}
+        es = db.scalars(select(Empresa).where(Empresa.nome_normalizado.like(termo)).limit(15)).all()
+        if not es:  # a busca normalizada não pega nome fantasia
+            es = db.scalars(select(Empresa).where(func.lower(Empresa.nome_fantasia).like(f"%{a.get('texto', '').lower()}%"))
+                            .limit(15)).all()
+        return [{"id": e.id, "nome": e.razao_social, "fantasia": e.nome_fantasia, "local": tabela.local(e),
+                 "cliente": bool(tabela.seguros_vigentes(e))} for e in es]
+    if nome == "ficha_empresa":
+        return api_empresa(int(a["empresa_id"]), db, u)
+    if nome == "oportunidades_da_empresa":
+        return [_op_assistente(o) for o in api_oportunidades(empresa=int(a["empresa_id"]), db=db, _u=u)["itens"]]
+    if nome == "listar_oportunidades":
+        r = api_oportunidades(pagina=int(a.get("pagina") or 1), vertical=a.get("vertical") or "",
+                              tipo=a.get("tipo") or "", oferta=a.get("oferta") or "cross", ativ=a.get("ativ") or "",
+                              db=db, _u=u)
+        return {"total": r["total"], "totalAnalisadas": r["totalGeral"], "fila": r["fila"], "ofertas": r["ofertas"],
+                "semAtividade": r["semAtividade"], "itens": [_op_assistente(o) for o in r["itens"]]}
+    if nome == "equipe":
+        return [{"id": x.id, "nome": x.nome, "papel": x.papel}
+                for x in db.scalars(select(Usuario).where(Usuario.ativo).order_by(Usuario.nome)).all()]
+    if nome == "todos":
+        return tabela.todos(db, None, a.get("periodo") or "fazer", None, None, a.get("usuario_id"))
+    if nome == "feito_na_semana":
+        alvo = db.get(Usuario, int(a["usuario_id"]))
+        if alvo is None:
+            return {"erro": "Pessoa não encontrada."}
+        return tabela.log_semana(db, alvo, date.fromisoformat(a["data"]) if a.get("data") else None)
+    return {"erro": f"Ferramenta desconhecida: {nome}"}
+
+
+def assistente_ia(db: Session):
+    """O assistente (o mesmo modelo da temperatura). Trocado nos testes."""
+    s = get_settings()
+    if not s.anthropic_api_key:
+        raise HTTPException(503, "A IA não está configurada no servidor (falta a chave da Claude API).")
+    return assistente.Assistente(s, modelo=temperatura.modelo_em_uso(db, s)[0])
+
+
+class MensagemIn(BaseModel):
+    papel: str  # eu | ia
+    texto: str
+
+
+class AssistenteIn(BaseModel):
+    mensagens: list[MensagemIn]
+    tela: str = ""
+
+
+@app.post("/api/assistente")
+def api_assistente(dados: AssistenteIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
+    """Chat do assistente. O navegador manda a conversa (as últimas 20 mensagens); nada é guardado."""
+    msgs = [{"role": "user" if m.papel == "eu" else "assistant", "content": m.texto.strip()[:4000]}
+            for m in dados.mensagens[-20:] if m.texto.strip()]
+    while msgs and msgs[0]["role"] != "user":  # a conversa começa pela pessoa
+        msgs.pop(0)
+    if not msgs or msgs[-1]["role"] != "user":
+        raise HTTPException(400, "Escreva uma pergunta.")
+    ia = assistente_ia(db)
+    texto = ia.responder(msgs, lambda nome, a: _ferramenta(db, u, nome, a), usuario=u.nome, tela=dados.tela[:200],
+                         hoje=tabela.hoje_brasilia())
+    return {"texto": texto}
 
 
 @app.get("/api/linkedin")

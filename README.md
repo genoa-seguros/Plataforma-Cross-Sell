@@ -128,6 +128,12 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   período (Para fazer, Vencido, Hoje, Amanhã, Esta semana, Próxima semana, Selecionar período); a escolha fica
   guardada no navegador. "Esta semana" é a visão da reunião (pendentes até sexta e as feitas na semana).
 - **Estacionar** também aceita uma data escolhida para voltar.
+- **Assistente** (botão redondo no canto de todas as telas): um chat com a IA que tira dúvidas sobre a plataforma.
+  Responde com base neste README e nos critérios do Score (`config/criterios.yaml`), por isso o README precisa
+  estar sempre em dia. Também consulta os dados, só para leitura: busca empresas, a ficha, as oportunidades
+  (Score, porquê, estágio, o que falta), a lista de Oportunidades, os To-dos e o Feito na semana. Não altera
+  nada: quando pedem uma mudança, explica onde fazer. A conversa fica só na aba do navegador; o servidor não guarda.
+  Usa o modelo escolhido na tela Equipe e precisa da chave da Claude API no servidor.
 - **Funil** (Oportunidades, botão ▥ Funil ao lado de ☰ Lista; a escolha fica guardada no navegador): as mesmas
   oportunidades dos filtros, em colunas calculadas sozinhas (`tabela.estagio`): **Não atuamos** (sem atividade aberta
   e sem atualização válida), **Em foco** (atividade aberta na empresa e vertical, criada depois que a última

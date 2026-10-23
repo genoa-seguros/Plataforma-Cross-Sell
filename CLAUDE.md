@@ -114,6 +114,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   company+vertical created after the note expired), else nao_atuamos; virou = `OportunidadeConvertida` (deal created by
   `POST /api/oportunidades/negocio` → `pipedrive.criar_negocio`, options from `/api/oportunidades/negocio-opcoes`) in the
   last 90 days. Estacionadas are a side lane, not a stage.
+  Oportunidades opens on the funil (localStorage `visaoOportunidades`). Clicking a card opens the drawer
+  (`abrirGaveta` in app.html: `/api/oportunidades?empresa=` + `/api/empresas/{id}`, sections, same data-* actions);
+  `desenharFunil` refreshes an open drawer.
 - **Diário da análise** (`AnaliseDia`, rotina step `diario` → `tabela.registrar_dia`, `/api/diario` →
   `tabela.diario`): daily snapshot per vertical (analisadas ids, fila, faltando counts) plus LinkedinPedido and SyncLog
   work per day. `historico.py` (a `before_flush` listener) logs every Empresa/Pessoa/Noticia field the platform fills

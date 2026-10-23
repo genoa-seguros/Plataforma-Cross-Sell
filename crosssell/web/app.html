@@ -290,6 +290,21 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .rot-fatos li>b{font:800 20px/1 var(--f-display);color:var(--accent);text-align:center}
 .rot-fatos li>b small{display:block;font:600 10px/1.2 var(--f-body);color:var(--mute);margin-top:2px}
 .rot-medidor{height:10px;border-radius:99px;background:var(--soft);overflow:hidden} .rot-medidor i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.fcard-abre{cursor:pointer;transition:border-color .12s,box-shadow .12s}.fcard-abre:hover{border-color:var(--accent);box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 15%,transparent)}
+/* Gaveta da oportunidade: mesma moldura da fila, com seções */
+.gaveta{width:min(560px,100%)}
+.gav-topo h2 span{overflow:hidden;text-overflow:ellipsis}
+.gav-score{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.gav-score b{font:800 28px/1 var(--f-display);color:var(--accent)}.gav-score a{margin-left:auto}
+.gav-corpo{overflow:auto;padding:4px 16px 24px}
+.gav-sec{padding:12px 0;border-bottom:1px solid var(--line);display:grid;gap:8px}.gav-sec:last-child{border-bottom:0}
+.gav-sec h3{margin:0;font:700 12px/1.2 var(--f-display);text-transform:uppercase;letter-spacing:.06em;color:var(--mute);display:flex;align-items:center;gap:8px}
+.gav-sec .facoes{display:flex;flex-wrap:wrap;gap:6px}
+.gav-lista,.gav-pessoas,.gav-crit{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.gav-pessoas li{border:1px solid var(--line);border-radius:8px;padding:7px 10px;display:grid;gap:2px}
+.gav-notas li{border-left:3px solid var(--line);padding-left:8px}
+.gav-crit li{display:grid;grid-template-columns:1fr 90px 28px;gap:8px;align-items:center;font-size:13px}
+.gav-barra{height:6px;background:var(--soft);border-radius:99px;overflow:hidden}.gav-barra i{display:block;height:100%;background:var(--accent)}
+.gav-sec .decide{border:0;padding:0;margin:0;font-size:13px}
 /* Assistente: botão redondo fixo no canto e um painel de chat por cima da tela (acima da fila, abaixo dos modais) */
 .ia-botao{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:52px;height:52px;border-radius:50%;border:0;
   background:linear-gradient(160deg,#6c4ee8,#271a5c);color:#fff;box-shadow:0 6px 18px rgb(22 15 58 / 35%);cursor:pointer;z-index:18;display:grid;place-items:center}
@@ -1191,8 +1206,8 @@ function desenharOportunidades() {
   document.getElementById("app").innerHTML = `
   <section style="display:grid;gap:10px">
     <div class="filtros" role="group" aria-label="Visão">
-      <button class="chip off" data-visao-op="lista" aria-pressed="${VISAO_OP === "lista"}">☰ Lista</button>
       <button class="chip off" data-visao-op="funil" aria-pressed="${VISAO_OP === "funil"}">▥ Funil</button>
+      <button class="chip off" data-visao-op="lista" aria-pressed="${VISAO_OP === "lista"}">☰ Lista</button>
     </div>
     <div class="filtros" role="group" aria-label="Vertical">
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
@@ -1224,14 +1239,14 @@ function desenharOportunidades() {
   if (FILA.aberta) abrirFila();
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
   document.getElementById("f-ativ-op").onchange = e => { filtroOp.ativ = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
-  document.querySelectorAll("[data-visao-op]").forEach(b => b.onclick = () => { VISAO_OP = b.dataset.visaoOp; guardar("visaoOp", VISAO_OP); desenharOportunidades(); });
+  document.querySelectorAll("[data-visao-op]").forEach(b => b.onclick = () => { VISAO_OP = b.dataset.visaoOp; guardar("visaoOportunidades", VISAO_OP); desenharOportunidades(); });
 }
 
 /* ---------- Funil de Oportunidades ---------- */
 const MESES_ATUALIZACAO = [[1, "1 mês"], [2, "2 meses"], [3, "3 meses"], [6, "6 meses"], [12, "12 meses"]].map(([m, t]) => `<option value="${m}" ${m === 2 ? "selected" : ""}>${t}</option>`).join("");
 // Estágios calculados: Não atuamos (ninguém pegou), Em foco (atividade aberta), Atualizado (atualização valendo) e
 // Virou negócio (criado pelo botão, com o andamento no Pipedrive). Estacionadas ficam à parte.
-let VISAO_OP = lerGuardado("visaoOp", "lista"), FUNIL_CARDS = [], FUNIL_SEQ = 0;
+let VISAO_OP = lerGuardado("visaoOportunidades", "funil"), FUNIL_CARDS = [], FUNIL_SEQ = 0;
 async function desenharFunil() {
   const alvo = document.getElementById("funil-op"); if (!alvo || VISAO_OP !== "funil") return;
   const p = new URLSearchParams();
@@ -1242,7 +1257,7 @@ async function desenharFunil() {
   if (seq !== FUNIL_SEQ) return;
   FUNIL_CARDS = r.colunas.filter(c => c.chave !== "virou").flatMap(c => c.cards);
   const hoje = iso(new Date());
-  const card = o => `<div class="fcard">
+  const card = o => `<div class="fcard fcard-abre" data-gaveta="${esc(o.id)}" tabindex="0" role="button" aria-label="Abrir ${esc(o.empresa.nome)}">
       <div class="fcard-top"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><b class="fscore" title="Score">${Math.round(o.score)}</b></div>
       <div class="chips">${vchip(o.vertical, o.verticalNome)}${(o.produtos || []).map(x => `<span class="chip c-${o.vertical}">${esc(x)}</span>`).join("")}</div>
       ${o.voltou ? `<span class="chip" style="--c:var(--accent)" title="${esc(o.voltou)}">voltou dos estacionados</span>` : ""}
@@ -1263,8 +1278,90 @@ async function desenharFunil() {
       <div class="fcol-cards">${c.cards.length ? c.cards.map(c.chave === "virou" ? virou : card).join("") + (c.total > c.cards.length ? `<p class="sub">+${c.total - c.cards.length} (use os filtros)</p>` : "") : '<p class="sub">nenhuma</p>'}</div></div>`).join("")}
       <div class="fcol fcol-est"><div class="fcol-cab"><b>Estacionadas</b><span class="sub">${r.estacionadas}</span></div>
         <div class="fcol-cards"><p class="sub">Fora do funil por ora; voltam na data ou com M&A/negócio ganho.</p><button type="button" class="btn sec" data-ver-estacionadas>Ver estacionadas</button></div></div></div>`;
-  alvo.querySelector("[data-ver-estacionadas]").onclick = () => { VISAO_OP = "lista"; guardar("visaoOp", "lista"); filtroOp.oferta = "estacionadas"; filtroOp.pagina = 1; desenharOportunidades(); filtrarOps(); };
+  if (GAVETA.id) abrirGaveta(GAVETA.id, true);  // o funil mudou (atividade, atualização...): a gaveta acompanha
+  alvo.querySelector("[data-ver-estacionadas]").onclick = () => { VISAO_OP = "lista"; guardar("visaoOportunidades", "lista"); filtroOp.oferta = "estacionadas"; filtroOp.pagina = 1; desenharOportunidades(); filtrarOps(); };
 }
+
+/* ---------- Gaveta da oportunidade (clique no card do funil) ----------
+   Tudo da oportunidade numa coluna só, por seções: próximo passo, por quê, quem decide e ponte, pessoas,
+   atualizações, negócios e notícias. As ações são os mesmos botões do card (data-*), tratados pela tela. */
+const GAVETA = {id: null, seq: 0};
+const ESTAGIO_NOME = {nao_atuamos: "Não atuamos", em_foco: "Em foco", atualizado: "Atualizado"};
+function fecharGaveta() { GAVETA.id = null; document.getElementById("gaveta")?.remove(); }
+const secao = (titulo, corpo, extra = "") => `<section class="gav-sec"><h3>${titulo}${extra}</h3>${corpo}</section>`;
+async function abrirGaveta(id, silencioso = false) {
+  const empresaId = id.split("-")[0], seq = ++GAVETA.seq;
+  GAVETA.id = id; fecharFila();
+  let painel = document.getElementById("gaveta");
+  if (!painel) {
+    document.body.insertAdjacentHTML("beforeend", '<aside class="fila gaveta" id="gaveta" aria-label="Oportunidade"><p class="vazio">Carregando…</p></aside>');
+    painel = document.getElementById("gaveta");
+  } else if (!silencioso) painel.innerHTML = '<p class="vazio">Carregando…</p>';
+  let o, e;
+  try {
+    const [ops, emp] = await Promise.all([api.get("/api/oportunidades?empresa=" + empresaId), api.get("/api/empresas/" + empresaId)]);
+    o = ops.itens.find(x => x.id === id); e = emp;
+  } catch (err) { if (seq === GAVETA.seq) painel.innerHTML = `<p class="vazio">${esc(err.message)}</p>`; return; }
+  if (seq !== GAVETA.seq || GAVETA.id !== id) return;
+  if (!o) { painel.innerHTML = '<p class="vazio">Esta oportunidade não está mais na lista.</p>'; return; }
+  const rolagem = painel.querySelector(".gav-corpo")?.scrollTop || 0;
+  const prox = o.proximaAtividade, hoje = iso(new Date()), decide = o.quemDecide || {};
+  const ponteId = decide.ponte?.id;
+  const ordem = p => (p.id === ponteId ? -2 : 0) + ((p.usuarios || []).length ? -1 : 0);
+  const pessoas = [...(e.pessoas || [])].sort((a, b) => ordem(a) - ordem(b) || (b.influencia ?? 0) - (a.influencia ?? 0));
+  const pessoa = p => `<li><div><b>${esc(p.nome)}</b>${inLink(p.linkedin)}
+      ${p.id === ponteId ? '<span class="chip" style="--c:var(--good)">ponte</span>' : ""}${p.area ? ` <span class="chip off">${esc(p.area)}</span>` : ""}</div>
+    <div class="sub">${esc(p.cargo || "cargo não informado")} ${btnCargo(p)} · infl. ${Math.round(p.influencia ?? 0)}</div>
+    ${(p.usuarios || []).length ? `<div class="sub" style="color:var(--good)">troca e-mails com ${esc(p.usuarios.map(nomeDe).join(", "))}</div>` : ""}
+    ${p.temperatura ? `<div><span class="chip t-${p.temperatura}" title="${esc(p.temperaturaMotivo || "")}">${TEMP[p.temperatura]}</span></div>` : ""}</li>`;
+  const crit = (o.criterios || []).map(c => `<li><span>${esc(NOME_CRIT[c.nome] || c.nome)} <span class="sub">peso ${c.peso}</span></span>
+      <span class="gav-barra"><i style="width:${Math.round(c.valor * 100)}%"></i></span><b class="num">${Math.round(c.valor * 100)}</b></li>`).join("");
+  const nota = n => `<li><div class="sub">${dia(n.em)}${n.autor ? " · " + esc(n.autor) : ""}${n.ajuste ? ` · <b style="color:${n.ajuste > 0 ? "var(--good)" : "var(--bad)"}">${n.ajuste > 0 ? "+" : ""}${n.ajuste} no Score</b>` : ""}</div>
+      <div>${esc(n.texto)}</div>${n.motivo ? `<div class="sub">IA: ${esc(n.motivo)}</div>` : ""}</li>`;
+  const negocios = [
+    ...(o.negociando || []).map(x => `<li>${vchip(x.vertical, x.produto || "")} <span class="sub">em negociação${x.etapa ? " · " + esc(x.etapa) : ""}${x.funil ? " · " + esc(x.funil) : ""}</span></li>`),
+    ...(o.vigentes || []).map(x => `<li>${vchip(x.vertical, x.produto || "")} <span class="sub">vigente${x.fim ? " até " + mesAno(x.fim) : ""}</span></li>`),
+    ...(o.ganhos || []).map(g => `<li><span class="chip" style="--c:var(--good)">Ganho: ${esc(g.produto || "")}</span> <span class="sub">${dm(g.em)}${g.donoNome ? " · " + esc(g.donoNome) : ""}</span></li>`),
+    ...(o.etiquetas || []).map(t => `<li><span class="chip" style="--c:var(--warn)">${esc(t)}</span></li>`)];
+  const emp = o.empresa;
+  painel.innerHTML = `<div class="fila-topo gav-topo">
+      <h2><span>${esc(emp.nome)}</span><button type="button" class="btn sec" id="gav-fechar" aria-label="Fechar">Fechar</button></h2>
+      <div class="chips">${vchip(o.vertical, o.verticalNome)}<span class="chip off">${ESTAGIO_NOME[o.estagio] || "—"}</span>${o.cliente ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'}
+        ${(o.produtos || []).filter(x => x.sugerido !== false).map(x => `<span class="chip c-${o.vertical}" title="${esc(x.texto || "")}">${esc(x.produto)}</span>`).join("")}</div>
+      <div class="gav-score"><b>${Math.round(o.score)}</b><span class="sub">Score em ${esc(o.verticalNome)} · influência ${Math.round(o.influencia ?? 0)}</span><a href="#empresa-${emp.id}" class="small">abrir ficha completa →</a></div>
+      <div class="sub">${[emp.local || "local não informado", emp.funcionarios ? `${emp.funcionarios.toLocaleString("pt-BR")} funcionários` : "funcionários ?", emp.setor || "setor ?"].map(esc).join(" · ")}</div>
+      ${barraPesquisa(o)}</div>
+    <div class="gav-corpo">
+      ${secao("Próximo passo", `${prox ? `<label class="fativ-l${prox.vencimento < hoje ? " atras" : ""}"><input type="checkbox" data-concluir="${prox.id}"> ${ICONE_TIPO[prox.tipo] || "•"} ${esc(prox.assunto)}<span class="sub"> · ${dm(prox.vencimento)} · ${esc(prox.responsavelNome || nomeDe(prox.responsavel))}</span></label>`
+          : '<p class="sub" style="color:var(--warn);margin:0">Nenhuma atividade aberta: ninguém está trabalhando esta oportunidade.</p>'}
+        ${o.estacionada ? `<div class="estac"><b>Estacionada</b> por ${esc(o.estacionada.por || "?")} em ${dia(o.estacionada.em)}: ${esc(o.estacionada.motivoTexto)}${o.estacionada.reverEm ? ` · volta em ${dt(o.estacionada.reverEm)}` : ""}</div>` : ""}
+        ${o.voltou ? `<div><span class="chip" style="--c:var(--accent)">voltou dos estacionados</span> <span class="sub">${esc(o.voltou)}</span></div>` : ""}
+        <div class="facoes"><button type="button" class="btn" data-ativ-op="${esc(o.id)}">+ atividade</button>
+          <button type="button" class="btn sec" data-nota="${emp.id}|${o.vertical}">+ atualização</button>
+          <button type="button" class="btn sec" data-negocio-op="${esc(o.id)}">Criar negócio</button>
+          ${o.estacionada ? "" : `<button type="button" class="btn sec" data-estacionar="${emp.id}|${o.vertical}" data-estacionar-nome="${esc(emp.nome)}">Estacionar</button>`}</div>`)}
+      ${secao("Por quê", `${listaMotivos(o.motivos || [])}${crit ? `<ul class="gav-crit">${crit}</ul>` : ""}`)}
+      ${(o.pendencias || []).length || (o.faltando || []).length ? secao("O que falta", `<ul class="gav-lista">${[...new Set([...(o.faltando || []), ...(o.pendencias || []).map(x => x.texto)])].map(t => `<li>${esc(t)}</li>`).join("")}</ul>`) : ""}
+      ${secao("Quem decide e ponte", celulaDecide(decide, o.vertical) || '<span class="sub">—</span>')}
+      ${secao("Pessoas da empresa", pessoas.length ? `<ul class="gav-pessoas">${pessoas.slice(0, 15).map(pessoa).join("")}</ul>${pessoas.length > 15 ? `<a href="#empresa-${emp.id}" class="small">ver as ${pessoas.length} na ficha</a>` : ""}`
+        : '<span class="sub">Ninguém cadastrado.</span>', ` <button type="button" class="lapis" data-pessoa-nova="${emp.id}" data-pessoa-empresa="${esc(emp.nome)}">+ pessoa</button>`)}
+      ${secao("Atualizações do negócio", (o.notas || []).length ? `${o.atualizadoAte ? `<p class="sub" style="margin:0">A última vale até ${dt(o.atualizadoAte)}.</p>` : ""}<ul class="gav-lista gav-notas">${o.notas.map(nota).join("")}</ul>` : '<span class="sub">Nenhuma ainda.</span>')}
+      ${secao("Negócios e etiquetas", negocios.length ? `<ul class="gav-lista">${negocios.join("")}</ul>` : '<span class="sub">Nada aberto, vigente ou ganho recente.</span>')}
+      ${secao("Notícias", (e.noticias || []).length ? `<ul class="gav-lista">${e.noticias.map(n => `<li>${noticiaHTML(n)}</li>`).join("")}</ul>` : '<span class="sub">Sem notícias recentes.</span>')}
+      ${e.siteIa ? secao("Site (lido pela IA)", `<p class="sub" style="margin:0">${esc(e.siteIa.resumo || e.siteIa.motivo || "lido em " + dia(e.siteIa.em))}</p>`) : ""}
+    </div>`;
+  painel.querySelector(".gav-corpo").scrollTop = rolagem;
+  document.getElementById("gav-fechar").onclick = fecharGaveta;
+}
+document.addEventListener("click", ev => {
+  const c = ev.target.closest("[data-gaveta]");
+  if (c && !ev.target.closest("a,button,input,label,select")) abrirGaveta(c.dataset.gaveta);
+});
+document.addEventListener("keydown", ev => {
+  const c = ev.target.closest?.("[data-gaveta]");
+  if (c && ev.target === c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); abrirGaveta(c.dataset.gaveta); }
+  if (ev.key === "Escape" && GAVETA.id && !document.querySelector(".modal-fundo")) fecharGaveta();
+});
 
 // Criar negócio no Pipedrive a partir da oportunidade: funil, etapa, produto e título (produto + ano, editável)
 async function criarNegocioOp(id) {
@@ -1351,7 +1448,7 @@ function filaItemHTML(o) {
   </div>`}`;
 }
 async function abrirFila() {
-  FILA.aberta = true;
+  FILA.aberta = true; if (GAVETA.id) fecharGaveta();
   let painel = document.getElementById("fila");
   if (!painel) {
     document.body.insertAdjacentHTML("beforeend", '<aside class="fila" id="fila" aria-label="Fila de análise"><p class="vazio">Carregando…</p></aside>');
@@ -2750,7 +2847,8 @@ async function render() {
   const m = h.match(/^#empresa-(\d+)$/);
   VEZ++;
   abas(m ? "oportunidades" : h.slice(1));
-  if (h !== "#oportunidades") document.getElementById("fila")?.remove();  // o painel da fila é só da tela Oportunidades
+  if (h !== "#oportunidades") document.getElementById("fila")?.remove();
+  if (h !== "#oportunidades" && GAVETA.id) fecharGaveta();  // o painel da fila é só da tela Oportunidades
   document.getElementById("app").innerHTML = '<p class="vazio">Carregando…</p>';  // a aba muda já no clique
   document.getElementById("app").classList.toggle("largo", h === "#oportunidades" || h === "#todos" || h === "#clientes" || !!m);
   try {

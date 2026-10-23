@@ -164,6 +164,8 @@ table.clientes td{vertical-align:middle;white-space:nowrap;overflow:hidden;text-
 table.diario td{vertical-align:top;font-size:13px}table.diario .sobe{color:var(--good);font-weight:600;font-size:12px}table.diario .desce{color:var(--bad);font-weight:600;font-size:12px}
 table.diario details summary{cursor:pointer;color:var(--accent)}table.diario details div{margin-top:4px;white-space:nowrap}
 .trava{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}.trava .pesq-barra{grid-column:1/-1;max-width:none}
+.pre-lista{max-height:60vh;overflow:auto;display:grid;gap:10px}.pre-emp{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.pre-nome{font-weight:600;margin-bottom:4px}.pre-emp ul{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}.pre-emp .antes{color:var(--mute);text-decoration:line-through}
 .todos-barra{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
 .todos-resp{display:flex;gap:8px;align-items:center;font-size:13px}
 .periodos{display:flex;flex-wrap:wrap;gap:2px}
@@ -513,6 +515,7 @@ const previa = {
     }
     if (path.startsWith("/api/todos?")) return todosLocal(path);
     if (path.startsWith("/api/todos/log")) return logLocal(path);
+    if (path.startsWith("/api/diario/preenchido")) return (D.preenchido || {})[new URLSearchParams(path.split("?")[1]).get("data")] || {total: 0, empresas: []};
     if (path.startsWith("/api/diario")) return D.diario || {dias: [], travas: {}, verticais: V};
     if (path === "/api/clientes") return {itens: D.clientes || [], tiers: ["A+", "A", "B", "C"]};
     throw new Error("rota desconhecida");
@@ -2120,17 +2123,38 @@ async function telaDiario() {
     ${r.desde ? "" : `<div class="grupo"><p class="vazio">A foto diária começa na próxima rodada da rotina (de hora em hora). Os pedidos ao LinkedIn e o trabalho da Receita, notícias e sites já aparecem abaixo.</p></div>`}
     ${travas ? `<div class="rot-paineis">${travas}</div>` : ""}
     <div class="tabela"><table class="diario">
-      <thead><tr><th>Dia</th>${vs.map(v => `<th title="Analisadas (em Oportunidades) e, embaixo, quantas na fila">${esc(r.verticais[v])}</th>`).join("")}<th title="Entraram em Oportunidades naquele dia">Entraram</th><th title="Pedidos enviados ao LinkedIn, aplicados (voltaram e foram gravados) e com erro">LinkedIn</th><th>Receita, notícias e sites</th></tr></thead>
+      <thead><tr><th>Dia</th>${vs.map(v => `<th title="Analisadas (em Oportunidades) e, embaixo, quantas na fila">${esc(r.verticais[v])}</th>`).join("")}<th title="Entraram em Oportunidades naquele dia">Entraram</th><th title="Cada dado que a própria plataforma preencheu ou mudou no dia (Receita, LinkedIn, notícias, sites, IA, e-mails)">Preenchido pela plataforma</th><th title="Pedidos enviados ao LinkedIn, aplicados (voltaram e foram gravados) e com erro">LinkedIn</th><th>Receita, notícias e sites</th></tr></thead>
       <tbody>${r.dias.map(d => `<tr>
         <td style="white-space:nowrap"><b>${DIA_SEMANA[new Date(d.data + "T12:00:00").getDay()].slice(0, 3)}</b> ${dm(d.data)}</td>
         ${vs.map(v => { const x = d.verticais[v]; return `<td>${x ? `${num(x.analisadas, x.variacao)}<div class="sub">${x.fila} na fila</div>` : '<span class="sub">—</span>'}</td>`; }).join("")}
         <td>${d.entraram.length ? `<details><summary>${d.entraram.length} ${d.entraram.length === 1 ? "empresa" : "empresas"}</summary>${d.entraram.map(e => `<div>${vchip(e.vertical, e.verticalNome)} <a href="#empresa-${e.id}">${esc(e.nome)}</a></div>`).join("")}</details>` : '<span class="sub">nenhuma</span>'}</td>
+        <td>${d.preenchido.total ? `<b>${d.preenchido.total}</b> ${d.preenchido.total === 1 ? "dado" : "dados"} em ${d.preenchido.empresas} ${d.preenchido.empresas === 1 ? "empresa" : "empresas"}
+          <div class="sub">${Object.entries(d.preenchido.porFonte).map(([f, n]) => `${esc(f)} ${n}`).join(" · ")}</div>
+          <button type="button" class="lapis" data-preenchido="${d.data}">ver tudo</button>` : '<span class="sub">nada</span>'}</td>
         <td>${d.linkedin.pedidos || d.linkedin.aplicados ? `${d.linkedin.pedidos} pedidos · ${d.linkedin.aplicados} aplicados${d.linkedin.erros ? ` · <span style="color:var(--bad)">${d.linkedin.erros} com erro</span>` : ""}
           <div class="sub">${Object.entries(d.linkedin.porVertical).map(([v, n]) => `${esc(r.verticais[v] || v)} ${n}`).join(" · ")}</div>` : '<span class="sub" style="color:var(--warn)">nenhum pedido</span>'}</td>
         <td>${Object.keys(d.trabalho).length ? Object.entries(d.trabalho).map(([k, n]) => `${esc(k)} ${n}`).join(" · ") : '<span class="sub">—</span>'}${d.falhas.length ? `<div style="color:var(--bad);font-size:12px">falhou: ${esc(d.falhas.join(", "))}</div>` : ""}</td>
       </tr>`).join("")}</tbody></table></div>
-    <p class="nota">A cada rodada da rotina, a plataforma tira uma foto de quantas oportunidades estão analisadas (entram em Oportunidades) e quantas estão na fila, por vertical; vale a última foto do dia. O número verde ou vermelho é a variação em relação ao dia anterior; "Entraram" lista quem passou a ficar completo naquele dia. "O que mais trava a fila" mostra o que falta nas empresas da fila: o que depende do LinkedIn anda conforme a cota diária; o que depende de e-mail (ponte) só anda quando alguém da equipe troca e-mails com a empresa ou marca a ponte à mão. Estacionadas e os casos definitivos (fora da praça, MEI) não contam.</p>
+    <p class="nota">A cada rodada da rotina, a plataforma tira uma foto de quantas oportunidades estão analisadas (entram em Oportunidades) e quantas estão na fila, por vertical; vale a última foto do dia. O número verde ou vermelho é a variação em relação ao dia anterior; "Entraram" lista quem passou a ficar completo naquele dia. "Preenchido pela plataforma" conta cada dado que a própria plataforma preencheu ou mudou no dia (Receita, LinkedIn, notícias, sites, IA, e-mails; não entra o que vem do Pipedrive nem o que a equipe faz à mão), e "ver tudo" mostra campo a campo, por empresa, o antes e o depois. "O que mais trava a fila" mostra o que falta nas empresas da fila: o que depende do LinkedIn anda conforme a cota diária; o que depende de e-mail (ponte) só anda quando alguém da equipe troca e-mails com a empresa ou marca a ponte à mão. Estacionadas e os casos definitivos (fora da praça, MEI) não contam.</p>
   </section>`;
+}
+
+// Tudo o que a plataforma preencheu no dia, por empresa: campo, antes → depois, fonte e hora (com busca)
+async function preenchidoNoDia(data) {
+  let r; try { r = await api.get(`/api/diario/preenchido?data=${data}`); } catch (err) { aviso(err.message); return; }
+  const lista = q => r.empresas.filter(e => !q || e.nome.toLowerCase().includes(q) || e.itens.some(i => (i.campo + " " + (i.depois || "")).toLowerCase().includes(q)))
+    .map(e => `<div class="pre-emp"><div class="pre-nome">${e.id ? `<a href="#empresa-${e.id}">${esc(e.nome)}</a>` : esc(e.nome)} <span class="sub">${e.itens.length}</span></div>
+      <ul>${e.itens.map(i => `<li><b>${esc(i.campo)}</b>: ${i.antes ? `<span class="antes">${esc(i.antes)}</span> → ` : ""}${i.depois ? esc(i.depois) : '<span class="sub">apagado</span>'} <span class="sub">· ${esc(i.fonte)} · ${esc(i.hora)}</span></li>`).join("")}</ul></div>`).join("")
+    || '<p class="sub">Nada encontrado.</p>';
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><div class="modal" role="dialog" aria-labelledby="t-pre" style="max-width:760px">
+    <h2 id="t-pre" style="margin:0">Preenchido pela plataforma em ${dt(data)}</h2><div class="sub">${r.total} ${r.total === 1 ? "dado" : "dados"} em ${r.empresas.length} ${r.empresas.length === 1 ? "empresa" : "empresas"}</div>
+    <input type="search" id="pre-q" placeholder="Buscar empresa, campo ou valor" aria-label="Buscar">
+    <div id="pre-lista" class="pre-lista">${lista("")}</div>
+    <div class="acoes"><button type="button" class="btn sec" id="pre-fechar">Fechar</button></div></div></div>`;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  document.getElementById("pre-fechar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  document.getElementById("pre-q").oninput = e => { document.getElementById("pre-lista").innerHTML = lista(e.target.value.trim().toLowerCase()); };
 }
 
 /* ---------- Clientes ---------- */
@@ -2503,6 +2527,7 @@ document.addEventListener("click", ev => {
   const na = ev.target.closest("[data-nota-ativ]"); if (na) notaAtividade(na.dataset.notaAtiv);
   const ed = ev.target.closest("[data-editar-ativ]"); if (ed) editarAtividade(+ed.dataset.editarAtiv);
 
+  const pr = ev.target.closest("[data-preenchido]"); if (pr) preenchidoNoDia(pr.dataset.preenchido);
   const cn = ev.target.closest("[data-cli-notas]"); if (cn) notasCliente(+cn.dataset.cliNotas);
   const cp = ev.target.closest("[data-cli-pessoas]"); if (cp) pessoasCliente(+cp.dataset.cliPessoas);
   const cpr = ev.target.closest("[data-cli-produtos]"); if (cpr) produtosCliente(+cpr.dataset.cliProdutos);

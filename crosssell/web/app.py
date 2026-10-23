@@ -1325,6 +1325,12 @@ def api_diario(dias: int = 14, db: Session = Depends(get_db), _u: Usuario = Depe
     return tabela.diario(db, max(1, min(dias, 60)))
 
 
+@app.get("/api/diario/preenchido")
+def api_diario_preenchido(data: date, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Tudo o que a plataforma preencheu no dia, por empresa (campo, antes, depois, fonte)."""
+    return tabela.preenchido_no_dia(db, data)
+
+
 @app.get("/api/rotina")
 def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     """Como a rotina funciona (frequências e limites em vigor) e a última execução de cada passo, para a aba Rotina."""

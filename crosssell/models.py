@@ -446,3 +446,23 @@ class AnaliseDia(Base):
     ids: Mapped[list] = mapped_column(JSON, default=list)  # empresas analisadas (para saber quem entrou no dia)
     faltando: Mapped[dict] = mapped_column(JSON, default=dict)  # o que falta na fila -> quantas empresas
     atualizado_em: Mapped[datetime] = mapped_column(default=_now, onupdate=_now)
+
+
+class AlteracaoDado(Base):
+    """Dado preenchido ou mudado pela própria plataforma num passo de análise da rotina (Receita, LinkedIn, notícias,
+    sites, IA...), campo a campo, para o Diário da análise. O que vem do Pipedrive e o que a equipe faz à mão não
+    entram aqui (a mão fica em `registros`)."""
+
+    __tablename__ = "alteracoes_dado"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    em: Mapped[datetime] = mapped_column(default=_now, index=True)
+    fonte: Mapped[str]  # passo da rotina (receita, linkedin, noticias, sites-ia...)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), index=True)
+    pessoa_id: Mapped[int | None] = mapped_column(ForeignKey("pessoas.id"))
+    campo: Mapped[str]
+    antes: Mapped[str | None]
+    depois: Mapped[str | None]
+
+    empresa: Mapped[Empresa | None] = relationship()
+    pessoa: Mapped[Pessoa | None] = relationship()

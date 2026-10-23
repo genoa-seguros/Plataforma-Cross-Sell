@@ -108,7 +108,11 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
 - **Diário da análise** (aba própria): a cada rodada a rotina grava a foto do dia (`analise_dia`: analisadas, fila, o
   que falta, por vertical; vale a última do dia). A aba mostra, por dia, as analisadas com a variação, quantas na
   fila, quem entrou em Oportunidades, os pedidos ao LinkedIn (enviados, aplicados, com erro, por vertical) e o
-  trabalho da Receita, notícias e sites; no topo, "o que mais trava a fila" por vertical.
+  trabalho da Receita, notícias e sites; no topo, "o que mais trava a fila" por vertical. **Preenchido pela
+  plataforma**: cada dado que a própria plataforma preencheu ou mudou num passo de análise da rotina (Receita,
+  LinkedIn, notícias, sites, IA, domínios, e-mails), campo a campo, com o antes e o depois (`alteracoes_dado`,
+  `crosssell/historico.py`); "ver tudo" mostra o dia por empresa, com busca. O que vem do Pipedrive e o que a equipe
+  faz à mão não entram (a mão fica no Feito na semana). Começa a valer no deploy.
 - **Clientes**: todas as empresas com seguro vigente (negócio ganho no Pipedrive com fim de vigência depois de hoje;
   Saúde, sem fim, vale até ser desmarcado), para o time dar o **tier de Saúde** à mão (A+, A, B, C; `Empresa.tier_saude`,
   com quem e quando). Colunas: empresa, produtos contratados (um chip por produto, mesmo com vários negócios),

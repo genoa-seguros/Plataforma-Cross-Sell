@@ -19,9 +19,12 @@ QUALIDADE_DIAS = 7  # revisão do cadastro: semanal
 
 
 def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
+    from crosssell import historico  # noqa: F401 (liga o registro do que a plataforma preencheu)
+
     log = SyncLog(fonte=fonte)
     db.add(log)
     db.commit()
+    db.info["origem"] = fonte  # o que este passo preencher vai para o Diário da análise
     try:
         res = fn(*args, **kwargs)
         log.registros = sum(v for v in res.values() if isinstance(v, int))
@@ -31,6 +34,7 @@ def registrar(db: Session, fonte: str, fn, *args, **kwargs) -> dict:
         log.erro = repr(exc)[:2000]
         raise
     finally:
+        db.info.pop("origem", None)
         log.fim = datetime.utcnow()
         db.merge(log)
         db.commit()

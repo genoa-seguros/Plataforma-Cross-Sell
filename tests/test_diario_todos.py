@@ -67,3 +67,38 @@ def test_oportunidades_sem_atividade(cenario, db):  # noqa: F811
     assert nomes("ativ=sem") == {"Lead 6 SA"}
     assert nomes("ativ=com") == {"Lead 5 SA"}
     assert c.get("/api/oportunidades").json()["semAtividade"] >= 1
+
+
+def test_diario_mostra_campo_a_campo_o_que_a_plataforma_preencheu(cenario, db):  # noqa: F811
+    from crosssell.models import AlteracaoDado, Pessoa
+    from crosssell.pipeline import registrar
+
+    c, _ = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e = Empresa(razao_social="Leitura SA", nome_normalizado="leitura sa")
+    db.add(e)
+    db.commit()
+
+    def linkedin_leu(db):  # o que um passo de análise faria
+        e.funcionarios, e.setor = 230, "Software"
+        db.add(Pessoa(nome="Ana Souza", nome_normalizado="ana souza", empresa=e, cargo="Gerente de RH", fonte="linkedin"))
+        db.commit()
+        return {"empresas": 1}
+
+    registrar(db, "linkedin", linkedin_leu, db)
+
+    def pipedrive_mudou(db):  # o Pipedrive não entra no diário
+        e.cidade = "Recife"
+        db.commit()
+        return {}
+
+    registrar(db, "pipedrive", pipedrive_mudou, db)
+    campos = {(x.campo, x.antes, x.depois, x.fonte) for x in db.scalars(tabela.select(AlteracaoDado))}
+    assert campos == {("funcionários", None, "230", "linkedin"), ("setor", None, "Software", "linkedin"),
+                      ("pessoa nova", None, "Ana Souza · Gerente de RH", "linkedin")}
+    hoje = tabela.hoje_brasilia().isoformat()
+    d = c.get("/api/diario").json()["dias"][0]
+    assert d["preenchido"] == {"total": 3, "empresas": 1, "porFonte": {"LinkedIn": 3}}
+    r = c.get(f"/api/diario/preenchido?data={hoje}").json()
+    assert r["total"] == 3 and r["empresas"][0]["nome"] == "Leitura SA"
+    assert {i["campo"] for i in r["empresas"][0]["itens"]} == {"funcionários", "setor", "pessoa nova"}

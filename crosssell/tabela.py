@@ -19,7 +19,7 @@ from crosssell.config import AREAS_VERTICAL, VERTICAIS, VERTICAL_LABEL, Settings
 from crosssell.connectors.linkedin import FUNCIONARIOS, PESSOAS, PESSOAS_LF, PESSOAS_RE, mudou_de_empresa
 from crosssell.connectors.noticias import portal
 from crosssell.site_ia import endereco
-from crosssell.models import (AnaliseDia, Atividade, Empresa, Interacao, LinkedinPedido, Negocio, NotaOportunidade,
+from crosssell.models import (AlteracaoDado, AnaliseDia, Atividade, Empresa, Interacao, LinkedinPedido, Negocio, NotaOportunidade,
                                OportunidadeEstacionada, OportunidadeManual, Pessoa, Registro, SyncLog, Usuario)
 from crosssell.normalize import AREA_LABEL, classificar_area, sem_acento
 from crosssell.potencial import (FITS, FITS_RE, areas_re, faltando_saude, funcionarios_validos, influencia, mei, noticias_ma,
@@ -894,6 +894,13 @@ def diario(db: Session, dias: int = 14) -> dict:
         trabalho[dia_de(x.inicio)][x.fonte] += x.registros or 0
         if x.erro:
             falhas[dia_de(x.inicio)].append(TRABALHO_DIA[x.fonte])
+    preenchido: dict[date, Counter] = defaultdict(Counter)
+    empresas_dia: dict[date, set] = defaultdict(set)
+    for em, fonte, empresa_id in db.execute(select(AlteracaoDado.em, AlteracaoDado.fonte, AlteracaoDado.empresa_id)
+                                            .where(AlteracaoDado.em >= de)):
+        preenchido[dia_de(em)][fonte] += 1
+        if empresa_id:
+            empresas_dia[dia_de(em)].add(empresa_id)
     entraram_ids: set[int] = set()
     linhas = []
     d = fim
@@ -914,6 +921,9 @@ def diario(db: Session, dias: int = 14) -> dict:
                        "linkedin": {"pedidos": lk["pedidos"], "aplicados": lk["aplicados"], "erros": lk["erros"],
                                     "porVertical": {v: lk[f"pedidos:{v}"] for v in VERTICAIS_OPORTUNIDADES if lk[f"pedidos:{v}"]}},
                        "trabalho": {TRABALHO_DIA[k]: n for k, n in tr.items() if n},
+                       "preenchido": {"total": sum(preenchido.get(d, Counter()).values()),
+                                      "empresas": len(empresas_dia.get(d, ())),
+                                      "porFonte": _por_fonte(preenchido.get(d, Counter()))},
                        "falhas": sorted(set(falhas.get(d, [])))})
         d -= timedelta(days=1)
     nomes = {e.id: e.razao_social for e in db.scalars(select(Empresa).where(Empresa.id.in_(entraram_ids)))} if entraram_ids else {}
@@ -925,3 +935,31 @@ def diario(db: Session, dias: int = 14) -> dict:
               for v, f in atual.items() if f is not None}
     return {"dias": linhas, "travas": travas, "verticais": {v: VERTICAL_LABEL[v] for v in VERTICAIS_OPORTUNIDADES},
             "desde": min(por_dia).isoformat() if por_dia else None}
+
+
+def _por_fonte(c: Counter) -> dict[str, int]:
+    from crosssell.historico import ORIGENS
+
+    saida: Counter = Counter()
+    for fonte, n in c.items():
+        saida[ORIGENS.get(fonte, fonte)] += n
+    return dict(saida.most_common())
+
+
+def preenchido_no_dia(db: Session, dia: date) -> dict:
+    """Tudo o que a plataforma preencheu no dia (horário de Brasília), por empresa: campo, antes, depois e a fonte."""
+    from crosssell.historico import ORIGENS
+
+    de = datetime.combine(dia, datetime.min.time()) - FUSO_BRASILIA
+    linhas = db.scalars(select(AlteracaoDado).where(AlteracaoDado.em >= de, AlteracaoDado.em < de + timedelta(days=1))
+                        .order_by(AlteracaoDado.empresa_id, AlteracaoDado.em, AlteracaoDado.id)).all()
+    nomes = {e.id: e.razao_social for e in db.scalars(select(Empresa).where(
+        Empresa.id.in_({x.empresa_id for x in linhas if x.empresa_id})))} if linhas else {}
+    por_empresa: dict[int | None, list] = defaultdict(list)
+    for x in linhas:
+        por_empresa[x.empresa_id].append({"campo": x.campo, "antes": x.antes, "depois": x.depois,
+                                          "fonte": ORIGENS.get(x.fonte, x.fonte),
+                                          "hora": (x.em + FUSO_BRASILIA).strftime("%H:%M")})
+    empresas = [{"id": eid, "nome": nomes.get(eid, "(sem empresa)"), "itens": itens} for eid, itens in por_empresa.items()]
+    return {"data": dia.isoformat(), "total": len(linhas),
+            "empresas": sorted(empresas, key=lambda x: (-len(x["itens"]), sem_acento(x["nome"]).lower()))}

@@ -106,7 +106,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   They return on `rever_em` or after an M&A/aporte news item or a won deal newer than the parking (item `voltou`).
 - **Diário da análise** (`AnaliseDia`, rotina step `diario` → `tabela.registrar_dia`, `/api/diario` →
   `tabela.diario`): daily snapshot per vertical (analisadas ids, fila, faltando counts) plus LinkedinPedido and SyncLog
-  work per day. To-dos `/api/todos` takes `periodo` (semana | fazer | vencido | hoje | amanha | proxima | periodo with
+  work per day. `historico.py` (a `before_flush` listener) logs every Empresa/Pessoa/Noticia field the platform fills
+  while `pipeline.registrar` runs an analysis step (`Session.info["origem"]` in `historico.ORIGENS`; Pipedrive and
+  manual edits excluded) into `AlteracaoDado`; `/api/diario/preenchido?data=` lists a day by company. To-dos `/api/todos` takes `periodo` (semana | fazer | vencido | hoje | amanha | proxima | periodo with
   de/ate) and `responsavel`; Oportunidades takes `ativ=sem|com` (no open activity on the company).
 - **Clientes tab** (`/api/clientes`, `tabela.clientes`): companies with `seguros_vigentes`, products deduplicated, any
   employee count, pontes with cargo, all `NotaOportunidade` of the company. The team sets `Empresa.tier_saude`

@@ -104,6 +104,11 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
 - **Estacionar** (`OportunidadeEstacionada`, `POST /api/oportunidades/estacionar|trazer`, `tabela.estacionada`):
   parked opportunities leave the default list, fila, pendências and LinkedIn targets; `?oferta=estacionadas` lists them.
   They return on `rever_em` or after an M&A/aporte news item or a won deal newer than the parking (item `voltou`).
+- **Assistente** (`assistente.py`, `POST /api/assistente`, floating chat in `app.html`): Claude answers questions about
+  the platform with README.md + config/criterios.yaml in the (cached) system prompt, so keep the README accurate.
+  Read-only tools run by `app._ferramenta` (buscar_empresas, ficha_empresa, oportunidades_da_empresa,
+  listar_oportunidades, equipe, todos, feito_na_semana) reuse the API functions. Phase 1: it never writes; the
+  browser keeps the chat in sessionStorage and nothing is stored. `/api/assistente` does not clear the OPORTUNIDADES cache.
 - **Funil** (`GET /api/oportunidades/funil`, `tabela.estagio`): Oportunidades as a kanban. Stage per item: atualizado
   (latest `NotaOportunidade.vale_ate`, chosen in months when writing it, still valid), em_foco (open activity for that
   company+vertical created after the note expired), else nao_atuamos; virou = `OportunidadeConvertida` (deal created by

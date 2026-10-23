@@ -290,6 +290,29 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .rot-fatos li>b{font:800 20px/1 var(--f-display);color:var(--accent);text-align:center}
 .rot-fatos li>b small{display:block;font:600 10px/1.2 var(--f-body);color:var(--mute);margin-top:2px}
 .rot-medidor{height:10px;border-radius:99px;background:var(--soft);overflow:hidden} .rot-medidor i{display:block;height:100%;background:var(--accent);border-radius:99px}
+/* Assistente: botão redondo fixo no canto e um painel de chat por cima da tela (acima da fila, abaixo dos modais) */
+.ia-botao{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:52px;height:52px;border-radius:50%;border:0;
+  background:linear-gradient(160deg,#6c4ee8,#271a5c);color:#fff;box-shadow:0 6px 18px rgb(22 15 58 / 35%);cursor:pointer;z-index:18;display:grid;place-items:center}
+.ia-botao svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ia-painel{position:fixed;right:20px;bottom:calc(84px + env(safe-area-inset-bottom,0px));width:min(400px,calc(100vw - 32px));height:min(600px,calc(100vh - 120px));
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 36px rgb(15 17 64 / 22%);z-index:18;
+  display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}
+.ia-painel[hidden]{display:none}
+.ia-cab{display:flex;align-items:center;gap:8px;padding:10px 12px;background:linear-gradient(90deg,#3a2a7a,#160f3a);color:#fff}
+.ia-cab b{font:700 14px/1.2 var(--f-display);flex:1} .ia-cab small{display:block;font:400 11.5px/1.3 var(--f-body);opacity:.8}
+.ia-cab button{background:transparent;border:1px solid rgb(255 255 255 / 35%);color:#fff;border-radius:6px;padding:3px 8px;font:500 12px var(--f-body);cursor:pointer}
+.ia-msgs{overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+.ia-msg{max-width:88%;padding:8px 11px;border-radius:10px;font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+.ia-msg p{margin:0 0 6px} .ia-msg p:last-child,.ia-msg ul:last-child{margin-bottom:0} .ia-msg ul{margin:0 0 6px;padding-left:18px}
+.ia-msg.ia{background:var(--surface);border:1px solid var(--line);align-self:flex-start}
+.ia-msg.eu{background:var(--accent);color:var(--accent-ink);align-self:flex-end;white-space:pre-wrap}
+.ia-msg.erro{background:color-mix(in srgb,var(--bad) 8%,var(--surface));border:1px solid color-mix(in srgb,var(--bad) 35%,transparent);color:var(--bad);align-self:flex-start}
+.ia-msg.pensando{color:var(--mute);font-style:italic}
+.ia-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:var(--surface)}
+.ia-form textarea{flex:1;resize:none;height:42px;max-height:120px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font:13.5px/1.4 var(--f-body)}
+.ia-form button{border:0;border-radius:8px;background:var(--accent);color:var(--accent-ink);padding:0 14px;font:600 13px var(--f-body);cursor:pointer}
+.ia-form button:disabled{opacity:.5;cursor:default}
+@media print{.ia-botao,.ia-painel{display:none}}
 </style>
 </head>
 <body>
@@ -304,6 +327,15 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 <div id="modal"></div>
 <div class="aviso" id="aviso" hidden></div>
 <div id="dica" role="tooltip" hidden></div>
+<button type="button" class="ia-botao" id="ia-botao" aria-label="Assistente: tire dúvidas sobre a plataforma" title="Assistente: tire dúvidas sobre a plataforma" aria-expanded="false" aria-controls="ia-painel">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.3M12 16.5h.01"/></svg></button>
+<section class="ia-painel" id="ia-painel" aria-label="Assistente" hidden>
+  <div class="ia-cab"><b>Assistente<small>Tira dúvidas e consulta os dados; não altera nada</small></b>
+    <button type="button" id="ia-nova">Nova conversa</button><button type="button" id="ia-fechar" aria-label="Fechar">✕</button></div>
+  <div class="ia-msgs" id="ia-msgs" aria-live="polite"></div>
+  <form class="ia-form" id="ia-form"><textarea id="ia-texto" placeholder="Pergunte algo… (Enter envia)" aria-label="Pergunta" maxlength="4000"></textarea>
+    <button type="submit" id="ia-enviar">Enviar</button></form>
+</section>
 
 <script>
 const D = /*__DADOS__*/null;
@@ -551,6 +583,9 @@ const previa = {
   },
   post(path, b) {
     let m;
+    if (path === "/api/assistente") return {texto: "Na prévia o assistente não consulta a IA. Na plataforma, ele responde com base " +
+      "nas regras (README) e nos dados: por exemplo, por que uma empresa está em **Não atuamos** e o que falta para ela entrar em [Oportunidades](#oportunidades).\n\n" +
+      "- Explica telas, filtros e o Score\n- Consulta empresas, oportunidades e to-dos\n- Não altera nada"};
     if (path === "/api/atividades") {
       const l = b.negocio_id ? D.linhas.find(x => x.id === b.negocio_id) : (D.oportunidades || []).find(o => o.empresa.id === b.empresa_id);
       const resp = D.equipe.find(u => u.id === b.responsavel_id);
@@ -2738,6 +2773,65 @@ const medirTopo = () => { const t = document.querySelector(".top");
   document.documentElement.style.setProperty("--topo", (getComputedStyle(t).position === "fixed" ? 0 : t.offsetHeight) + "px"); };
 addEventListener("resize", medirTopo);
 new ResizeObserver(medirTopo).observe(document.querySelector(".top"));
+
+// Assistente (fase 1): tira dúvidas sobre a plataforma e consulta os dados; não altera nada. A conversa fica só
+// nesta aba do navegador (sessionStorage) e vai inteira a cada pergunta; o servidor não guarda nada
+const IA = {msgs: [], ocupado: false};
+const IA_OLA = "Olá! Sou o assistente da plataforma. Pergunte como algo funciona (ex.: **como é calculado o Score de Saúde?**) " +
+  "ou sobre uma empresa (ex.: **por que a Alfa não está em Oportunidades?**).";
+try { IA.msgs = JSON.parse(sessionStorage.getItem("iaMsgs") || "[]"); } catch (e) { IA.msgs = []; }
+const iaGuardar = () => { try { sessionStorage.setItem("iaMsgs", JSON.stringify(IA.msgs.slice(-40))); } catch (e) {} };
+function iaFormatar(t) {  // **negrito**, listas "- " e links para telas da plataforma (#...); o resto é texto
+  const linha = x => esc(x).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\((#[a-z0-9-]+)\)/g, '<a href="$2">$1</a>');
+  let html = "", lista = false, par = [];
+  const fechaPar = () => { if (par.length) html += `<p>${par.join("<br>")}</p>`; par = []; };
+  for (const l of String(t).split("\n")) {
+    const item = l.match(/^\s*[-•*]\s+(.*)$/);
+    if (item) { fechaPar(); if (!lista) { html += "<ul>"; lista = true; } html += `<li>${linha(item[1])}</li>`; continue; }
+    if (lista) { html += "</ul>"; lista = false; }
+    if (!l.trim()) fechaPar(); else par.push(linha(l));
+  }
+  if (lista) html += "</ul>";
+  fechaPar();
+  return html;
+}
+function iaDesenhar(extra = "") {
+  const caixa = document.getElementById("ia-msgs");
+  caixa.innerHTML = `<div class="ia-msg ia">${iaFormatar(IA_OLA)}</div>` +
+    IA.msgs.map(m => m.papel === "eu" ? `<div class="ia-msg eu">${esc(m.texto)}</div>` : `<div class="ia-msg ia">${iaFormatar(m.texto)}</div>`).join("") +
+    (IA.ocupado ? '<div class="ia-msg ia pensando">Pensando…</div>' : "") + extra;
+  caixa.scrollTop = caixa.scrollHeight;
+  document.getElementById("ia-enviar").disabled = IA.ocupado;
+}
+function iaAbrir(abrir) {
+  const p = document.getElementById("ia-painel");
+  p.hidden = !abrir;
+  document.getElementById("ia-botao").setAttribute("aria-expanded", String(abrir));
+  if (abrir) { iaDesenhar(); document.getElementById("ia-texto").focus(); }
+}
+async function iaEnviar() {
+  const campo = document.getElementById("ia-texto");
+  const texto = campo.value.trim();
+  if (!texto || IA.ocupado) return;
+  IA.msgs.push({papel: "eu", texto}); campo.value = ""; IA.ocupado = true; iaGuardar(); iaDesenhar();
+  let erro = "";
+  try {
+    const r = await api.post("/api/assistente", {mensagens: IA.msgs.slice(-20), tela: location.hash || "#oportunidades"});
+    IA.msgs.push({papel: "ia", texto: r.texto}); iaGuardar();
+  } catch (e) { if (e.message !== "login") erro = `<div class="ia-msg erro">${esc(e.message)}</div>`; }
+  IA.ocupado = false; iaDesenhar(erro);
+}
+document.getElementById("ia-botao").onclick = () => iaAbrir(document.getElementById("ia-painel").hidden);
+document.getElementById("ia-fechar").onclick = () => iaAbrir(false);
+document.getElementById("ia-nova").onclick = () => { if (IA.ocupado) return; IA.msgs = []; iaGuardar(); iaDesenhar(); document.getElementById("ia-texto").focus(); };
+document.getElementById("ia-form").onsubmit = ev => { ev.preventDefault(); iaEnviar(); };
+document.getElementById("ia-texto").addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); iaEnviar(); }
+});
+document.getElementById("ia-msgs").addEventListener("click", ev => {  // link de empresa ou tela: em tela estreita, o painel sai da frente
+  if (ev.target.closest("a[href^='#']") && innerWidth < 700) iaAbrir(false);
+});
+addEventListener("keydown", ev => { if (ev.key === "Escape" && !document.getElementById("ia-painel").hidden && !document.querySelector(".modal-fundo")) iaAbrir(false); });
 
 (async () => {
   document.getElementById("demo").hidden = !PREVIA;

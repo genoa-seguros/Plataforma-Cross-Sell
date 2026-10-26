@@ -85,14 +85,20 @@ def importar(fonte: str = typer.Argument(..., help="zeca | linkedin"), arquivo: 
 
 @app.command()
 def emails(dias: int = 30, temperatura: bool = typer.Option(True, help="Classificar a temperatura com a Claude API")):
-    """Lê os e-mails (Microsoft 365) dos usuários ativos e atualiza a temperatura dos contatos."""
+    """Lê os e-mails (Microsoft 365) dos usuários ativos e atualiza a temperatura dos contatos e, de quem ainda não
+    tem cargo, o cargo da assinatura."""
     from crosssell.connectors import email_m365
     from crosssell.pipeline import registrar
     from crosssell.temperatura import Classificador, modelo_em_uso
 
+    from crosssell.assinatura import LeitorAssinatura
+
     db, s = _db(), get_settings()
-    classificador = Classificador(s, modelo=modelo_em_uso(db, s)[0]) if temperatura else None
-    typer.echo(registrar(db, "email", email_m365.sincronizar, db, s, dias=dias, classificador=classificador))
+    modelo = modelo_em_uso(db, s)[0]
+    classificador = Classificador(s, modelo=modelo) if temperatura else None
+    leitor = LeitorAssinatura(s, modelo=modelo) if temperatura else None  # a mesma chave e o mesmo modelo
+    typer.echo(registrar(db, "email", email_m365.sincronizar, db, s, dias=dias, classificador=classificador,
+                         leitor_assinatura=leitor))
 
 
 @app.command()

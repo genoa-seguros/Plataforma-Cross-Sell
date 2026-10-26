@@ -105,6 +105,7 @@ class Pessoa(Base):
     temperatura: Mapped[str | None]
     temperatura_motivo: Mapped[str | None]
     temperatura_em: Mapped[datetime | None]
+    assinatura_em: Mapped[datetime | None]  # assinatura dos e-mails lida pela IA (uma vez por pessoa)
     # LinkedIn (via n8n + Linked API)
     linkedin_headline: Mapped[str | None]
     linkedin_empresa_atual: Mapped[str | None]

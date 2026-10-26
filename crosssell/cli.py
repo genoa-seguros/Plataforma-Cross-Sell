@@ -365,6 +365,9 @@ def _rodar_rotina(dias: int) -> None:
         passos.insert(passos.index(("recalcular", recalcular)), ("sites-ia", lambda: sites_ia(limite=0)))  # 0 = SITE_IA_LOTE
     if lk.configurado(get_settings()):
         passos.insert(passos.index(("recalcular", recalcular)), ("linkedin", linkedin))  # antes de recalcular
+    if get_settings().anthropic_api_key and get_settings().ms_client_id and _ultima_ha_dias("assinaturas") >= 999:
+        # Uma vez só (até dar certo): assinatura dos e-mails dos últimos 12 meses de quem está em oportunidade
+        passos.insert(passos.index(("recalcular", recalcular)), ("assinaturas", assinaturas))
     if _ultima_ha_dias("qualidade") >= QUALIDADE_DIAS:  # revisão do cadastro: semanal
         passos.append(("qualidade", qualidade))
     for nome, fn in passos:
@@ -372,6 +375,20 @@ def _rodar_rotina(dias: int) -> None:
             fn()
         except Exception as exc:  # um passo com falha não impede os outros; o erro fica no log de sincronização
             typer.echo(f"{nome}: falhou ({exc})", err=True)
+
+
+@app.command()
+def assinaturas(dias: int = 365):
+    """Leitura única do histórico: assinatura dos e-mails (cargo, nome, telefone) das pessoas sem cargo das
+    empresas com oportunidade, relendo os últimos `dias` das caixas. A rotina roda uma vez sozinha."""
+    from crosssell import assinatura, tabela
+    from crosssell.pipeline import registrar
+    from crosssell.temperatura import modelo_em_uso
+
+    db, s = _db(), get_settings()
+    ids = {o["empresa"]["id"] for o in tabela.oportunidades(db, s) if o["vertical"] in tabela.VERTICAIS_OPORTUNIDADES}
+    leitor = assinatura.LeitorAssinatura(s, modelo=modelo_em_uso(db, s)[0])
+    typer.echo(registrar(db, "assinaturas", assinatura.historico, db, s, leitor, ids, dias=dias))
 
 
 @app.command()

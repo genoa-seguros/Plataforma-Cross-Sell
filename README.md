@@ -138,6 +138,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   tem a assinatura lida pela IA (uma vez por pessoa, o mesmo modelo da temperatura): cargo, nome completo (quando o
   contato veio só com o endereço, como "joana.prado") e telefone. Só preenche o que está vazio. Com o cargo, a
   ponte passa a ter cargo e, se for da área da vertical, a pessoa vira quem decide. O texto não é guardado.
+  Uma vez só, a rotina relê os últimos 12 meses das caixas para as pessoas sem cargo das empresas com oportunidade
+  (`crosssell assinaturas` faz o mesmo à mão); quem não escreveu nesse período é lido quando escrever.
 - **Funil** (Oportunidades abre no ▥ Funil; ☰ Lista ao lado; a escolha fica guardada no navegador): as mesmas
   oportunidades dos filtros, em colunas calculadas sozinhas (`tabela.estagio`): **Não atuamos** (sem atividade aberta
   e sem atualização válida), **Em foco** (atividade aberta na empresa e vertical, criada depois que a última

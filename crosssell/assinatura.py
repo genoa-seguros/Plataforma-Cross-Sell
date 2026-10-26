@@ -113,12 +113,12 @@ def aplicar(p: Pessoa, res: dict, agora: datetime) -> bool:
 
 
 def atualizar(db: Session, leitor: LeitorAssinatura, textos_por_pessoa: dict[int, list[dict]],
-              agora: datetime | None = None) -> int:
+              agora: datetime | None = None, limite: int = LIMITE_RODADA) -> int:
     """Lê a assinatura de quem escreveu algo novo, ainda não tem cargo e nunca foi lido. Devolve quantos ganharam dado."""
     agora = agora or datetime.utcnow()
     n = feitas = 0
     for pessoa_id, emails in textos_por_pessoa.items():
-        if feitas >= LIMITE_RODADA:
+        if feitas >= limite:
             break
         p = db.get(Pessoa, pessoa_id)
         if p is None or p.cargo or p.assinatura_em is not None:
@@ -130,3 +130,24 @@ def atualizar(db: Session, leitor: LeitorAssinatura, textos_por_pessoa: dict[int
         n += aplicar(p, res, agora)
     db.commit()
     return n
+
+
+def historico(db: Session, settings: Settings, leitor: LeitorAssinatura, empresa_ids: set[int], client=None,
+              dias: int = 365) -> dict:
+    """Leitura única dos últimos 12 meses: para as pessoas sem cargo (e nunca lidas) das empresas pedidas (as com
+    oportunidade), relê as caixas, junta os e-mails que cada uma escreveu e lê a assinatura. Quem não escreveu
+    nesse período fica como está (é lido quando escrever)."""
+    from sqlalchemy import or_, select
+
+    from crosssell.connectors.email_m365 import GraphClient, textos_de
+
+    pessoas = db.scalars(select(Pessoa).where(Pessoa.empresa_id.in_(empresa_ids), Pessoa.email.is_not(None),
+                                              or_(Pessoa.cargo.is_(None), Pessoa.cargo == ""),
+                                              Pessoa.assinatura_em.is_(None))).all()
+    if not pessoas:
+        return {"pessoas": 0, "com_emails": 0, "preenchidas": 0}
+    textos, falhas = textos_de(db, client or GraphClient(settings), {p.email: p.id for p in pessoas}, dias)
+    preenchidas = atualizar(db, leitor, textos, limite=len(textos))
+    if falhas:
+        raise RuntimeError(f"{len(falhas)} caixas não foram lidas ({preenchidas} pessoas preenchidas): " + "; ".join(falhas))
+    return {"pessoas": len(pessoas), "com_emails": len(textos), "preenchidas": preenchidas}

@@ -192,6 +192,36 @@ def registrar_mensagens(db: Session, settings: Settings, usuario_email: str, men
 HISTORICO_DIAS = 365
 
 
+def textos_de(db: Session, client: GraphClient, pessoas_por_email: dict[str, int], dias: int = HISTORICO_DIAS,
+              por_pessoa: int = 3) -> tuple[dict[int, list[dict]], list[str]]:
+    """Relê as caixas (com a leitura ligada) e junta o trecho novo dos e-mails que as pessoas pedidas escreveram para
+    a equipe, os `por_pessoa` mais recentes de cada uma (para a assinatura). Nada é gravado; devolve também as
+    caixas que não puderam ser lidas."""
+    from crosssell.models import Usuario
+
+    desde = datetime.utcnow() - timedelta(days=dias)
+    usuarios = db.scalars(select(Usuario).where(Usuario.ativo.is_(True), Usuario.le_emails.is_(True),
+                                                Usuario.senha_hash.is_not(None))).all()
+    textos: dict[int, list[dict]] = {}
+    falhas = []
+    for u in usuarios:
+        try:
+            for msg in client.mensagens(u.email, desde):
+                m = converter_graph(msg)
+                pid = pessoas_por_email.get(m["de"] or "")
+                if pid is None or not m["texto"].strip():
+                    continue
+                data = datetime.fromisoformat(m["data"].replace("Z", "+00:00")).replace(tzinfo=None) \
+                    if isinstance(m["data"], str) else m["data"]
+                lista = textos.setdefault(pid, [])
+                lista.append({"data": data, "texto": m["texto"]})
+                lista.sort(key=lambda x: x["data"])
+                del lista[:-por_pessoa]
+        except httpx.HTTPError as exc:
+            falhas.append(f"{u.email} ({exc})")
+    return textos, falhas
+
+
 def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None,
                 classificador=None, leitor_assinatura=None) -> dict:
     from crosssell.models import Usuario

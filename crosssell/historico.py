@@ -15,7 +15,8 @@ from crosssell.models import AlteracaoDado, Empresa, Noticia, Pessoa
 # Passos da rotina que são análise da plataforma (os outros, como o Pipedrive, não entram no histórico)
 ORIGENS = {"receita": "Receita", "noticias": "Notícias", "sites-ia": "Site lido pela IA", "linkedin": "LinkedIn",
            "linkedin-retorno": "LinkedIn", "linkedin-sites": "LinkedIn achado no site", "cnpj-sites": "CNPJ achado no site",
-           "dominios": "Domínios de e-mail", "email": "E-mails da equipe"}
+           "dominios": "Domínios de e-mail", "email": "E-mails da equipe",
+           "assinaturas": "Assinatura dos e-mails"}
 CAMPOS_EMPRESA = {"cnpj": "CNPJ", "razao_receita": "razão social (Receita)", "cidade": "cidade", "uf": "UF",
                   "funcionarios": "funcionários", "setor": "setor", "porte": "porte", "cnae": "CNAE",
                   "natureza_juridica": "natureza jurídica", "linkedin_url": "página do LinkedIn", "website": "site",

@@ -52,3 +52,41 @@ def test_assinatura_nunca_sobrescreve(db, settings):
     assert len(falso.chamadas) == 1  # quem já tem cargo nem é lido
     assert (sem_cargo.nome, sem_cargo.cargo, sem_cargo.telefone) == ("Rita Souza", "Coordenadora Financeira", "1133334444")
     assert com_cargo.cargo == "CFO" and com_cargo.assinatura_em is None
+
+
+def test_historico_le_a_assinatura_de_quem_esta_em_oportunidade(db, settings):
+    """Leitura única dos 12 meses: relê as caixas e lê a assinatura das pessoas sem cargo das empresas pedidas;
+    quem tem cargo, já foi lido ou é de outra empresa fica de fora."""
+    from crosssell.models import Usuario
+
+    alfa, outra = Empresa(razao_social="Alfa", nome_normalizado="alfa"), Empresa(razao_social="Outra", nome_normalizado="outra")
+    db.add_all([alfa, outra])
+    db.flush()
+    db.add_all([Usuario(email="victor@innoaseguros.com.br", nome="Victor", senha_hash="x", le_emails=True),
+                Pessoa(nome="ana", nome_normalizado="ana", email="ana@alfa.com.br", empresa_id=alfa.id),
+                Pessoa(nome="Bia Reis", nome_normalizado="bia reis", email="bia@alfa.com.br", empresa_id=alfa.id, cargo="CEO"),
+                Pessoa(nome="Zeca", nome_normalizado="zeca", email="zeca@outra.com.br", empresa_id=outra.id)])
+    db.commit()
+
+    def msg(i, de, texto, dia):
+        return {"id": f"m{i}", "conversationId": "c", "from": {"emailAddress": {"address": de}},
+                "toRecipients": [], "receivedDateTime": f"2026-0{dia}-10T12:00:00Z", "uniqueBody": {"content": texto}}
+
+    class _Graph:
+        def __init__(self):
+            self.caixas = []
+
+        def mensagens(self, usuario, desde):
+            self.caixas.append(usuario)
+            return iter([msg(1, "ana@alfa.com.br", "Oi\nAna Martins\nAnalista de RH", 3),
+                         msg(2, "bia@alfa.com.br", "Bia Reis\nCEO", 4), msg(3, "zeca@outra.com.br", "Zeca\nDiretor", 5)])
+
+    falso = _ClaudeFalso(json.dumps({"nome": "Ana Martins", "cargo": "Analista de RH", "telefone": ""}))
+    leitor = assinatura.LeitorAssinatura(settings, client=falso, modelo="m")
+    graph = _Graph()
+    res = assinatura.historico(db, settings, leitor, {alfa.id}, client=graph)
+    assert res == {"pessoas": 1, "com_emails": 1, "preenchidas": 1} and graph.caixas == ["victor@innoaseguros.com.br"]
+    ana = db.scalar(select(Pessoa).where(Pessoa.email == "ana@alfa.com.br"))
+    assert (ana.nome, ana.cargo) == ("Ana Martins", "Analista de RH")
+    assert "Zeca" not in falso.chamadas[0]["messages"][0]["content"]
+    assert assinatura.historico(db, settings, leitor, {alfa.id}, client=graph)["pessoas"] == 0  # já lida

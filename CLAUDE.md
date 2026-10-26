@@ -136,6 +136,8 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
 - **E-mail signatures** (`assinatura.py`, called by `email_m365.sincronizar(leitor_assinatura=...)`): people who wrote
   something new and have no cargo get their last e-mails' new text read once by the same AI (`Pessoa.assinatura_em`):
   cargo, full name (when it came from the address) and telefone, only filling empty fields. Text is never stored.
+  `crosssell assinaturas` (`assinatura.historico`, run once by `rotina` until a successful "assinaturas" SyncLog)
+  re-reads 12 months of mailboxes for cargo-less people of companies with opportunities.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group
   `crosssell-equipe`. `email_m365.sincronizar` records `leitura_em` / `leitura_erro` ("recusada" = 403).

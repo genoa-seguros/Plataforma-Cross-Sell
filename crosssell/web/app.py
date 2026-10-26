@@ -1566,6 +1566,7 @@ def api_rotina(db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atua
                      "buscaDias": lk.BUSCA_VALIDADE.days, "prazoHoras": int(lk.PRAZO_PEDIDO.total_seconds() // 3600),
                      "ultimas24h": lk._pedidos_24h(db, datetime.utcnow()),
                      "salesNavigator": s.linkedin_sales_navigator, "fatiaMinima": fatia_minima(),
+                     "ultimosErros": lk.ultimos_erros(db),
                      "cotas": [{"vertical": v, "grupo": g, "cota": c, "usadas24h": usadas.get((v, g), 0)}
                                for usadas in [lk._usadas_24h(db, datetime.utcnow())]
                                for (v, g), c in lk.cotas(s).items()]},

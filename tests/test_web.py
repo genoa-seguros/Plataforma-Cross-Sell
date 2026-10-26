@@ -384,6 +384,7 @@ def test_aba_rotina(cenario, db):
     assert r["linkedin"]["validadeDias"] == 180 and r["linkedin"]["limiteDia"] == 50 and r["linkedin"]["buscaDias"] == 30
     assert r["ultimos"]["pipedrive"] == {"em": "2026-10-06T13:00", "registros": 42, "erro": None}
     assert r["ultimos"]["email"]["erro"].startswith("1 de 2") and r["ultimos"]["linkedin"] is None
+    assert r["linkedin"]["ultimosErros"] == []  # a lista de pedidos com erro vem junto (painel do LinkedIn)
 
 
 def test_mesclar_nomes_identicos_pela_api(cenario, db):

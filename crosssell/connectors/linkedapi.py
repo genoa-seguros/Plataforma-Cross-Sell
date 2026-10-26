@@ -111,6 +111,8 @@ def resultado(id_alvo: str, tipo: str, acao: str, area: str | None, completion) 
     """Converte a `completion` da Linked API no formato de linkedin.receber."""
     base = {"id_alvo": id_alvo, "tipo": tipo, "acao": acao}
     c = _lista(completion)[0] if _lista(completion) else {}
+    if acao == "buscar" and not c.get("error") and not c.get("data"):
+        return {**base, "candidatos": []}  # a busca rodou e não achou ninguém: "não encontrado", não erro
     if c.get("error") or not c.get("data"):
         erro = c.get("error") or {}
         return {**base, "erro": erro.get("message") or erro.get("type") or "sem dados"}

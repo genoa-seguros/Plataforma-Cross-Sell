@@ -236,3 +236,22 @@ def test_busca_real_salvy():
     assert lk._escolher_empresa(salvy, dupla) is None
     salvy.uf = "PR"
     assert lk._escolher_empresa(salvy, dupla) == "https://www.linkedin.com/company/use-salvy"
+
+
+def test_ultimos_erros_mostram_a_mensagem(db):
+    from crosssell.models import LinkedinPedido
+    e = Empresa(razao_social="Erro SA", nome_normalizado="erro")
+    db.add(e)
+    db.flush()
+    agora = datetime.utcnow()
+    db.add_all([
+        LinkedinPedido(workflow_id="w1", id_alvo=f"E{e.id}", acao="praca", vertical="saude", situacao="erro",
+                       erro="Sales Navigator subscription required", criado_em=agora - timedelta(hours=2)),
+        LinkedinPedido(workflow_id="w2", id_alvo=f"E{e.id}", acao="ler", situacao="expirado", criado_em=agora - timedelta(hours=30)),
+        LinkedinPedido(workflow_id="w3", id_alvo=f"E{e.id}", acao="ler", situacao="aplicado", criado_em=agora),
+        LinkedinPedido(workflow_id="w4", id_alvo=f"E{e.id}", acao="ler", situacao="erro", erro="antigo",
+                       criado_em=agora - timedelta(days=10))])
+    db.commit()
+    erros = lk.ultimos_erros(db)
+    assert [x["erro"] for x in erros] == ["Sales Navigator subscription required", "sem resposta da Linked API em 24 horas"]
+    assert erros[0]["alvo"] == "Erro SA" and erros[0]["acao"] == "praça (Sales Navigator)" and erros[0]["vertical"] == "saude"

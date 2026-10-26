@@ -305,6 +305,7 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .gav-crit li{display:grid;grid-template-columns:1fr 90px 28px;gap:8px;align-items:center;font-size:13px}
 .gav-barra{height:6px;background:var(--soft);border-radius:99px;overflow:hidden}.gav-barra i{display:block;height:100%;background:var(--accent)}
 .gav-sec .decide{border:0;padding:0;margin:0;font-size:13px}
+.lk-erros{display:grid;gap:6px}.lk-erros ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;max-height:260px;overflow:auto}
 /* Assistente: botão redondo fixo no canto e um painel de chat por cima da tela (acima da fila, abaixo dos modais) */
 .ia-botao{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:52px;height:52px;border-radius:50%;border:0;
   background:linear-gradient(160deg,#6c4ee8,#271a5c);color:#fff;box-shadow:0 6px 18px rgb(22 15 58 / 35%);cursor:pointer;z-index:18;display:grid;place-items:center}
@@ -2002,6 +2003,8 @@ async function telaRotina() {
           <span class="sub">Nas últimas 24 h. A cota que sobra numa vertical passa para as outras. Relê tudo a cada ${L.validadeDias} dias; quem não foi encontrado é procurado de novo em ${L.buscaDias} dias.</span>
         </div>
         <p class="nota" style="margin:0"><b>Sales Navigator: ${sn ? "ligado" : "desligado"}.</b> ${sn ? "A praça e a lista de quem decide usam o Sales Navigator." : "Sem ele, quem decide vem da lista comum de funcionários e a praça de empresas fora das cidades alvo espera a cidade informada à mão. Para ligar: teste no servidor com <code>crosssell linkedin-teste</code> e ponha <code>LINKEDIN_SALES_NAVIGATOR=true</code> no deploy/.env."}</p>
+        ${(L.ultimosErros || []).length ? `<div class="lk-erros"><b style="color:var(--bad)">Pedidos com erro nos últimos 7 dias (${L.ultimosErros.length})</b>
+          <ul>${L.ultimosErros.map(x => `<li><span class="sub">${dia(x.em)} · ${x.vertical ? esc(V[x.vertical] || x.vertical) + " · " : ""}${esc(x.acao)}</span><br><b>${esc(x.alvo)}</b>: ${esc(x.erro || "falhou")}</li>`).join("")}</ul></div>` : ""}
       </div>
     </div>
 
@@ -2392,7 +2395,7 @@ async function telaDiario() {
         <td>${d.preenchido.total ? `<b>${d.preenchido.total}</b> ${d.preenchido.total === 1 ? "dado" : "dados"} em ${d.preenchido.empresas} ${d.preenchido.empresas === 1 ? "empresa" : "empresas"}
           <div class="sub">${Object.entries(d.preenchido.porFonte).map(([f, n]) => `${esc(f)} ${n}`).join(" · ")}</div>
           <button type="button" class="lapis" data-preenchido="${d.data}">ver tudo</button>` : '<span class="sub">nada</span>'}</td>
-        <td>${d.linkedin.pedidos || d.linkedin.aplicados ? `${d.linkedin.pedidos} pedidos · ${d.linkedin.aplicados} aplicados${d.linkedin.erros ? ` · <span style="color:var(--bad)">${d.linkedin.erros} com erro</span>` : ""}
+        <td>${d.linkedin.pedidos || d.linkedin.aplicados ? `${d.linkedin.pedidos} pedidos · ${d.linkedin.aplicados} aplicados${d.linkedin.erros ? ` · <a href="#rotina" style="color:var(--bad)" title="Ver as mensagens de erro na tela Rotina, em LinkedIn">${d.linkedin.erros} com erro</a>` : ""}
           <div class="sub">${Object.entries(d.linkedin.porVertical).map(([v, n]) => `${esc(r.verticais[v] || v)} ${n}`).join(" · ")}</div>` : '<span class="sub" style="color:var(--warn)">nenhum pedido</span>'}</td>
         <td>${Object.keys(d.trabalho).length ? Object.entries(d.trabalho).map(([k, n]) => `${esc(k)} ${n}`).join(" · ") : '<span class="sub">—</span>'}${d.falhas.length ? `<div style="color:var(--bad);font-size:12px">falhou: ${esc(d.falhas.join(", "))}</div>` : ""}</td>
       </tr>`).join("")}</tbody></table></div>

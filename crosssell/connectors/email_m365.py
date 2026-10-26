@@ -8,7 +8,8 @@ Ficam gravados só os metadados (remetente, destinatários, data e
 conversationId), que medem frequência, recência, reciprocidade e amplitude
 do relacionamento. Dos e-mails RECEBIDOS de contatos conhecidos lemos também
 o trecho novo da resposta (uniqueBody, sem o histórico citado). Esse texto
-vai para a classificação de temperatura e é descartado em seguida.
+vai para a classificação de temperatura e para a leitura da assinatura (cargo de quem ainda não tem) e é
+descartado em seguida.
 
 As caixas lidas são as dos usuários que já entraram na plataforma e com a leitura ligada pelo master
 (tela Equipe). O Microsoft 365 ainda restringe o app ao grupo da Access Policy: fora dele, a leitura
@@ -192,7 +193,7 @@ HISTORICO_DIAS = 365
 
 
 def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphClient | None = None,
-                classificador=None) -> dict:
+                classificador=None, leitor_assinatura=None) -> dict:
     from crosssell.models import Usuario
     from crosssell import temperatura
 
@@ -228,6 +229,10 @@ def sincronizar(db: Session, settings: Settings, dias: int = 30, client: GraphCl
         total["religadas"] = religar_interacoes(db, settings)
     if classificador is not None and textos:
         total["temperaturas"] = temperatura.atualizar(db, classificador, textos)
+    if leitor_assinatura is not None and textos:  # cargo, nome e telefone da assinatura de quem ainda não tem cargo
+        from crosssell import assinatura
+
+        total["assinaturas"] = assinatura.atualizar(db, leitor_assinatura, textos)
     if falhas:  # o que foi lido já está gravado; o erro fica no log da sincronização
         raise RuntimeError(f"{len(falhas)} de {len(usuarios)} caixas não foram lidas: " + "; ".join(falhas))
     return total

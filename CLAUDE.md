@@ -133,6 +133,9 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   Brasília time) built from `Atividade` (criada_por / concluida_em), `NotaOportunidade`, `OportunidadeManual` and
   `Registro` (manual actions logged by `app._registrar` in the edit endpoints: cidade, funcionários, setor, cargo,
   pessoa, ponte, saúde, reagendou/editou/excluiu atividade). New manual endpoints should call `_registrar`.
+- **E-mail signatures** (`assinatura.py`, called by `email_m365.sincronizar(leitor_assinatura=...)`): people who wrote
+  something new and have no cargo get their last e-mails' new text read once by the same AI (`Pessoa.assinatura_em`):
+  cargo, full name (when it came from the address) and telefone, only filling empty fields. Text is never stored.
 - **Mailbox reading** is opt-in per user: `Usuario.le_emails` (off by default, toggled by a master on the Equipe
   screen, only for users who have logged in) AND membership in the Exchange Application Access Policy group
   `crosssell-equipe`. `email_m365.sincronizar` records `leitura_em` / `leitura_erro` ("recusada" = 403).

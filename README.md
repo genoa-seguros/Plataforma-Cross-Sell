@@ -134,6 +134,10 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   (Score, porquê, estágio, o que falta), a lista de Oportunidades, os To-dos e o Feito na semana. Não altera
   nada: quando pedem uma mudança, explica onde fazer. A conversa fica só na aba do navegador; o servidor não guarda.
   Usa o modelo escolhido na tela Equipe e precisa da chave da Claude API no servidor.
+- **Assinatura dos e-mails**: na leitura das caixas, quem escreveu algo novo para a equipe e ainda não tem cargo
+  tem a assinatura lida pela IA (uma vez por pessoa, o mesmo modelo da temperatura): cargo, nome completo (quando o
+  contato veio só com o endereço, como "joana.prado") e telefone. Só preenche o que está vazio. Com o cargo, a
+  ponte passa a ter cargo e, se for da área da vertical, a pessoa vira quem decide. O texto não é guardado.
 - **Funil** (Oportunidades abre no ▥ Funil; ☰ Lista ao lado; a escolha fica guardada no navegador): as mesmas
   oportunidades dos filtros, em colunas calculadas sozinhas (`tabela.estagio`): **Não atuamos** (sem atividade aberta
   e sem atualização válida), **Em foco** (atividade aberta na empresa e vertical, criada depois que a última
@@ -363,7 +367,7 @@ Uma entrada só faz tudo, sem ação manual: `crosssell rotina`, de hora em hora
 
 ```bash
 crosssell pipedrive --dias 2      # a cada hora: negócios + status das atividades
-crosssell emails --dias 2         # a cada hora: e-mails + temperatura
+crosssell emails --dias 2         # a cada hora: e-mails + temperatura + assinatura (cargo de quem não tem)
 crosssell cnpj-sites              # a cada hora: CNPJ no site de empresas sem CNPJ (só se o nome bater)
 crosssell dominios                # a cada hora: outros domínios de e-mail (site, redirecionamento)
 crosssell noticias                # diário (geral e portais de negócios)
@@ -391,7 +395,7 @@ embutidos. Nele as ações ficam só no navegador.
 - Os cookies são `HttpOnly`, `SameSite=Lax` e `Secure`. As chamadas que alteram dados exigem um cabeçalho próprio do app.
 - Remover o acesso de alguém encerra as sessões dessa pessoa e para a leitura dos e-mails dela.
 - Dos e-mails ficam guardados só os metadados. O texto das respostas recebidas vai para a
-  classificação de temperatura e é descartado. Formalize a base legal (legítimo interesse) com o
+  classificação de temperatura e para a leitura da assinatura e é descartado. Formalize a base legal (legítimo interesse) com o
   DPO e informe a equipe. A tela de convite já avisa a pessoa.
 
 ## Desenvolvimento

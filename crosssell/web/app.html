@@ -1899,7 +1899,7 @@ async function telaRotina() {
      "Ligar à empresa os e-mails de quem usa outro domínio (ex.: Pro-Eficiência, site intergado.com.br e e-mails @pontaagro.com).", U.dominios, "Coleta"],
     ["var(--saude)", "E-mails", E.configurado ? cad("toda hora") : desligado("desligado"),
      `Lê as caixas do Microsoft 365 com a leitura ligada (${E.caixas} ${E.caixas === 1 ? "caixa" : "caixas"}${E.recusadas ? `, ${E.recusadas} recusada${E.recusadas > 1 ? "s" : ""}` : ""}). Caixa recém-ligada: lê os últimos 12 meses uma vez; depois, só o que chegou.`,
-     "Achar a ponte (quem da empresa troca e-mails com a equipe), medir o relacionamento e a temperatura de cada contato.", U.email, "Coleta"],
+     "Achar a ponte (quem da empresa troca e-mails com a equipe), medir o relacionamento e a temperatura de cada contato e, pela assinatura (lida pela IA uma vez por pessoa), o cargo, o nome completo e o telefone de quem ainda não tem cargo.", U.email, "Coleta"],
     ["var(--re)", "Notícias", cad(`1x a cada ${r.noticiasHoras} h por empresa`),
      `Busca no Google Notícias as manchetes que citam as empresas com negócio aberto ou oportunidade, em duas buscas: a geral e só nos portais de negócios (${(r.lf?.portais || []).join(", ")}).`,
      "Motivos para puxar conversa e sinais de momento. Em Linhas Financeiras, M&A e aporte contam no Score (mais nos portais) e antecipam a releitura dos cargos-chave.", U.noticias, "Coleta"],

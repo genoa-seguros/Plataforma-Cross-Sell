@@ -23,7 +23,8 @@ CAMPOS_EMPRESA = {"cnpj": "CNPJ", "razao_receita": "razão social (Receita)", "c
                   "praca_fatia": "funcionários na praça", "descricao": "descrição (LinkedIn)",
                   "site_ia": "leitura do site pela IA"}
 CAMPOS_PESSOA = {"cargo": "cargo", "email": "e-mail", "linkedin_url": "LinkedIn", "linkedin_headline": "título no LinkedIn",
-                 "linkedin_empresa_atual": "empresa atual (LinkedIn)", "temperatura": "temperatura"}
+                 "linkedin_empresa_atual": "empresa atual (LinkedIn)", "temperatura": "temperatura",
+                 "telefone": "telefone", "nome": "nome"}
 
 
 def _texto(campo: str, v) -> str | None:

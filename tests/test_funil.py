@@ -70,3 +70,28 @@ def test_funil_e_criar_negocio(cenario, db):  # noqa: F811
     assert c.post("/api/oportunidades/negocio", headers=H, json={
         "empresa_id": d.id, "vertical": "saude", "pipeline_id": funil["id"], "stage_id": funil["etapas"][0]["id"],
         "titulo": "Saúde 2026", "responsavel_id": victor.id}).status_code == 400
+
+
+def test_atividade_para_a_oportunidade_leva_ao_funil(cenario, db):  # noqa: F811
+    """Ainda em análise (sem funcionários), mas com atividade aberta para Saúde: entra em Em foco mostrando o que
+    falta; atividade sem vertical não basta."""
+    c, fake = cenario
+    entrar(c, "rodrigo.pedroni@innoaseguros.com.br", "senha-do-master-123")
+    e, f = _lead(db, 7), _lead(db, 8)
+    e.funcionarios = f.funcionarios = None
+    e.pipedrive_org_id, f.pipedrive_org_id = 507, 508
+    db.commit()
+    victor = db.scalar(select(Usuario).where(Usuario.email.like("victor%")))
+    client = pipedrive.PipedriveClient("x", transport=fake.transport())
+    webapp.OPORTUNIDADES.limpar()
+    assert not _coluna(c, "em_foco") and not _coluna(c, "nao_atuamos")  # as duas na fila de análise
+    pipedrive.criar_atividade(db, client, empresa=e, pessoa_id=None, assunto="Ligar", responsavel=victor,
+                              vencimento=date.today(), criada_por=victor, vertical="saude")
+    pipedrive.criar_atividade(db, client, empresa=f, pessoa_id=None, assunto="Ligar", responsavel=victor,
+                              vencimento=date.today(), criada_por=victor)
+    webapp.OPORTUNIDADES.limpar()
+    assert _coluna(c, "em_foco") == {"Lead 7 SA"}
+    card = next(x for x in c.get("/api/oportunidades/funil?vertical=saude").json()["colunas"][1]["cards"])
+    assert card["porAtividade"] and "funcionários" in card["faltando"]
+    fila = {o["empresa"]["nome"] for o in c.get("/api/fila?vertical=saude").json()["itens"]}
+    assert "Lead 7 SA" not in fila and "Lead 8 SA" in fila  # saiu da fila; a sem vertical continua lá

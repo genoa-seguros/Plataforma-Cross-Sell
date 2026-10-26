@@ -1083,7 +1083,8 @@ VIROU_DIAS = 90  # "Virou negócio" mostra as convertidas nos últimos N dias
 def _card(o: dict) -> dict:
     """O que o card do funil precisa (a oportunidade inteira é grande demais para centenas de cards)."""
     return {k: o[k] for k in ("id", "vertical", "verticalNome", "score", "influencia", "cliente", "proximaAtividade",
-                              "atualizadoAte", "estagio", "contatos", "quemDecide", "tipo", "voltou")} | {
+                              "atualizadoAte", "estagio", "contatos", "quemDecide", "tipo", "voltou", "porAtividade",
+                              "faltando")} | {
         "empresa": {"id": o["empresa"]["id"], "nome": o["empresa"]["nome"]},
         "produtos": [x["produto"] for x in o["produtos"] if x.get("sugerido", True)][:4],
         "ultimaNota": {"texto": o["notas"][0]["texto"], "em": o["notas"][0]["em"]} if o["notas"] else None}

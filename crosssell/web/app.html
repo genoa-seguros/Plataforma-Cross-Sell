@@ -1124,6 +1124,7 @@ function opHTML(o) {
       ${o.estacionada ? `<div class="estac"><b>Estacionada</b> por ${esc(o.estacionada.por || "?")} em ${dia(o.estacionada.em)}<br>${esc(o.estacionada.motivoTexto)}${o.estacionada.texto ? `: ${esc(o.estacionada.texto)}` : ""}<br>${o.estacionada.reverEm ? `volta em ${dt(o.estacionada.reverEm)}` : "sem data para voltar"}
           <div><button type="button" class="btn sec" data-trazer="${o.empresa.id}|${o.vertical}">Trazer de volta</button></div></div>`
         : `<div style="margin-top:4px">${o.voltou ? `<span class="chip" style="--c:var(--accent)" title="${esc(o.voltou)}">voltou dos estacionados</span> ` : ""}<button type="button" class="lapis" data-estacionar="${o.empresa.id}|${o.vertical}" data-estacionar-nome="${esc(o.empresa.nome)}" title="Tirar da tela por ora (já trabalhada ou não vamos trabalhar), com o motivo">estacionar</button></div>`}
+      ${o.porAtividade ? `<div class="sub" style="margin-top:4px" title="Entrou porque tem atividade aberta para esta oportunidade">pela atividade aberta · ainda falta ${esc(o.faltando.join(", "))}</div>` : ""}
       ${o.analisada === false ? (o.faltando.some(f => FINAIS.includes(f)) ? `<div class="sub" style="margin-top:4px">${esc(FINAL_TXT[o.faltando[0]] || o.faltando[0])}</div>`
         : `<div class="sub" style="margin-top:4px" title="Ainda não aparece em Oportunidades">em análise: falta ${esc(o.faltando.join(", "))}</div>`) : ""}</td>
     <td>${listaMotivos(o.motivos)}</td>
@@ -1261,6 +1262,7 @@ async function desenharFunil() {
       <div class="fcard-top"><a href="#empresa-${o.empresa.id}">${esc(o.empresa.nome)}</a><b class="fscore" title="Score">${Math.round(o.score)}</b></div>
       <div class="chips">${vchip(o.vertical, o.verticalNome)}${(o.produtos || []).map(x => `<span class="chip c-${o.vertical}">${esc(x)}</span>`).join("")}</div>
       ${o.voltou ? `<span class="chip" style="--c:var(--accent)" title="${esc(o.voltou)}">voltou dos estacionados</span>` : ""}
+      ${o.porAtividade ? `<div class="sub" title="Entrou pela atividade aberta, ainda em análise">em análise · falta ${esc(o.faltando.join(", "))}</div>` : ""}
       ${o.ultimaNota ? `<div class="sub fnota" title="${esc(o.ultimaNota.texto)}">✎ ${esc(o.ultimaNota.texto)}${o.atualizadoAte ? ` · vale até ${dm(o.atualizadoAte)}` : ""}</div>` : ""}
       <div class="fativ">${o.proximaAtividade ? `<label class="fativ-l${o.proximaAtividade.vencimento < hoje ? " atras" : ""}" title="Marcar como feita"><input type="checkbox" data-concluir="${o.proximaAtividade.id}"> ${ICONE_TIPO[o.proximaAtividade.tipo] || "•"} ${esc(o.proximaAtividade.assunto)}<span class="sub"> · ${dm(o.proximaAtividade.vencimento)} · ${esc((o.proximaAtividade.responsavelNome || "").split(" ")[0])}</span></label>`
         : '<span class="sub" style="color:var(--warn)">sem atividade</span>'}</div>
@@ -1341,7 +1343,7 @@ async function abrirGaveta(id, silencioso = false) {
           <button type="button" class="btn sec" data-negocio-op="${esc(o.id)}">Criar negócio</button>
           ${o.estacionada ? "" : `<button type="button" class="btn sec" data-estacionar="${emp.id}|${o.vertical}" data-estacionar-nome="${esc(emp.nome)}">Estacionar</button>`}</div>`)}
       ${secao("Por quê", `${listaMotivos(o.motivos || [])}${crit ? `<ul class="gav-crit">${crit}</ul>` : ""}`)}
-      ${(o.pendencias || []).length || (o.faltando || []).length ? secao("O que falta", `<ul class="gav-lista">${[...new Set([...(o.faltando || []), ...(o.pendencias || []).map(x => x.texto)])].map(t => `<li>${esc(t)}</li>`).join("")}</ul>`) : ""}
+      ${(o.pendencias || []).length || (o.faltando || []).length ? secao("O que falta", `${o.porAtividade ? '<p class="sub" style="margin:0">Está no funil porque tem atividade aberta para ela; a análise ainda não terminou.</p>' : ""}<ul class="gav-lista">${[...new Set([...(o.faltando || []), ...(o.pendencias || []).map(x => x.texto)])].map(t => `<li>${esc(t)}</li>`).join("")}</ul>`) : ""}
       ${secao("Quem decide e ponte", celulaDecide(decide, o.vertical) || '<span class="sub">—</span>')}
       ${secao("Pessoas da empresa", pessoas.length ? `<ul class="gav-pessoas">${pessoas.slice(0, 15).map(pessoa).join("")}</ul>${pessoas.length > 15 ? `<a href="#empresa-${emp.id}" class="small">ver as ${pessoas.length} na ficha</a>` : ""}`
         : '<span class="sub">Ninguém cadastrado.</span>', ` <button type="button" class="lapis" data-pessoa-nova="${emp.id}" data-pessoa-empresa="${esc(emp.nome)}">+ pessoa</button>`)}

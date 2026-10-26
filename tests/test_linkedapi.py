@@ -422,3 +422,29 @@ def test_lista_do_sales_navigator_so_guarda_quem_decide(db):
     assert sorted(p.nome for p in cilia.pessoas) == ["Catarine Sales", "Daniel Barbosa", "Felipe Affonso", "Thomas Khalil"]
     assert lk.pessoa_relevante("Gerente de Controladoria e Finanças", "linhas_financeiras")
     assert not lk.pessoa_relevante("Gerente de Controladoria e Finanças", None)  # em Saúde decide o RH (ou executivo)
+
+
+def test_busca_sem_resultado_e_nao_encontrado_nao_erro(db):
+    """A busca pelo nome que roda e não acha ninguém não é erro: marca "não encontrado" (só procura de novo em 30
+    dias, e o endereço pode ser informado à mão), em vez de repetir a busca a cada rodada gastando cota."""
+    assert resultado("E1", "empresa", "buscar", None, [{"data": []}]) == \
+        {"id_alvo": "E1", "tipo": "empresa", "acao": "buscar", "candidatos": []}
+    assert resultado("E1", "empresa", "buscar", None, [{"error": {"message": "falhou"}}])["erro"] == "falhou"
+    assert resultado("E1", "empresa", "ler", None, [{"data": None}])["erro"] == "sem dados"  # leitura vazia continua erro
+    e = Empresa(razao_social="Tofflon Brasil Ltda", nome_normalizado="tofflon brasil")
+    db.add(e)
+    db.flush()
+    agora = datetime.utcnow()
+    e.linkedin_pedido_em = agora - timedelta(hours=1)
+    db.add(LinkedinPedido(workflow_id="wb", id_alvo=f"E{e.id}", acao="buscar", criado_em=agora - timedelta(hours=1)))
+    db.commit()
+
+    class _Client:
+        def consultar(self, wid):
+            return {"workflowStatus": "completed", "completion": [{"data": []}]}
+
+    assert lk.coletar(db, _Client(), agora)["aplicados"] == 1
+    ped = db.scalar(select(LinkedinPedido).where(LinkedinPedido.workflow_id == "wb"))
+    assert ped.situacao == "aplicado" and ped.erro is None
+    assert e.linkedin_nao_encontrado and lk._acao(e, 180, agora + timedelta(days=3)) is None
+    assert lk.ultimos_erros(db) == []

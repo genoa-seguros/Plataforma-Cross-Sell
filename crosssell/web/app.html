@@ -1904,8 +1904,8 @@ async function telaRotina() {
      `Busca no Google Notícias as manchetes que citam as empresas com negócio aberto ou oportunidade, em duas buscas: a geral e só nos portais de negócios (${(r.lf?.portais || []).join(", ")}).`,
      "Motivos para puxar conversa e sinais de momento. Em Linhas Financeiras, M&A e aporte contam no Score (mais nos portais) e antecipam a releitura dos cargos-chave.", U.noticias, "Coleta"],
     ["var(--lf)", "Site lido pela IA", r.siteIa?.ativo ? cad(`até ${r.siteIa.lote} por rodada · relê a cada ${r.siteIa.validadeDias} dias`) : desligado("desligado: em teste"),
-     "Nas empresas com oportunidade de Linhas Financeiras, a IA (o mesmo modelo da temperatura) lê a página inicial e até 3 internas (sobre, clientes, investidores, serviços). Só o resultado fica guardado, não o texto do site.",
-     `Fundos e investidores, grandes clientes, serviço intelectual e site profissional.${r.siteIa?.ativo ? "" : " Para ligar: teste no servidor com <code>crosssell site-teste</code> (10 a 20 empresas conhecidas) e ponha <code>SITE_IA_ATIVO=true</code> no deploy/.env."}`, U.sitesIa, "Coleta"],
+     "Nas empresas com oportunidade (Saúde, LF e RE; primeiro as da fila de análise), a IA (o mesmo modelo da temperatura) lê a página inicial e até 4 internas (sobre, equipe, clientes, investidores, serviços, contato). Só o resultado fica guardado, não o texto do site.",
+     `Setor (vale quando não há o do LinkedIn nem o informado à mão), cidade da sede (para quem não tem cidade), pessoas com cargo (candidatas a quem decide) e, para LF, fundos e investidores, grandes clientes, serviço intelectual e site profissional.${r.siteIa?.ativo ? "" : " Para ligar: teste no servidor com <code>crosssell site-teste</code> (10 a 20 empresas conhecidas) e ponha <code>SITE_IA_ATIVO=true</code> no deploy/.env."}`, U.sitesIa, "Coleta"],
     ["var(--canal)", "LinkedIn no site", cad("uma vez por empresa"),
      `Procura o link do LinkedIn no site de até ${r.sitesLote} empresas por rodada.`,
      "Achar a página certa da empresa sem gastar consulta do LinkedIn.", U.linkedinSites, "Coleta"],
@@ -2721,7 +2721,7 @@ async function telaLinkedin() {
 }
 
 /* ---------- Ficha da empresa ---------- */
-// Site lido pela IA (Linhas Financeiras): só o resultado fica guardado
+// Site lido pela IA (todas as verticais): só o resultado fica guardado
 function siteIaHTML(x) {
   if (!x) return "";
   if (x.erro) return `<section><h2>Site (IA)</h2><div class="grupo" style="padding:12px 14px"><span class="sub">${esc(x.erro)} · ${dia(x.em)}</span></div></section>`;
@@ -2744,9 +2744,9 @@ async function telaEmpresa(id) {
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
-      <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button> ${btnSetor(e.id, e.setor, e.nome)}${e.setorFonte === "manual" ? ' <span class="sub">(setor informado à mão)</span>' : ""}${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
+      <button type="button" class="lapis" data-func="${e.id}" data-func-atual="${e.funcionarios || ""}" data-func-nome="${esc(e.nome)}">${e.funcionarios ? "✎ funcionários" : "+ funcionários"}</button> ${btnSetor(e.id, e.setor, e.nome)}${e.setorFonte === "manual" ? ' <span class="sub">(setor informado à mão)</span>' : e.setorFonte === "site" ? ' <span class="sub">(setor lido no site pela IA)</span>' : ""}${e.funcionariosFonte === "manual" && e.funcionariosEm ? ` <span class="sub">(informado à mão em ${dia(e.funcionariosEm)})</span>` : ""}</div>
     ${e.dominios && e.dominios.length ? `<div class="sub" title="E-mails desses domínios contam no relacionamento com a empresa">Domínios de e-mail: ${e.dominios.map(esc).join(", ")}</div>` : ""}
-    <div class="sub">${e.cidade ? esc(`${e.cidade}${e.uf ? "/" + e.uf : ""}`) + (e.cidadeFonte === "manual" ? " (informada à mão)" : e.cidadeFonte ? ` (${e.cidadeFonte === "receita" ? "Receita" : e.cidadeFonte === "pipedrive" ? "Pipedrive" : "LinkedIn"})` : "") : "local não informado"}${e.praca ? ` · praça de Saúde: <b>${e.praca === "alvo" ? "alvo" : "fora"}</b>` : ""}
+    <div class="sub">${e.cidade ? esc(`${e.cidade}${e.uf ? "/" + e.uf : ""}`) + (e.cidadeFonte === "manual" ? " (informada à mão)" : e.cidadeFonte ? ` (${e.cidadeFonte === "receita" ? "Receita" : e.cidadeFonte === "pipedrive" ? "Pipedrive" : e.cidadeFonte === "site" ? "site" : "LinkedIn"})` : "") : "local não informado"}${e.praca ? ` · praça de Saúde: <b>${e.praca === "alvo" ? "alvo" : "fora"}</b>` : ""}
       <button type="button" class="lapis" data-local="${e.id}" data-local-cidade="${esc(e.cidadeFonte === "manual" ? e.cidade || "" : "")}" data-local-uf="${esc(e.uf || "")}" data-local-nome="${esc(e.nome)}">${e.cidade ? "✎ cidade" : "+ cidade"}</button></div>
     <div>${vig.length ? '<span class="tag-cli">Cliente</span>' : '<span class="tag-lead">Lead</span>'} <span class="sub">· relacionamento ${Math.round(e.score)} de 100</span></div>
     <div class="chips">${vig.length ? vig.map(n => vchip(n.vertical, n.produto + (n.fim ? ` · até ${mesAno(n.fim)}` : ""))).join("") : '<span class="sub">Nenhum seguro vigente</span>'}</div>

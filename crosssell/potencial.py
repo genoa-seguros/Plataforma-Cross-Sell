@@ -66,8 +66,9 @@ def funcionarios_validos(e: Empresa | None) -> int | None:
 
 
 def setor_valido(e: Empresa | None) -> str | None:
-    """Setor que vale: só o do LinkedIn (mais específico: "fintech" em vez de "tecnologia") ou o informado à mão."""
-    if e is None or not e.setor or e.setor_fonte not in ("linkedin", "manual"):
+    """Setor que vale: o do LinkedIn (mais específico: "fintech" em vez de "tecnologia"), o informado à mão ou o lido
+    no site pela IA (só quando não há os outros dois)."""
+    if e is None or not e.setor or e.setor_fonte not in ("linkedin", "manual", "site"):
         return None
     return e.setor
 

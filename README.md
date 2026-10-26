@@ -64,8 +64,8 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   Próxima atividade. Acima da tabela, recolhidos, os *Critérios do Score em cada vertical*, com os
   pesos de `config/criterios.yaml`. O número de funcionários pode ser informado à mão (✎ na coluna
   Empresa ou na ficha): ele vale sobre o do LinkedIn por 180 dias; depois disso, a leitura do LinkedIn
-  volta a atualizar. **Funcionários e setor vêm só do LinkedIn ou do informado à mão**: os do Pipedrive
-  não são usados, e o CNAE não conta como setor (fica só para as regras de Linhas Financeiras). O setor
+  volta a atualizar. **Funcionários vêm só do LinkedIn ou do informado à mão; o setor, do LinkedIn, do
+  informado à mão ou, sem esses dois, do site lido pela IA**: os do Pipedrive não são usados, e o CNAE não conta como setor (fica só para as regras de Linhas Financeiras). O setor
   também pode ser informado à mão (✎ na ficha e em Negócios em aberto); quanto mais específico, melhor. O local (cidade/UF) vem da Receita pelo CNPJ (inclusive o
   CNPJ achado no site da empresa, aceito só se o nome bater), do endereço da organização no Pipedrive
   ou da sede no LinkedIn. A cidade e a UF também podem ser informadas à mão (✎ na coluna Empresa ou
@@ -319,7 +319,14 @@ Enquanto espera, o comando mostra a cada minuto se a consulta está na fila da c
 
 Se a praça e as pessoas fizerem sentido, ponha `LINKEDIN_SALES_NAVIGATOR=true` no `deploy/.env`.
 
-### Site lido pela IA (Linhas Financeiras)
+### Site lido pela IA (todas as verticais)
+
+A IA lê o site das empresas com oportunidade de Saúde, LF e RE (primeiro as da fila de análise, pelo Score) e,
+além do que pesa em LF (fundos e investidores, grandes clientes, serviço intelectual, site profissional), traz:
+**setor** (vale como setor quando não há o do LinkedIn nem o informado à mão), **cidade da sede** (só para quem
+ainda não tem cidade; decide a praça de Saúde quando é cidade alvo) e **pessoas com cargo** da página de equipe ou
+diretoria (cadastradas com fonte "site"; com cargo da área, viram quem decide). Leituras feitas antes disso são
+refeitas uma vez. O texto do site continua não sendo guardado.
 
 `SITE_IA_ATIVO` vem desligado. Antes de ligar, teste no servidor com 10 a 20 empresas conhecidas (uma
 chamada à Claude API por empresa, com o modelo escolhido na tela Equipe):
@@ -360,7 +367,7 @@ crosssell emails --dias 2         # a cada hora: e-mails + temperatura
 crosssell cnpj-sites              # a cada hora: CNPJ no site de empresas sem CNPJ (só se o nome bater)
 crosssell dominios                # a cada hora: outros domínios de e-mail (site, redirecionamento)
 crosssell noticias                # diário (geral e portais de negócios)
-crosssell sites-ia                # a cada hora, com SITE_IA_ATIVO=true: site lido pela IA (LF)
+crosssell sites-ia                # a cada hora, com SITE_IA_ATIVO=true: site lido pela IA (todas as verticais)
 crosssell site-teste 123 "Nome"   # testa a leitura do site pela IA (só mostra; --aplicar grava)
 crosssell linkedin                # a cada hora: aplica resultados e inicia o próximo lote (limite de 24 h)
 crosssell recalcular              # diário

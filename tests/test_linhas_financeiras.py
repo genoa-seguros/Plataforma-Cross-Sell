@@ -96,6 +96,38 @@ def test_site_lido_pela_ia(db, settings):
         {"lidos": 0, "sem_site": 0, "falhas_ia": 0}
 
 
+
+def test_site_traz_setor_sede_e_pessoas_para_todas_as_verticais(db, settings):
+    """O site lido pela IA vale como setor (sem o do LinkedIn nem à mão), dá a cidade da sede a quem não tem e
+    cadastra quem o site apresenta com cargo (candidatos a quem decide). Leitura antiga é refeita uma vez."""
+    from datetime import datetime
+
+    from crosssell import potencial
+    from crosssell.models import Pessoa
+
+    e = Empresa(razao_social="Prisma Saúde Ltda", nome_normalizado="prisma saude", dominio="prisma.com.br")
+    lk = Empresa(razao_social="Com LinkedIn SA", nome_normalizado="com linkedin", dominio="lk.com.br",
+                 setor="Fintech", setor_fonte="linkedin", cidade="Recife", cidade_fonte="receita")
+    antiga = Empresa(razao_social="Antiga SA", nome_normalizado="antiga", dominio="antiga.com.br",
+                     site_ia={"servico_intelectual": True}, site_ia_em=datetime.utcnow())
+    db.add_all([e, lk, antiga])
+    db.commit()
+    resposta = {**RESPOSTA, "setor": "Indústria farmacêutica", "cidade_sede": "Campinas", "uf_sede": "sp",
+                "pessoas": [{"nome": "Marina Lopes", "cargo": "Diretora de Recursos Humanos"},
+                            {"nome": "Paulo", "cargo": "CEO"},  # só o primeiro nome: fica de fora
+                            {"nome": "Carlos Dias", "cargo": ""}]}  # sem cargo: fica de fora
+    leitor = site_ia.LeitorSite(settings, client=_ClaudeFalso(json.dumps(resposta)), modelo="m")
+    http = httpx.Client(transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, text=SITE, headers={"content-type": "text/html"})))
+    assert site_ia.atualizar(db, [e.id, lk.id, antiga.id], leitor, http=http)["lidos"] == 3
+    assert potencial.setor_valido(e) == "Indústria farmacêutica" and e.setor_fonte == "site"
+    assert (e.cidade, e.uf, e.cidade_fonte) == ("Campinas", "SP", "site")
+    assert [(p.nome, p.cargo, p.fonte) for p in db.query(Pessoa).filter_by(empresa_id=e.id)] == \
+        [("Marina Lopes", "Diretora de Recursos Humanos", "site")]
+    assert (lk.setor, lk.setor_fonte, lk.cidade) == ("Fintech", "linkedin", "Recife")  # o do LinkedIn e a Receita valem mais
+    assert antiga.site_ia["versao"] == site_ia.VERSAO  # a leitura antiga foi refeita
+    assert site_ia.atualizar(db, [e.id, lk.id, antiga.id], leitor, http=http)["lidos"] == 0
+
 def _lf_analisada(db, nome: str, i: int, **kw) -> Empresa:
     """Lead negociando Saúde, com tudo de LF lido: Receita, notícias, site (IA), cargos-chave, CFO com ponte."""
     agora = datetime.utcnow()

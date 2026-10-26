@@ -440,12 +440,33 @@ def situacao(db: Session, settings: Settings) -> dict:
                   for (v, g), c in cotas(settings).items()],
         "direto": direto(settings), "limiteDia": settings.linkedin_limite_dia,
         "ultimas24h": _pedidos_24h(db, datetime.utcnow()),
+        "ultimosErros": ultimos_erros(db),
         "naoEncontrados": [{"id_alvo": f"{'E' if isinstance(o, Empresa) else 'P'}{o.id}",
                             "tipo": "empresa" if isinstance(o, Empresa) else "pessoa",
                             "nome": o.razao_social if isinstance(o, Empresa) else o.nome,
                             "empresa": "" if isinstance(o, Empresa) else (o.empresa.razao_social if o.empresa else "")}
                            for o in nao[:50]],
     }
+
+
+ACOES_NOME = {"ler": "ler a página", "buscar": "buscar pelo nome", "area": "funcionários da área",
+              "praca": "praça (Sales Navigator)", "pessoas": "lista de quem decide (Sales Navigator)"}
+
+
+def ultimos_erros(db: Session, dias: int = 7, limite: int = 15) -> list[dict]:
+    """Os pedidos que falharam ou expiraram nos últimos dias, com a mensagem da Linked API (tela Rotina e Diário)."""
+    desde = datetime.utcnow() - timedelta(days=dias)
+    peds = db.scalars(select(LinkedinPedido).where(LinkedinPedido.situacao.in_(("erro", "expirado")),
+                                                   LinkedinPedido.criado_em >= desde)
+                      .order_by(LinkedinPedido.criado_em.desc()).limit(limite)).all()
+    saida = []
+    for p in peds:
+        obj = db.get(Pessoa if p.id_alvo[:1] == "P" else Empresa, int(p.id_alvo[1:])) if p.id_alvo[1:].isdigit() else None
+        nome = (obj.razao_social if isinstance(obj, Empresa) else obj.nome) if obj else p.id_alvo
+        saida.append({"em": p.criado_em.isoformat(timespec="minutes"), "alvo": nome, "acao": ACOES_NOME.get(p.acao, p.acao),
+                      "vertical": p.vertical, "situacao": p.situacao,
+                      "erro": p.erro if p.situacao == "erro" else "sem resposta da Linked API em 24 horas"})
+    return saida
 
 
 def definir_endereco(db: Session, id_alvo: str, url: str) -> None:

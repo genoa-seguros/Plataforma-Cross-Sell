@@ -144,6 +144,9 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   "+ atividade", "+ atualização", "estacionar" e **Criar negócio**: funil e etapa da vertical, produto (campo de
   produto da vertical, `pipedrive.campos.produto_por_vertical`), título automático "produto + ano" (ex.: D&O 2026,
   editável), contato e responsável; abre o negócio no Pipedrive (`OportunidadeConvertida`).
+  Uma oportunidade ainda em análise que ganha uma atividade aberta para ela (criada para aquela vertical) entra
+  sozinha em Oportunidades e no funil, em Em foco, com "em análise · falta …" (como a incluída à mão): se alguém
+  já está trabalhando, ela aparece. Atividade da empresa sem vertical não basta.
   Clicar no card abre a **gaveta da oportunidade**, com tudo dela por seções: próximo passo (concluir a atividade e
   os botões de ação), por quê (motivos e a nota de cada critério do Score), o que falta, quem decide e ponte, pessoas
   da empresa (cargo, área, influência, com quem da equipe troca e-mails, temperatura), atualizações do negócio,

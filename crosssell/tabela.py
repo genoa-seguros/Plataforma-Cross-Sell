@@ -469,7 +469,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 pot["score"] = round(max(0.0, min(100.0, pot["score"] + nota.ajuste)), 1)
             manual = manuais.get((e.id, v))
             parada, voltou = estacionada(e, estacionadas.get((e.id, v)), hoje, nomes_id)
-            prox = proxima_de.get((e.id, v)) or proxima_de.get((e.id, None))
+            da_vertical = proxima_de.get((e.id, v))  # atividade aberta criada para esta oportunidade
+            prox = da_vertical or proxima_de.get((e.id, None))
             contatos = [c for c in e.pessoas if c.pipedrive_person_id]
             func, func_origem = _funcionarios(None, e)
             saida.append({
@@ -503,8 +504,10 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 **estagio(notas[0] if notas else None, prox, hoje),
                 "faltando": (falta := faltando(v, e, decide, any(tem_relacao(p, relacao) for p in e.pessoas),
                                                sem_produto=bool(lf) and not lf["algumSugerido"])),
-                # Incluída à mão (antes da reunião de sexta): entra mesmo faltando algo
-                "analisada": not falta or manual is not None,
+                # Incluída à mão (antes da reunião de sexta) ou com atividade aberta para ela (alguém já está
+                # trabalhando): entra mesmo faltando algo, com o que ainda falta à mostra
+                "analisada": not falta or manual is not None or da_vertical is not None,
+                "porAtividade": bool(falta) and manual is None and da_vertical is not None,
                 "manual": {"por": nomes_id.get(manual.usuario_id), "em": manual.criada_em.isoformat(timespec="minutes")}
                 if manual else None,
                 # Estacionada (fora da tela por ora) ou que voltou da lista de estacionadas, e por quê

@@ -161,21 +161,24 @@ def linkedin_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes 
             typer.echo(f"  ERRO: {exc}")
 
 
-def _empresas_lf(db, s) -> list[int]:
-    """Empresas com oportunidade de Linhas Financeiras, do maior Score para o menor (MEI fica de fora)."""
+def _empresas_site(db, s) -> list[int]:
+    """Empresas com oportunidade (Saúde, LF, RE) para a IA ler o site: primeiro as que estão na fila de análise
+    (o site pode trazer setor, cidade e quem decide), depois as já analisadas; dentro de cada grupo, pelo Score.
+    MEI e fora da praça ficam de fora."""
     from crosssell import tabela
 
-    ids = []
+    fila, analisadas = [], []
     for o in tabela.oportunidades(db, s):
-        if o["vertical"] == "linhas_financeiras" and "MEI" not in o["faltando"] and o["empresa"]["id"] not in ids:
-            ids.append(o["empresa"]["id"])
-    return ids
+        if o["vertical"] not in tabela.VERTICAIS_OPORTUNIDADES or set(o["faltando"]) & set(tabela.FINAIS):
+            continue
+        (analisadas if o["analisada"] else fila).append(o["empresa"]["id"])
+    return list(dict.fromkeys(fila + analisadas))
 
 
 @app.command("sites-ia")
 def sites_ia(limite: int = typer.Option(0, help="Sites por rodada (0 = SITE_IA_LOTE)")):
-    """Lê pela IA o site das empresas com oportunidade de Linhas Financeiras (fundos e investidores, grandes
-    clientes, serviço intelectual, site profissional). Só roda com SITE_IA_ATIVO=true."""
+    """Lê pela IA o site das empresas com oportunidade (LF: fundos e investidores, grandes clientes, serviço
+    intelectual, site profissional; todas: setor, cidade da sede e pessoas com cargo). Só roda com SITE_IA_ATIVO=true."""
     from crosssell import site_ia
     from crosssell.pipeline import registrar
     from crosssell.temperatura import modelo_em_uso
@@ -185,7 +188,7 @@ def sites_ia(limite: int = typer.Option(0, help="Sites por rodada (0 = SITE_IA_L
         typer.echo("Leitura de sites pela IA desligada (SITE_IA_ATIVO). Teste antes com `crosssell site-teste`.")
         return
     leitor = site_ia.LeitorSite(s, modelo=modelo_em_uso(db, s)[0])
-    typer.echo(registrar(db, "sites-ia", site_ia.atualizar, db, _empresas_lf(db, s), leitor, limite=limite or s.site_ia_lote))
+    typer.echo(registrar(db, "sites-ia", site_ia.atualizar, db, _empresas_site(db, s), leitor, limite=limite or s.site_ia_lote))
 
 
 @app.command("site-teste")
@@ -234,9 +237,13 @@ def site_teste(empresas: list[str] = typer.Argument(..., help="ids ou nomes das 
             typer.echo(f"  serviço intelectual: {sim(res['servico_intelectual'])} ({res['servico']}) · "
                        f"site profissional: {sim(res['site_profissional'])}")
             typer.echo(f"  resumo: {res['resumo']}")
+            typer.echo(f"  setor: {res.get('setor') or '?'} · sede: {res.get('cidade_sede') or '?'}"
+                       f"{'/' + res['uf_sede'] if res.get('uf_sede') else ''}")
+            typer.echo(f"  pessoas: {'; '.join(x['nome'] + ' (' + x['cargo'] + ')' for x in res.get('pessoas', [])) or 'nenhuma'}")
             typer.echo(f"  páginas lidas: {', '.join(res['paginas']) or 'LinkedIn (Sobre)'}")
         if aplicar:
             e.site_ia, e.site_ia_em = res, datetime.utcnow()
+            site_ia.aplicar(db, e, res)
             db.commit()
             typer.echo("  gravado na empresa")
 

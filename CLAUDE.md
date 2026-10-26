@@ -53,8 +53,11 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   API to classify contact openness from e-mail replies. E-mail text is never stored. The model is the one a master
   picked on the Equipe screen (`configuracoes` table, `temperatura.modelo_em_uso`), else `ANTHROPIC_MODEL`; only
   models in `temperatura.MODELOS` are offered (they must accept effort, structured output and the server fallback).
-  `site_ia.py` uses the same model and call pattern to read a company's site for LF (fundos/investidores, grandes
-  clientes, serviço intelectual, site profissional) into `Empresa.site_ia`; the site text is never stored. Off until
+  `site_ia.py` uses the same model and call pattern to read the site of every company with an opportunity (fila
+  first, `cli._empresas_site`) into `Empresa.site_ia`: LF signals (fundos/investidores, grandes clientes, serviço
+  intelectual, site profissional) plus setor (valid as `setor_fonte="site"` when there is no LinkedIn/manual one),
+  cidade da sede (only when empty) and pessoas com cargo (`fonte="site"`, quem decide candidates), applied by
+  `site_ia.aplicar`; reads older than `site_ia.VERSAO` are redone once. The site text is never stored. Off until
   `SITE_IA_ATIVO=true`.
 - **LinkedIn** (`connectors/linkedin.py`, `linkedapi.py`): calls Linked API directly when
   `LINKED_API_TOKEN`/`LINKED_API_IDENTIFICATION_TOKEN` are set. Otherwise it falls back to an n8n webhook
@@ -84,7 +87,7 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   Transportes; `tabela.produtos_da_empresa`): one row per company with suggested products, `tipo` "cross" (default view)
   or "mais" (`?oferta=mais`), and `etiquetas` from open and lost (`Negocio.perdido_em`) deals. RE's quem decide depends
   on the product (`potencial.areas_re`, `ramos_elementares.areas` in criterios.yaml); a ponte already in that area counts. LF Score: profissionalização, momento (news from
-  `noticias.PORTAIS` weigh more), produto, influência. Employees and sector count only from LinkedIn or manual
+  `noticias.PORTAIS` weigh more), produto, influência. Employees count only from LinkedIn or manual, sector also from the site AI
   (`potencial.funcionarios_validos` / `setor_valido`); Pipedrive's are ignored and CNAE is not a sector. The ponte is
   e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled
   mailbox reads 12 months once (`Usuario.historico_em`). `potencial.praca(e)` decides the Saúde praça: a manual city

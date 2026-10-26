@@ -1,11 +1,14 @@
-"""Leitura do site da empresa pela IA (Claude API), para Linhas Financeiras.
+"""Leitura do site da empresa pela IA (Claude API), para todas as verticais.
 
-Baixa a página inicial e até 3 páginas internas que costumam dizer o que interessa (sobre, clientes,
-investidores, serviços), tira o texto e pergunta à IA quatro coisas:
-  fundos e investidores   a empresa é um fundo/gestora ou tem fundos e investidores (VC, PE) no capital
-  grandes clientes        atende empresas grandes ou conhecidas (logos, cases)
-  serviço intelectual     vende conhecimento (consultoria, tecnologia, saúde, jurídico...): E&O
-  site profissional       site cuidado, com conteúdo institucional, não uma página improvisada
+Baixa a página inicial e até 4 páginas internas que costumam dizer o que interessa (sobre, equipe, clientes,
+investidores, serviços, contato), tira o texto e pergunta à IA:
+  fundos e investidores   a empresa é um fundo/gestora ou tem fundos e investidores (VC, PE) no capital (LF)
+  grandes clientes        atende empresas grandes ou conhecidas (logos, cases) (LF)
+  serviço intelectual     vende conhecimento (consultoria, tecnologia, saúde, jurídico...): E&O (LF)
+  site profissional       site cuidado, com conteúdo institucional, não uma página improvisada (LF)
+  setor                   o setor da empresa: vale como setor (fonte "site") quando não há o do LinkedIn nem à mão
+  cidade da sede          o endereço da sede, quando a empresa ainda não tem cidade (praça de Saúde)
+  pessoas                 nomes e cargos da página de equipe/diretoria: candidatos a quem decide (fonte "site")
 O texto do site não é guardado; fica só o resultado (Empresa.site_ia) e a data da leitura (site_ia_em).
 Usa o mesmo modelo da temperatura (escolhido na tela Equipe).
 """
@@ -29,14 +32,17 @@ log = logging.getLogger(__name__)
 
 VALIDADE_DIAS = 180  # o site é relido depois disso
 MAX_TEXTO = 15000  # caracteres de texto do site enviados à IA (página inicial + internas)
-MAX_PAGINAS_INTERNAS = 3
+MAX_PAGINAS_INTERNAS = 4
+VERSAO = 2  # leituras de antes (só LF, sem setor, sede e pessoas) são refeitas uma vez
+MAX_PESSOAS = 8
 # Site montado por JavaScript chega sem texto e sem links: tenta direto os endereços institucionais mais comuns
 CAMINHOS_COMUNS = ("/sobre", "/quem-somos", "/sobre-nos", "/a-empresa", "/empresa", "/about", "/about-us")
 _INTERNAS = re.compile(r"sobre|about|quem-somos|quem_somos|empresa|clientes|clients|cases|investidores|investors|"
-                       r"ri\b|servicos|services|solucoes|solutions|portfolio", re.I)
+                       r"ri\b|servicos|services|solucoes|solutions|portfolio|equipe|time\b|team|lideranca|diretoria|"
+                       r"socios|contato|contact|fale-conosco", re.I)
 
 SISTEMA = """Você analisa o site de uma empresa brasileira para uma corretora de seguros que vende Linhas Financeiras \
-(D&O, E&O, Cyber e IMI, o seguro de fundos e gestoras).
+(D&O, E&O, Cyber e IMI, o seguro de fundos e gestoras), Saúde e Ramos Elementares.
 
 Você recebe o texto de algumas páginas do site. Responda só com base no que está escrito:
 - fundo_gestora: a atividade PRINCIPAL da empresa é ser fundo de investimento, gestora de recursos, asset, private \
@@ -53,7 +59,10 @@ saúde, jurídico, contabilidade, engenharia, arquitetura, auditoria, corretagem
 página improvisada, em construção ou só com um formulário.
 - servico: em poucas palavras, o que a empresa vende.
 - resumo: uma frase em português com o que mais pesa para Linhas Financeiras, sem dados pessoais.
-Na dúvida, responda false."""
+- setor: o setor da empresa em 1 a 4 palavras, no estilo do LinkedIn (ex.: "Tecnologia da informação", "Fintech", "Indústria farmacêutica", "Logística", "Varejo"). Vazio se o site não deixar claro.
+- cidade_sede e uf_sede: a cidade e a UF (sigla) do endereço da sede ou matriz escrito no site. Vazio se não houver endereço ou se houver só filiais sem dizer qual é a sede.
+- pessoas: sócios, diretores e gestores que o site apresenta pelo nome com o cargo (página de equipe, diretoria, sobre). Nome completo como está escrito e o cargo. Não invente cargos; deixe de fora quem aparece sem cargo, depoimentos de clientes e autores de posts.
+Na dúvida, responda false (ou vazio)."""
 
 FORMATO = {
     "type": "json_schema",
@@ -69,9 +78,16 @@ FORMATO = {
             "site_profissional": {"type": "boolean"},
             "servico": {"type": "string"},
             "resumo": {"type": "string"},
+            "setor": {"type": "string"},
+            "cidade_sede": {"type": "string"},
+            "uf_sede": {"type": "string"},
+            "pessoas": {"type": "array", "items": {
+                "type": "object", "properties": {"nome": {"type": "string"}, "cargo": {"type": "string"}},
+                "required": ["nome", "cargo"], "additionalProperties": False}},
         },
         "required": ["fundo_gestora", "fundos_investidores", "investidores", "grandes_clientes", "clientes",
-                     "servico_intelectual", "site_profissional", "servico", "resumo"],
+                     "servico_intelectual", "site_profissional", "servico", "resumo", "setor", "cidade_sede",
+                     "uf_sede", "pessoas"],
         "additionalProperties": False,
     },
 }
@@ -263,17 +279,46 @@ def ler_empresa(e: Empresa, leitor: LeitorSite, http: httpx.Client) -> dict | No
     res["investidores"], res["clientes"] = res.get("investidores", [])[:5], res.get("clientes", [])[:5]
     limpo = lambda t: (t or "").strip().rstrip("}").strip()  # noqa: E731  (às vezes a IA deixa um "}" no fim)
     res["resumo"], res["servico"] = limpo(res.get("resumo"))[:300], limpo(res.get("servico"))[:120]
+    res["setor"], res["cidade_sede"] = limpo(res.get("setor"))[:60], limpo(res.get("cidade_sede"))[:60]
+    uf = limpo(res.get("uf_sede")).upper()
+    res["uf_sede"] = uf if re.fullmatch(r"[A-Z]{2}", uf) else ""
+    res["pessoas"] = [{"nome": limpo(x.get("nome"))[:80], "cargo": limpo(x.get("cargo"))[:120]}
+                      for x in (res.get("pessoas") or []) if isinstance(x, dict)
+                      and len(limpo(x.get("nome")).split()) >= 2 and limpo(x.get("cargo"))][:MAX_PESSOAS]
+    res["versao"] = VERSAO
     extra = {"fonte": fonte, "problema_site": problema} if problema else {"fonte": fonte}
     return {**res, **extra, "site": url, "paginas": paginas, "modelo": leitor.modelo}
 
 
 def precisa(e: Empresa, agora: datetime) -> bool:
-    return bool(endereco(e)) and (e.site_ia_em is None or e.site_ia_em < agora - timedelta(days=VALIDADE_DIAS))
+    if not endereco(e):
+        return False
+    if e.site_ia_em is None or e.site_ia_em < agora - timedelta(days=VALIDADE_DIAS):
+        return True
+    r = e.site_ia or {}
+    return "erro" not in r and r.get("versao", 1) < VERSAO  # lida antes de trazer setor, sede e pessoas
+
+
+def aplicar(db: Session, e: Empresa, res: dict) -> None:
+    """Grava o que serve às outras verticais: o setor (se não há o do LinkedIn nem o informado à mão), a cidade da
+    sede (se a empresa ainda não tem cidade) e as pessoas com cargo (candidatas a quem decide)."""
+    from crosssell.resolver import resolver_pessoa
+
+    if "erro" in res:
+        return
+    if res.get("setor") and e.setor_fonte not in ("linkedin", "manual"):
+        e.setor, e.setor_fonte = res["setor"], "site"
+    if res.get("cidade_sede") and not e.cidade:
+        e.cidade, e.cidade_fonte = res["cidade_sede"], "site"
+        e.uf = e.uf or res.get("uf_sede") or None
+    for x in res.get("pessoas") or []:
+        resolver_pessoa(db, nome=x["nome"], cargo=x["cargo"], empresa=e, fonte="site")
 
 
 def atualizar(db: Session, empresa_ids: list[int], leitor: LeitorSite, http: httpx.Client | None = None,
               limite: int = 20) -> dict:
-    """Lê o site das empresas (na ordem recebida, a do Score) que ainda não foram lidas ou passaram da validade."""
+    """Lê o site das empresas (na ordem recebida) que ainda não foram lidas, passaram da validade ou foram lidas
+    por uma versão antiga da leitura."""
     http = http or httpx.Client(timeout=15, follow_redirects=True, headers=CABECALHOS)
     agora = datetime.utcnow()
     por_id = {e.id: e for e in db.scalars(select(Empresa).where(Empresa.id.in_(empresa_ids)))}
@@ -289,6 +334,7 @@ def atualizar(db: Session, empresa_ids: list[int], leitor: LeitorSite, http: htt
             cont["falhas_ia"] += 1
             continue
         e.site_ia, e.site_ia_em = res, agora
+        aplicar(db, e, res)
         cont["sem_site" if "erro" in res else "lidos"] += 1
         db.commit()
     return cont

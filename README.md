@@ -140,6 +140,13 @@ pode apresentar. A partir dela a equipe cria atividades no Pipedrive e acompanha
   ponte passa a ter cargo e, se for da área da vertical, a pessoa vira quem decide. O texto não é guardado.
   Uma vez só, a rotina relê os últimos 12 meses das caixas para as pessoas sem cargo das empresas com oportunidade
   (`crosssell assinaturas` faz o mesmo à mão); quem não escreveu nesse período é lido quando escrever.
+- **Nova oportunidade a partir da organização** (botão "+ Nova oportunidade" em Oportunidades, ou "+ Criar
+  oportunidade" na ficha): busca a organização pelo nome e escolhe a vertical; vale mesmo sem card aberto no
+  Pipedrive. Entra como "incluída à mão" (com o nome de quem criou, em Não atuamos no funil) só naquela vertical, e a
+  plataforma passa a pesquisar o que falta. Não cria se a empresa já tem ou já negocia a vertical (em LF e RE, todos
+  os produtos). "desfazer" tira a oportunidade.
+- **Ganhos recentes por vertical**: no filtro "Ganhos recentes", um seletor mostra só as empresas que ganharam
+  negócio numa vertical (ex.: quem acabou de fechar Saúde), com a contagem de cada uma.
 - **Funil** (Oportunidades abre no ▥ Funil; ☰ Lista ao lado; a escolha fica guardada no navegador): as mesmas
   oportunidades dos filtros, em colunas calculadas sozinhas (`tabela.estagio`): **Não atuamos** (sem atividade aberta
   e sem atualização válida), **Em foco** (atividade aberta na empresa e vertical, criada depois que a última

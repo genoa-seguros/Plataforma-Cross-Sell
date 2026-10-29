@@ -92,7 +92,7 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   e-mail only: `tabela.com_relacao` (wrote to and got a reply from the team in the last 12 months). A newly enabled
   mailbox reads 12 months once (`Usuario.historico_em`). `potencial.praca(e)` decides the Saúde praça: a manual city
   (`cidade_fonte="manual"`) decides alone, a city in `metropoles` is alvo, otherwise `Empresa.praca` (set by the
-  employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha. `?oferta=ganhos` lists companies with a
+  employee-location reading). `?empresa=` returns every opportunity, analyzed or not, for the ficha. `?oferta=ganhos` (with `ganho=<vertical>` to filter by the won deal's vertical) lists companies with a
   Pipedrive deal won in the last `tabela.GANHOS_DIAS` days (item `ganhos`), analyzed or not, even without an open
   card (`soGanho` items appear only there; `_calcular_oportunidades` keeps them out of the default list, fila and
   pendências); `linkedin._candidatos_alvo` puts them first.
@@ -100,7 +100,8 @@ overwrites) → `models.py` (SQLAlchemy) → scoring → `tabela.py` builds the 
   "Completar dados" tab (analyzed items with `tabela.pendencias`, summary by `donos` = open-deal owners). `tabela.pesquisa` feeds the
   per-opportunity research bar (vertical data, quem decide da área, ponte + cargo; manual fills count as done; estado
   completo / pesquisando = the platform still fetches something / equipe = only manual work left). `OportunidadeManual` forces an
-  opportunity in ("incluída à mão"); an open activity created for that vertical does too (`porAtividade`); `Pessoa.ponte_manual` counts as ponte (`tabela.tem_relacao`); `NotaOportunidade`
+  opportunity in ("incluída à mão"; also creates one for a company with no open card, only in that vertical, via
+  "+ Nova oportunidade" + `GET /api/empresas?q=`, refused by `tabela.cabe_oportunidade` when it already has/negotiates it); an open activity created for that vertical does too (`porAtividade`); `Pessoa.ponte_manual` counts as ponte (`tabela.tem_relacao`); `NotaOportunidade`
   ("atualização do negócio" in the UI; per company and vertical; not the activity's `Atividade.nota`, which is the
   "observação" sent to Pipedrive and never read by the AI) is read by `nota_ia.py` (same model/pattern as temperatura), which stores an ajuste of
   -50..+20 on the latest note; `tabela.oportunidades` adds it to the score and to "Por quê". Pending notes: `crosssell notas`.

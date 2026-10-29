@@ -400,7 +400,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     """Verticais que a empresa ainda não tem nem está negociando, para clientes (seguro vigente) e
     leads com algum card aberto no Pipedrive (negócio aberto com vertical, em qualquer funil).
     Também entram as empresas com negócio ganho nos últimos GANHOS_DIAS dias, mesmo sem nada aberto
-    (`soGanho`: só aparecem no filtro "Ganhos recentes"). As outras ficam de fora.
+    (`soGanho`: só aparecem no filtro "Ganhos recentes"), e as oportunidades criadas à mão a partir da organização
+    (OportunidadeManual), só na vertical criada. As outras ficam de fora.
     Ordenadas pelo Potencial na vertical da oportunidade."""
     hoje = hoje or date.today()
     funis = settings.pipelines()
@@ -410,7 +411,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     desde = hoje - timedelta(days=GANHOS_DIAS)
     ids = select(Negocio.empresa_id).where(
         Negocio.empresa_id.is_not(None), Negocio.vertical.is_not(None), Negocio.fonte == "pipedrive",
-        (Negocio.status == "aberto") | ((Negocio.status == "ganho") & (Negocio.ganho_em >= desde))).distinct()
+        (Negocio.status == "aberto") | ((Negocio.status == "ganho") & (Negocio.ganho_em >= desde))).union(
+        select(OportunidadeManual.empresa_id))  # criadas a partir da organização, mesmo sem card aberto
     # Tudo de uma vez (antes eram milhares de consultas, uma por empresa, vertical e pessoa)
     empresas = db.scalars(select(Empresa).where(Empresa.id.in_(ids)).options(
         selectinload(Empresa.negocios), selectinload(Empresa.pessoas), selectinload(Empresa.noticias))).all()
@@ -424,6 +426,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
     # Incluídas à mão em Oportunidades e notas da equipe (a IA ajusta o Score pela nota mais recente avaliada)
     manuais = {(m.empresa_id, m.vertical): m for m in db.scalars(select(OportunidadeManual)
                                                                   .where(OportunidadeManual.empresa_id.in_(ids)))}
+    com_manual = {k[0] for k in manuais}
     notas_de: dict[tuple, list] = defaultdict(list)
     for n in db.scalars(select(NotaOportunidade).where(NotaOportunidade.empresa_id.in_(ids))
                         .order_by(NotaOportunidade.criada_em.desc(), NotaOportunidade.id.desc())):
@@ -442,7 +445,9 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         abertos = [n for n in e.negocios if n.status == "aberto" and n.fonte == "pipedrive" and n.vertical]
         ganhos = sorted((n for n in e.negocios if n.status == "ganho" and n.fonte == "pipedrive" and n.vertical
                          and n.ganho_em and n.ganho_em >= desde), key=lambda n: n.ganho_em, reverse=True)
-        if not abertos and not ganhos:
+        # Sem card aberto nem ganho recente: só as oportunidades criadas à mão a partir da organização
+        so_manual = not abertos and not ganhos
+        if so_manual and e.id not in com_manual:
             continue
         vigentes = seguros_vigentes(e)
         tem = {v.vertical for v in vigentes}
@@ -450,6 +455,8 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
         # Quem da equipe troca e-mails com alguém da empresa (filtro "Relação de")
         relacoes = sorted(relacoes_de[e.id])
         for v in VERTICAIS:
+            if so_manual and (e.id, v) not in manuais:
+                continue
             lf = produtos_da_empresa(e, vigentes, v) if v in POR_PRODUTO else None
             if lf is not None:
                 if not lf["produtos"]:
@@ -485,7 +492,7 @@ def oportunidades(db: Session, settings: Settings, hoje: date | None = None) -> 
                 "donos": sorted({x.responsavel_email for x in abertos if x.responsavel_email}),
                 # Negócios ganhos nos últimos GANHOS_DIAS dias (filtro "Ganhos recentes"), com quem fechou
                 "ganhos": ganhos_por_produto(ganhos, nomes),
-                "soGanho": not abertos,
+                "soGanho": not abertos and manual is None,
                 "noticias": [{"titulo": x.titulo, "fonte": x.fonte, "url": x.url, "portal": portal(x.site),
                               "data": x.publicada_em.date().isoformat() if x.publicada_em else None} for x in e.noticias[:2]],
                 "relacoes": relacoes,
@@ -557,6 +564,20 @@ def estacionada(e: Empresa, x: OportunidadeEstacionada | None, hoje: date,
     return {"por": nomes_id.get(x.usuario_id), "em": x.criada_em.isoformat(timespec="minutes"), "motivo": x.motivo,
             "motivoTexto": MOTIVOS_ESTACIONAR.get(x.motivo, x.motivo), "texto": x.texto,
             "reverEm": x.rever_em.isoformat() if x.rever_em else None}, None
+
+
+def cabe_oportunidade(e: Empresa, vertical: str) -> str | None:
+    """None se a empresa pode ter oportunidade na vertical; senão o motivo (já tem ou já negocia)."""
+    vigentes = seguros_vigentes(e)
+    if vertical in POR_PRODUTO:
+        if not produtos_da_empresa(e, vigentes, vertical)["produtos"]:
+            return f"A empresa já tem ou negocia todos os produtos de {VERTICAL_LABEL[vertical]}."
+        return None
+    if vertical in {v.vertical for v in vigentes}:
+        return f"A empresa já tem {VERTICAL_LABEL[vertical]} conosco."
+    if any(n.status == "aberto" and n.vertical == vertical for n in e.negocios):
+        return f"A empresa já negocia {VERTICAL_LABEL[vertical]} (card aberto no Pipedrive)."
+    return None
 
 
 def ganhos_por_produto(ganhos: list[Negocio], nomes: dict[str, str]) -> list[dict]:

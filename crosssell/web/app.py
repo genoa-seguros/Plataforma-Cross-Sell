@@ -450,11 +450,15 @@ class ManualIn(BaseModel):
 
 @app.post("/api/oportunidades/manual")
 def api_oportunidade_manual(dados: ManualIn, db: Session = Depends(get_db), u: Usuario = Depends(usuario_atual)):
-    """Leva a oportunidade para a tela Oportunidades mesmo faltando algo (ou desfaz), com o nome de quem levou."""
-    if db.get(Empresa, dados.empresa_id) is None or dados.vertical not in tabela.VERTICAIS_OPORTUNIDADES:
+    """Leva a oportunidade para a tela Oportunidades mesmo faltando algo (ou desfaz), com o nome de quem levou.
+    Também cria a oportunidade a partir da organização, mesmo sem card aberto no Pipedrive."""
+    e = db.get(Empresa, dados.empresa_id)
+    if e is None or dados.vertical not in tabela.VERTICAIS_OPORTUNIDADES:
         raise HTTPException(404, "Oportunidade não encontrada.")
     m = db.scalar(select(OportunidadeManual).where(OportunidadeManual.empresa_id == dados.empresa_id,
                                                    OportunidadeManual.vertical == dados.vertical))
+    if dados.incluir and m is None and (motivo := tabela.cabe_oportunidade(e, dados.vertical)):
+        raise HTTPException(400, motivo)
     if dados.incluir and m is None:
         db.add(OportunidadeManual(empresa_id=dados.empresa_id, vertical=dados.vertical, usuario_id=u.id))
     elif not dados.incluir and m is not None:
@@ -640,6 +644,19 @@ def api_conferir_cidade(cidade: str = "", _u: Usuario = Depends(usuario_atual)):
     return {"sugestao": cidade_parecida(cidade)}
 
 
+@app.get("/api/empresas")
+def api_buscar_empresas(q: str = "", db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
+    """Busca organizações pelo nome (para criar uma oportunidade a partir delas)."""
+    termo = normalizar_nome_empresa(q)
+    if len(termo) < 3:
+        return {"itens": []}
+    es = db.scalars(select(Empresa).where(Empresa.nome_normalizado.like(f"%{termo}%"))
+                    .order_by(Empresa.pipedrive_org_id.is_(None), Empresa.razao_social).limit(15)).all()
+    return {"itens": [{"id": e.id, "nome": e.razao_social, "local": tabela.local(e), "noPipedrive": bool(e.pipedrive_org_id),
+                       "cabe": {v: tabela.cabe_oportunidade(e, v) for v in tabela.VERTICAIS_OPORTUNIDADES}}
+                      for e in es]}
+
+
 @app.get("/api/empresas/{empresa_id}")
 def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = Depends(usuario_atual)):
     e = db.get(Empresa, empresa_id)
@@ -673,6 +690,8 @@ def api_empresa(empresa_id: int, db: Session = Depends(get_db), _u: Usuario = De
         # Leitura do site pela IA (Linhas Financeiras): só o resultado, o texto do site não é guardado
         "siteIa": {**(e.site_ia or {}), "em": e.site_ia_em.isoformat(timespec="minutes")} if e.site_ia_em else None,
         "capitalSocial": e.capital_social, "naturezaJuridica": e.natureza_juridica,
+        # Nova oportunidade a partir da ficha: None = cabe; senão o motivo (já tem ou já negocia)
+        "cabe": {v: tabela.cabe_oportunidade(e, v) for v in tabela.VERTICAIS_OPORTUNIDADES},
     }
 
 
@@ -1024,12 +1043,14 @@ def _ultimo(db: Session, fonte: str) -> dict | None:
 
 @app.get("/api/oportunidades")
 def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: str = "", q: str = "",
-                      oferta: str = "cross", empresa: int | None = None, ativ: str = "", db: Session = Depends(get_db),
+                      oferta: str = "cross", empresa: int | None = None, ativ: str = "", ganho: str = "",
+                      db: Session = Depends(get_db),
                       _u: Usuario = Depends(usuario_atual)):
     """Uma página (20) das oportunidades com os filtros da tela. Com `empresa`, todas as daquela empresa (ficha).
     rel: e-mail de quem da equipe tem relação, ou "-" para sem relação. tipo: cliente | lead.
     oferta: cross (padrão: verticais que a empresa não tem nem negocia) | mais (mais produtos de LF ou RE para quem
-    já tem ou negocia a vertical). ativ: sem (nenhuma atividade aberta: ninguém está trabalhando) | com."""
+    já tem ou negocia a vertical). ativ: sem (nenhuma atividade aberta: ninguém está trabalhando) | com.
+    ganho: em "Ganhos recentes", só as empresas que ganharam negócio nessa vertical."""
     todas, relacoes, recentes = OPORTUNIDADES.obter(db)
     if empresa is not None:  # na ficha aparecem todas, com o que falta para as não analisadas
         return {"itens": [o for o in [*todas, *(o for o in recentes if o["soGanho"])] if o["empresa"]["id"] == empresa]}
@@ -1057,6 +1078,13 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
               and (not busca or busca in (o["empresa"]["nome"] or "").lower())
               and (not tipo or (tipo == "cliente") == o["cliente"])
               and (not rel or _relacao_ok(o, rel)) and _atividade_ok(o, ativ)]
+    # Vertical do negócio ganho (ex.: quem acabou de fechar Saúde), com a contagem de cada uma para o seletor
+    ganhos_por = {}
+    for o in ganhos:
+        for v in {g["vertical"] for g in o["ganhos"]}:
+            ganhos_por[v] = ganhos_por.get(v, 0) + 1
+    if ganho:
+        ganhos = [o for o in ganhos if any(g["vertical"] == ganho for g in o["ganhos"])]
     ofertas["ganhos"] = len(ganhos)
     paradas = [o for o in paradas if (not vertical or o["vertical"] == vertical)
                and (not busca or busca in (o["empresa"]["nome"] or "").lower())
@@ -1072,6 +1100,8 @@ def api_oportunidades(pagina: int = 1, vertical: str = "", tipo: str = "", rel: 
     return {**qualidade.pagina(filtradas, pagina), "totalGeral": len(itens), "relacoes": relacoes,
             "verticais": list(tabela.VERTICAIS_OPORTUNIDADES), "fila": fila, "ofertas": ofertas,
             "pendencias": sum(bool(o["pendencias"]) for o in itens),
+            "ganhosPorVertical": [{"vertical": v, "nome": VERTICAL_LABEL.get(v, v), "n": n}
+                                  for v, n in sorted(ganhos_por.items(), key=lambda x: -x[1])],
             # Analisadas que ninguém está trabalhando (sem atividade aberta), para o filtro "Sem atividade"
             "semAtividade": sum(o["proximaAtividade"] is None for o in itens if o["tipo"] == "cross")}
 

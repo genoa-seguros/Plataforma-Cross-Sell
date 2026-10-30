@@ -306,6 +306,9 @@ a.in{display:inline-block;font:600 10px/1 var(--f-body);padding:2px 4px;border-r
 .gav-barra{height:6px;background:var(--soft);border-radius:99px;overflow:hidden}.gav-barra i{display:block;height:100%;background:var(--accent)}
 .gav-sec .decide{border:0;padding:0;margin:0;font-size:13px}
 .lk-erros{display:grid;gap:6px}.lk-erros ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;max-height:260px;overflow:auto}
+.novaop-lista{display:grid;gap:4px;max-height:220px;overflow:auto}
+.novaop-item{display:grid;text-align:left;gap:1px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;font:inherit;color:inherit}
+.novaop-item:hover,.novaop-item.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
 /* Assistente: botão redondo fixo no canto e um painel de chat por cima da tela (acima da fila, abaixo dos modais) */
 .ia-botao{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));width:52px;height:52px;border-radius:50%;border:0;
   background:linear-gradient(160deg,#6c4ee8,#271a5c);color:#fff;box-shadow:0 6px 18px rgb(22 15 58 / 35%);cursor:pointer;z-index:18;display:grid;place-items:center}
@@ -370,7 +373,7 @@ async function carregarBase() {
   const b = await api.get("/api/base"); USUARIOS = b.usuarios; V = b.verticais; PESOS = b.pesos || {};
 }
 const filtro = {funil:"", dono:"", temp:"", tipo:"", q:""};
-const filtroOp = {vertical:"", q:"", tipo:"", rel:"", oferta:"cross", ativ:"", pagina:1};
+const filtroOp = {vertical:"", q:"", tipo:"", rel:"", oferta:"cross", ativ:"", ganho:"", pagina:1};
 const POR_PAGINA = 20;
 /* Recorte de uma lista no navegador, no mesmo formato que o servidor devolve ({itens, total, pagina, paginas}). */
 function pagLocal(lista, n) {
@@ -479,15 +482,19 @@ function opsPrevia(path) {
   const at = p.get("ativ"), ativOk = o => !at || (at === "sem") === !o.proximaAtividade;
   const filtradas = todas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q))
     && (!t || (t === "cliente") === o.cliente) && (!rel || relOk(o, rel)) && ativOk(o));
-  const ganhos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.estacionada && !o.faltando.some(f => FINAIS.includes(f))
+  const ganhosTodos = tudo.filter(o => verticais.includes(o.vertical) && (o.ganhos || []).length && !o.estacionada && !o.faltando.some(f => FINAIS.includes(f))
     && (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente)
     && (!rel || relOk(o, rel)))
     .sort((a, b) => b.score - a.score || (b.influencia ?? 0) - (a.influencia ?? 0));
+  const contaGanho = {};
+  ganhosTodos.forEach(o => new Set(o.ganhos.map(g => g.vertical)).forEach(x => contaGanho[x] = (contaGanho[x] || 0) + 1));
+  const ganhosPorVertical = Object.entries(contaGanho).sort((a, b) => b[1] - a[1]).map(([x, n]) => ({vertical: x, nome: V[x] || x, n}));
+  const ganhos = p.get("ganho") ? ganhosTodos.filter(o => o.ganhos.some(g => g.vertical === p.get("ganho"))) : ganhosTodos;
   const est = paradas.filter(o => (!v || o.vertical === v) && (!q || o.empresa.nome.toLowerCase().includes(q)) && (!t || (t === "cliente") === o.cliente))
     .sort((a, b) => b.estacionada.em.localeCompare(a.estacionada.em));
   const ofertas = {cross: filtradas.filter(o => (o.tipo || "cross") === "cross").length, mais: filtradas.filter(o => o.tipo === "mais").length, ganhos: ganhos.length, estacionadas: est.length};
   const ls = oferta === "ganhos" ? ganhos : oferta === "estacionadas" ? est : filtradas.filter(o => (o.tipo || "cross") === oferta);
-  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas,
+  return {...pagLocal(ls, +p.get("pagina") || 1), totalGeral: todas.length, relacoes: [...new Set(todas.flatMap(o => o.relacoes))].sort(), verticais, fila, ofertas, ganhosPorVertical,
     pendencias: todas.filter(o => (o.pendencias || []).length).length};
 }
 function funilPrevia(path) {  // as mesmas colunas de /api/oportunidades/funil
@@ -579,6 +586,11 @@ const previa = {
     if (path.startsWith("/api/negocios")) return negociosPrevia(path);
     if (path === "/api/melhorias") return D.melhorias || (D.melhorias = []);
     if (path === "/api/rotina") return D.rotina;
+    if (path.startsWith("/api/empresas?")) {  // busca de organizações (Nova oportunidade)
+      const q = decodeURIComponent(path.split("q=")[1] || "").toLowerCase();
+      return {itens: Object.values(D.empresas || {}).filter(e => (e.nome || "").toLowerCase().includes(q)).slice(0, 15)
+        .map(e => ({id: e.id, nome: e.nome, local: e.cidade ? `${e.cidade}${e.uf ? "/" + e.uf : ""}` : null, noPipedrive: true, cabe: {}}))};
+    }
     let m = path.match(/^\/api\/empresas\/(\d+)/); if (m) return D.empresas[m[1]];
     m = path.match(/^\/api\/qualidade(\/sugestoes|\/duplicadas)?(?:\?pagina=(\d+))?$/);
     if (m) {
@@ -675,6 +687,7 @@ const previa = {
     }
     if (path === "/api/oportunidades/manual") {
       const o = (D.oportunidades || []).find(x => x.empresa.id === b.empresa_id && x.vertical === b.vertical);
+      if (!o && b.incluir !== false) throw new Error("Na prévia só dá para levar oportunidades que já existem nos dados de exemplo.");
       if (o) { const incluir = b.incluir !== false; o.manual = incluir ? {por: D.eu.nome, em: new Date().toISOString().slice(0, 16)} : null;
         o.analisada = incluir || !o.faltando.length; }
       return {ok: true};
@@ -1141,6 +1154,7 @@ let OPS_RESP = null, OPS_SEQ = 0, OPS_BUSCA = 0;
 function urlOps() {
   const p = new URLSearchParams({pagina: filtroOp.pagina});
   for (const k of ["vertical", "tipo", "rel", "q", "oferta", "ativ"]) if (filtroOp[k]) p.set(k, filtroOp[k]);
+  if (filtroOp.oferta === "ganhos" && filtroOp.ganho) p.set("ganho", filtroOp.ganho);
   return "/api/oportunidades?" + p;
 }
 async function buscarOps() {  // devolve null se um pedido mais novo (outro filtro ou página) passou na frente
@@ -1160,6 +1174,10 @@ function mostrarOps() {
   if (sel) sel.innerHTML = `<option value="cross">Cross sell (${of.cross ?? r.total})</option><option value="mais" ${filtroOp.oferta === "mais" ? "selected" : ""}>Mais produtos na mesma vertical (${of.mais ?? 0})</option><option value="ganhos" ${filtroOp.oferta === "ganhos" ? "selected" : ""}>Ganhos recentes · 14 dias (${of.ganhos ?? 0})</option><option value="estacionadas" ${filtroOp.oferta === "estacionadas" ? "selected" : ""}>Estacionadas (${of.estacionadas ?? 0})</option>`;
   document.getElementById("contagem-op").innerHTML = (filtroOp.oferta === "ganhos" ? `${r.total} com negócio ganho nos últimos 14 dias` : filtroOp.oferta === "estacionadas" ? `${r.total} ${r.total === 1 ? "estacionada" : "estacionadas"} (fora da tela por ora)` : `${r.total} de ${r.totalGeral} analisadas`)
     + (fila ? ` · <span title="Empresas esperando a análise. Saúde: cidade, funcionários, setor. LF: Receita, notícias, site, cargos-chave. Nas duas: quem decide e ponte por e-mail. A fila anda pelo Score; preencher cidade e funcionários à mão adianta.">${fila} na fila de análise</span>` : "");
+  const gw = document.getElementById("ganho-op");  // Ganhos recentes: escolher a vertical do negócio ganho
+  if (gw) { gw.hidden = filtroOp.oferta !== "ganhos";
+    gw.innerHTML = `<option value="">Ganho em qualquer vertical</option>${(r.ganhosPorVertical || []).map(g => `<option value="${esc(g.vertical)}" ${filtroOp.ganho === g.vertical ? "selected" : ""}>Ganho em ${esc(g.nome)} (${g.n})</option>`).join("")}`
+      + (filtroOp.ganho && !(r.ganhosPorVertical || []).some(g => g.vertical === filtroOp.ganho) ? `<option value="${esc(filtroOp.ganho)}" selected>Ganho em ${esc(V[filtroOp.ganho] || filtroOp.ganho)} (0)</option>` : ""); }
   const bf = document.getElementById("abrir-fila"); if (bf) bf.textContent = `Fila de análise (${fila}) · Completar dados (${r.pendencias ?? 0})`;
   document.getElementById("pag-op").innerHTML = paginacao(r, "op");
   ligarPaginacao("op", async n => { filtroOp.pagina = n;
@@ -1215,12 +1233,14 @@ function desenharOportunidades() {
       <button class="chip off" data-vop="" aria-pressed="${!filtroOp.vertical}">Todas as verticais</button>
       ${Object.entries(V).filter(([k]) => (OPS_RESP.verticais || Object.keys(V)).includes(k)).map(([k, t]) => `<button class="chip c-${k}" data-vop="${k}" aria-pressed="${filtroOp.vertical === k}">${esc(t)}</button>`).join("")}
       <select id="f-oferta-op" aria-label="Tipo de oportunidade" title="Cross sell: vertical que a empresa não tem nem negocia. Mais produtos em LF: outros produtos de Linhas Financeiras para quem já tem ou negocia LF. Ganhos recentes: quem fechou negócio no Pipedrive nos últimos 14 dias (mesmo sem card aberto), analisada ou não. Estacionadas: tiradas da tela por ora, com o motivo e quando voltam."></select>
+      <select id="ganho-op" aria-label="Vertical do negócio ganho" title="Só as empresas que ganharam negócio nessa vertical nos últimos 14 dias" hidden></select>
       <select id="f-tipo-op" aria-label="Cliente ou lead"><option value="">Clientes e leads</option><option value="cliente" ${filtroOp.tipo==="cliente"?"selected":""}>Só clientes</option><option value="lead" ${filtroOp.tipo==="lead"?"selected":""}>Só leads</option></select>
       <select id="f-ativ-op" aria-label="Atividade" title="Sem atividade: ninguém está trabalhando a oportunidade (nenhuma atividade aberta na empresa)"><option value="">Atividade: qualquer</option><option value="sem" ${filtroOp.ativ === "sem" ? "selected" : ""}>Sem atividade (ninguém trabalhando)</option><option value="com" ${filtroOp.ativ === "com" ? "selected" : ""}>Com atividade aberta</option></select>
       <select id="f-rel-op" aria-label="Quem da equipe tem relação"><option value="">Relação: qualquer</option>${[...OPS_RESP.relacoes].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b))).map(u => `<option value="${esc(u)}" ${filtroOp.rel === u ? "selected" : ""}>Relação de ${esc(nomeDe(u))}</option>`).join("")}<option value="-" ${filtroOp.rel === "-" ? "selected" : ""}>Sem relação com a equipe</option><option value="baixa" ${filtroOp.rel === "baixa" ? "selected" : ""} title="Boas oportunidades onde falta relação: Score ≥ 70 e influência abaixo de 40">Score alto, influência baixa</option></select>
       <input type="search" id="f-q-op" placeholder="Buscar empresa" value="${esc(filtroOp.q)}">
       <span class="sub" id="contagem-op"></span>
       <button type="button" class="btn sec" id="abrir-fila" title="Completar à mão o que falta e levar para Oportunidades">Fila de análise</button>
+      <button type="button" class="btn" id="nova-op" title="Criar uma oportunidade a partir de uma organização, mesmo sem card aberto no Pipedrive">+ Nova oportunidade</button>
     </div>
     ${painelCriterios()}
     <div id="funil-op" class="funil"${VISAO_OP === "funil" ? "" : " hidden"}></div>
@@ -1236,7 +1256,9 @@ function desenharOportunidades() {
   document.getElementById("f-q-op").oninput = e => { filtroOp.q = e.target.value; filtroOp.pagina = 1;
     clearTimeout(OPS_BUSCA); OPS_BUSCA = setTimeout(filtrarOps, 250); };  // espera parar de digitar
   document.getElementById("f-tipo-op").onchange = e => { filtroOp.tipo = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
-  document.getElementById("f-oferta-op").onchange = e => { filtroOp.oferta = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("f-oferta-op").onchange = e => { filtroOp.oferta = e.target.value; filtroOp.ganho = ""; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("ganho-op").onchange = e => { filtroOp.ganho = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
+  document.getElementById("nova-op").onclick = () => novaOportunidade();
   document.getElementById("abrir-fila").onclick = () => { FILA.pagina = 1; abrirFila(); };
   if (FILA.aberta) abrirFila();
   document.getElementById("f-rel-op").onchange = e => { filtroOp.rel = e.target.value; filtroOp.pagina = 1; filtrarOps(); };
@@ -1512,6 +1534,54 @@ function novaPessoa(empresaId, empresaNome) {
       if (document.getElementById("pessoa-ponte").checked) await api.post(`/api/pessoas/${p.id}/ponte`, {ponte: true});
       fechar(); aviso(`${p.nome} cadastrada${p.area ? " (" + p.area + ")" : ""}`); OPS_RESP = null; render();
     } catch (err) { const el = document.getElementById("pessoa-erro"); el.textContent = err.message; el.hidden = false; }
+  };
+}
+/* Nova oportunidade a partir de uma organização (mesmo sem card aberto no Pipedrive): entra como "incluída à mão" */
+let NOVA_OP_BUSCA = 0;
+function novaOportunidade(empresa = null) {
+  const VS = Object.keys(V).filter(v => (OPS_RESP?.verticais || ["saude", "linhas_financeiras", "ramos_elementares"]).includes(v));
+  document.getElementById("modal").innerHTML = `<div class="modal-fundo" id="fundo"><form class="modal" id="f-novaop" aria-labelledby="t-novaop">
+    <h2 id="t-novaop">Nova oportunidade</h2>
+    <div class="sub">A partir de uma organização, mesmo sem card aberto no Pipedrive. Entra em Oportunidades (Não atuamos) com o seu nome, e a plataforma começa a pesquisar o que falta.</div>
+    <label>Organização<input id="novaop-q" type="search" autocomplete="off" placeholder="Digite parte do nome" value="${esc(empresa?.nome || "")}" ${empresa ? "disabled" : ""}></label>
+    <div id="novaop-lista" class="novaop-lista"></div>
+    <label>Vertical<select id="novaop-v" required><option value="">Escolher…</option></select></label>
+    <p class="erro" id="novaop-erro" hidden></p>
+    <div class="acoes"><button type="button" class="btn sec" id="novaop-cancelar">Cancelar</button><button class="btn" id="novaop-ok" disabled>Criar oportunidade</button></div>
+  </form></div>`;
+  let escolhida = empresa;
+  const fechar = () => document.getElementById("modal").innerHTML = "";
+  const verticais = () => {
+    const sel = document.getElementById("novaop-v"), cabe = escolhida?.cabe || {};
+    sel.innerHTML = `<option value="">Escolher…</option>${VS.map(v => `<option value="${v}" ${cabe[v] ? "disabled" : ""}>${esc(V[v])}${cabe[v] ? " · " + esc(cabe[v]) : ""}</option>`).join("")}`;
+    document.getElementById("novaop-ok").disabled = !escolhida;
+  };
+  const buscar = async () => {
+    const q = document.getElementById("novaop-q").value.trim(), lista = document.getElementById("novaop-lista"), seq = ++NOVA_OP_BUSCA;
+    if (q.length < 3) { lista.innerHTML = ""; return; }
+    let r; try { r = await api.get("/api/empresas?q=" + encodeURIComponent(q)); } catch (err) { lista.innerHTML = `<p class="sub">${esc(err.message)}</p>`; return; }
+    if (seq !== NOVA_OP_BUSCA) return;
+    lista.innerHTML = r.itens.length ? r.itens.map((x, i) => `<button type="button" class="novaop-item" data-i="${i}"><b>${esc(x.nome)}</b><span class="sub">${esc(x.local || "local não informado")}${x.noPipedrive ? "" : " · fora do Pipedrive"}</span></button>`).join("")
+      : '<p class="sub">Nenhuma organização com esse nome.</p>';
+    lista.querySelectorAll("[data-i]").forEach(b => b.onclick = () => {
+      escolhida = r.itens[+b.dataset.i];
+      lista.querySelectorAll("[data-i]").forEach(x => x.classList.toggle("on", x === b));
+      verticais();
+    });
+  };
+  document.getElementById("novaop-q").oninput = () => { escolhida = null; verticais(); clearTimeout(buscar.t); buscar.t = setTimeout(buscar, 250); };
+  document.getElementById("novaop-cancelar").onclick = fechar;
+  document.getElementById("fundo").onclick = e => { if (e.target.id === "fundo") fechar(); };
+  verticais();
+  if (!empresa) document.getElementById("novaop-q").focus();
+  document.getElementById("f-novaop").onsubmit = async e => {
+    e.preventDefault();
+    const v = document.getElementById("novaop-v").value, erro = document.getElementById("novaop-erro");
+    if (!escolhida || !v) { erro.textContent = "Escolha a organização e a vertical."; erro.hidden = false; return; }
+    try {
+      await api.post("/api/oportunidades/manual", {empresa_id: escolhida.id, vertical: v, incluir: true});
+      fechar(); aviso(`Oportunidade de ${V[v]} criada para ${escolhida.nome}`); OPS_RESP = null; render();
+    } catch (err) { erro.textContent = err.message; erro.hidden = false; }
   };
 }
 /* Notas da equipe: o que aconteceu com a oportunidade. A IA lê e ajusta o Score (de -50 a +20). */
@@ -2740,7 +2810,7 @@ async function telaEmpresa(id) {
   const temSaudeZeca = vig.some(n => n.vertical === "saude" && n.fonte === "zeca"), saudeManual = vig.some(n => n.vertical === "saude" && n.fonte === "manual");
   const situacao = n => n.vigente ? "Vigente" : n.status === "aberto" ? "Em negociação" : n.status === "cancelado" ? "Cancelado" : n.status === "perdido" ? "Perdido" : n.fim ? "Vencido" : "Ganho sem fim de vigência";
   document.getElementById("app").innerHTML = `
-  <a href="#oportunidades" class="small">← Oportunidades</a>
+  <a href="#oportunidades" class="small">← Oportunidades</a> <button type="button" class="btn sec" data-ficha-op="${e.id}" style="float:right">+ Criar oportunidade</button>
   <section class="ficha-head">
     <h1>${esc(e.nome)}</h1>
     <div class="sub">${[e.cnpj && e.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"), e.porte, e.setor, e.cnae, e.funcionarios && `${e.funcionarios.toLocaleString("pt-BR")} funcionários`].filter(Boolean).map(esc).join(" · ")}${inLink(e.linkedin)}
@@ -2802,6 +2872,8 @@ document.addEventListener("click", ev => {
       .then(() => { aviso("Saúde desmarcado: não é mais cliente Saúde"); document.getElementById("modal").innerHTML = ""; OPS_RESP = null; render(); })
       .catch(err => aviso(err.message));
   }
+  const fo = ev.target.closest("[data-ficha-op]");
+  if (fo) api.get("/api/empresas/" + fo.dataset.fichaOp).then(e => novaOportunidade({id: e.id, nome: e.nome, cabe: e.cabe || {}})).catch(err => aviso(err.message));
   const nt = ev.target.closest("[data-nota]"); if (nt) { const [id, v] = nt.dataset.nota.split("|"); editarNota(id, v); }
   const ng = ev.target.closest("[data-negocio-op]"); if (ng) criarNegocioOp(ng.dataset.negocioOp);
   const es = ev.target.closest("[data-estacionar]"); if (es) { const [id, v] = es.dataset.estacionar.split("|"); estacionar(id, v, es.dataset.estacionarNome); }
